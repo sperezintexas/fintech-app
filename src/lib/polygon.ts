@@ -101,17 +101,19 @@ export async function getTickerPrice(
   };
 }
 
-// Get market conditions with previous day data
+// Get market conditions with previous day data (uses cached grouped data)
 export async function getMarketConditions(): Promise<MarketConditions> {
   const status = await getMarketStatus();
 
-  // Fetch all indices in parallel
-  const indexPromises = INDEX_TICKERS.map(async (indexInfo) => {
-    const data = await getPrevDayClose(indexInfo.symbol);
+  // Use grouped daily data (single API call, cached)
+  const groupedData = await getGroupedDailyData();
+
+  const indices = INDEX_TICKERS.map((indexInfo) => {
+    const data = groupedData.get(indexInfo.symbol);
 
     if (data) {
       const change = data.close - data.open;
-      const changePercent = (change / data.open) * 100;
+      const changePercent = data.open > 0 ? (change / data.open) * 100 : 0;
 
       return {
         symbol: indexInfo.symbol,
@@ -122,7 +124,7 @@ export async function getMarketConditions(): Promise<MarketConditions> {
       };
     }
 
-    // Fallback if fetch fails
+    // Fallback if not found
     return {
       symbol: indexInfo.symbol,
       name: indexInfo.name,
@@ -132,8 +134,6 @@ export async function getMarketConditions(): Promise<MarketConditions> {
     };
   });
 
-  const indices = await Promise.all(indexPromises);
-
   return {
     status,
     indices,
@@ -141,7 +141,73 @@ export async function getMarketConditions(): Promise<MarketConditions> {
   };
 }
 
-// Get prices for multiple tickers (for portfolio positions)
+// Cache for grouped daily data (refreshes every 5 minutes)
+let groupedDailyCache: {
+  data: Map<string, { close: number; open: number }>;
+  timestamp: number;
+} | null = null;
+
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Get previous day's grouped daily data (ONE API call for all tickers)
+async function getGroupedDailyData(): Promise<Map<string, { close: number; open: number }>> {
+  // Return cached data if still valid
+  if (groupedDailyCache && Date.now() - groupedDailyCache.timestamp < CACHE_TTL) {
+    return groupedDailyCache.data;
+  }
+
+  const dataMap = new Map<string, { close: number; open: number }>();
+
+  try {
+    // Get previous trading day's date
+    const today = new Date();
+    const prevDay = new Date(today);
+    // Go back to find previous trading day (skip weekends)
+    do {
+      prevDay.setDate(prevDay.getDate() - 1);
+    } while (prevDay.getDay() === 0 || prevDay.getDay() === 6);
+
+    const dateStr = prevDay.toISOString().split("T")[0];
+
+    // Fetch grouped daily data - ONE call returns all tickers
+    const res = await fetch(
+      `${BASE_URL}/v2/aggs/grouped/locale/us/market/stocks/${dateStr}?adjusted=true&apiKey=${POLYGON_API_KEY}`,
+      { next: { revalidate: 300 } }
+    );
+
+    if (!res.ok) {
+      console.error("Failed to fetch grouped daily:", res.status);
+      return dataMap;
+    }
+
+    const data = await res.json();
+
+    if (data.results && Array.isArray(data.results)) {
+      for (const result of data.results) {
+        if (result.T && result.c && result.o) {
+          dataMap.set(result.T, {
+            close: result.c,
+            open: result.o,
+          });
+        }
+      }
+    }
+
+    // Cache the results
+    groupedDailyCache = {
+      data: dataMap,
+      timestamp: Date.now(),
+    };
+
+    console.log(`Cached ${dataMap.size} tickers from grouped daily API`);
+  } catch (error) {
+    console.error("Error fetching grouped daily:", error);
+  }
+
+  return dataMap;
+}
+
+// Get prices for multiple tickers (uses ONE API call via grouped daily)
 export async function getMultipleTickerPrices(
   tickers: string[]
 ): Promise<Map<string, { price: number; change: number; changePercent: number }>> {
@@ -152,14 +218,29 @@ export async function getMultipleTickerPrices(
 
   if (tickers.length === 0) return priceMap;
 
-  // Fetch all tickers in parallel
-  const promises = tickers.map(async (ticker) => {
-    const price = await getTickerPrice(ticker);
-    if (price) {
-      priceMap.set(ticker, price);
-    }
-  });
+  // Get all ticker data with single API call
+  const groupedData = await getGroupedDailyData();
 
-  await Promise.all(promises);
+  // Extract prices for requested tickers
+  for (const ticker of tickers) {
+    const data = groupedData.get(ticker.toUpperCase());
+    if (data) {
+      const change = data.close - data.open;
+      const changePercent = data.open > 0 ? (change / data.open) * 100 : 0;
+
+      priceMap.set(ticker, {
+        price: data.close,
+        change,
+        changePercent,
+      });
+    }
+  }
+
+  // Log any missing tickers (might be ETFs or other symbols not in stocks)
+  const missing = tickers.filter(t => !priceMap.has(t));
+  if (missing.length > 0) {
+    console.log(`Tickers not found in grouped daily: ${missing.join(", ")}`);
+  }
+
   return priceMap;
 }
