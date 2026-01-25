@@ -1,144 +1,76 @@
-# TSLA Profit Maximizer App
+# Investment Management Application Design Document
 
 ## Overview
-This Python app helps maximize profits on a Tesla (TSLA) stock portfolio using conservative options strategies like covered calls and the wheel strategy. It fetches real-time data from Yahoo Finance (via yfinance) and provides recommendations on when to sell calls/puts or buy more shares with profits. Designed for users holding TSLA shares (e.g., 500 shares), it emphasizes retaining or accumulating holdings while generating income from premiums.
+This application manages investment portfolios, tracking accounts, positions (stocks, options, cash), watch lists, and generating recommendations. It aggregates portfolio values, supports risk profiles and strategies per account, and integrates real-time data from Polygon.io. Built with Python backend, Streamlit UI, and MongoDB for local storage.
 
-Key goals:
-- Leverage TSLA's current earnings (flat 2025 revenue ~$97B amid EV competition), mid-term catalysts (2026 recovery to ~$134B via energy/autonomy), and long-term potential (2030+ revenue >$297B from robotics/mobility).
-- Target 5-15% annualized yield from options on top of stock appreciation.
-- Reinvest all profits into more TSLA shares to compound growth.
+## Requirements
 
-**Disclaimer**: This is not financial advice. Options trading involves risks (e.g., opportunity cost, assignment, volatility). Backtest strategies, use a demo account, and consult professionals. The app uses public data and simulations—real trades require a brokerage API (e.g., Alpaca or Interactive Brokers for automation).
+### Functional Requirements
+- **Portfolio Management**: Define a portfolio that aggregates values from one or more accounts. Portfolio includes total value roll-up, performance metrics (e.g., ROI, unrealized gains/losses).
+- **Account Management**: Each account has:
+  - Unique ID, name, balance.
+  - Risk level (e.g., low, medium, high).
+  - Preferred investment strategy (e.g., growth, income, balanced; moderate/aggressive options aligned with user goals like Tesla-focused growth to 1M shares by 2030).
+  - Zero or many positions.
+  - Recommendations generated based on positions (e.g., buy/sell suggestions using current/mid/future earnings data for stocks like TSLA, NVDA).
+- **Position Management**: Positions can be:
+  - Stocks: Ticker, shares, purchase price, current value (fetched via Polygon).
+  - Options: Contract details (strike, expiration, type: call/put), quantity, premium (reference PDF risks in Chapter X for warnings).
+  - Cash: Amount, currency.
+  - Each position links to a watch list item (optional: alerts for price thresholds).
+- **Watch List**: Per position or account, track symbols with alerts (e.g., price changes, news).
+- **Recommendations**: Algorithmic suggestions per account, factoring risk/strategy. Moderate: Bull call spreads on TSLA/NVDA. Aggressive: OTM calls on volatile stocks like IONQ. Tie to user goal of portfolio growth.
+- **Real-time Updates**: Fetch stock/option prices via Polygon API for live UI refreshes.
+- **Data Persistence**: Store portfolios, accounts, positions in MongoDB.
+- **UI Features**: Streamlit dashboard with views for portfolios, accounts, positions; real-time charts; input forms for adding/editing; recommendation panel.
 
-## Features
-- **Portfolio Tracking**: Input your holdings (e.g., 500 TSLA shares, cash for collateral) and track value based on live prices.
-- **Data Fetching**: Pulls TSLA stock price, historical data, and options chains from Yahoo Finance.
-- **Strategy Recommendations** (Side-by-Side Comparison):
-  - **Covered Calls Strategy**: Generate income on existing holdings by selling OTM calls (5-10% above current price). Best for generating consistent income without acquiring new shares.
-  - **Wheel Strategy**: Two-phase approach for accumulating shares and generating income:
-    - **Phase 1**: Sell cash-secured puts (5-10% below current price) to collect premium and potentially acquire shares at a discount
-    - **Phase 2**: After assignment, sell covered calls on the newly acquired shares for additional income
-    - Best for accumulating more shares on dips while generating premium income
-  - **Buy Signals**: Use profits to buy more shares on dips (e.g., below 50-day moving average) or after premium collection.
-  - **Sell Signals**: Only for options expiration/assignment; never recommends selling core shares.
-- **Risk Management**: Incorporates volatility checks (e.g., avoid trades if implied vol >60%), stop-loss thresholds, and reinvestment rules.
-- **Simulations**: Backtest strategies on historical data to estimate returns.
-- **Alerts**: Console outputs for actions (extendable to email/SMS via libraries like smtplib).
+### Non-Functional Requirements
+- **Performance**: Real-time updates via WebSockets or polling (every 5-10s during market hours).
+- **Security**: Local app; basic auth for UI. API keys for Polygon stored securely.
+- **Scalability**: Local use; MongoDB handles small datasets.
+- **Tech Stack**: Python (FastAPI or Flask backend), Streamlit (UI), PyMongo (DB), Polygon.io SDK.
+- **Deployment**: Local run; potential Docker for portability.
 
-## Installation
-1. Clone the repo: `git clone <repo-url>`
-2. Create and activate a virtual environment:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On macOS/Linux
-   # On Windows: venv\Scripts\activate
-   ```
-3. Install the package in editable mode: `pip install -e .`
-4. Run the app:
-   - **Web App (Recommended)**: 
-     ```bash
-     streamlit run findProfits.py
-     ```
-     Then open your browser to `http://localhost:8501`
-   - **CLI**: `python main.py`
+## High-Level Design
 
-## Usage
+### Components
+- **Backend**: Python service handling CRUD for portfolios/accounts/positions. Integrates Polygon for quotes. Generates recommendations using simple rules/ML (e.g., pandas for analysis).
+- **Database**: MongoDB schemas:
+  - Portfolio: {_id, name, accounts: [account_ids], total_value}.
+  - Account: {_id, name, risk_level, strategy, positions: [position_ids], recommendations: []}.
+  - Position: {_id, type (stock/option/cash), details (ticker/strike/etc.), watch_list: {symbol, alerts}}.
+- **UI**: Streamlit pages: Login, Dashboard (portfolio overview), Account View (positions/recommendations), Add/Edit forms.
+- **Integration**: Polygon API for real-time data (stocks, options chains). WebSocket for updates.
+- **Recommendation Engine**: Rule-based: For moderate, suggest spreads on TSLA (e.g., buy $450 call, sell $500); aggressive, OTM calls. Factor PDF risks (e.g., premium loss).
 
-### Web App (Recommended)
-1. Start the Streamlit web app:
-   ```bash
-   streamlit run streamlit_app.py
-   ```
-2. Open your browser to the URL shown (typically `http://localhost:8501`)
-3. Configure your portfolio and strategies using the sidebar
-4. View real-time recommendations with interactive tables
+### Data Flow
+1. User adds portfolio/account/position via UI.
+2. Backend saves to MongoDB.
+3. UI requests updates; backend fetches from Polygon, computes values/recommendations.
+4. Display aggregated portfolio value, positions, suggestions.
 
-### CLI
-1. Edit `data/config.json` with your portfolio settings
-2. Run `python main.py` to get recommendations in the terminal
+## Architecture Diagram
 
-### Features
-- **Interactive Configuration**: Adjust portfolio, strategies, and options filters via web UI
-- **Real-time Updates**: Auto-refresh option for live market data
-- **Strategy Comparison**: Side-by-side view of Covered Calls vs Wheel Strategy
-- **Visual Metrics**: Market conditions displayed with color-coded indicators
-
-
-## Configuration
-- `data/config.json`: Set shares, cash, risk tolerance (e.g., OTM percentage), and strategy preferences.
-  - `TSLA_SHARES`: Your current TSLA holdings (default: 525)
-  - `CASH_AVAILABLE`: Cash available for options trading (default: 0)
-  - `OPTIONS_MIN_WEEKS`: Minimum weeks until expiration to include (default: 2)
-  - `OPTIONS_MAX_WEEKS`: Maximum weeks until expiration to include (default: 4)
-  - `ENABLE_COVERED_CALLS`: Enable covered call strategy (default: True)
-  - `ENABLE_WHEEL_STRATEGY`: Enable wheel strategy (default: True)
-  - `WHEEL_PUT_OTM_PCT`: Put strike percentages below current price (default: [0.05, 0.075, 0.10] = 5%, 7.5%, 10%)
-  - `WHEEL_MIN_CASH_RATIO`: Cash requirement ratio for put collateral (default: 1.1 = 110%)
-  - `BULLISH_THRESHOLD`: RSI threshold for bullish signals (default: 50)
-  - `DIP_THRESHOLD`: RSI threshold for dip detection (default: 30)
-- Strategies are rule-based (e.g., sell calls if price > 20-day MA; buy on RSI <30).
-
-## Architecture
-The project uses a `src` layout for better package organization:
-- `src/fintech_app/main.py`: Entry point for user input and recommendations.
-- `src/fintech_app/data_fetcher.py`: Handles yfinance API calls for prices/options.
-- `src/fintech_app/strategy_engine.py`: Computes recommendations based on rules.
-- `src/fintech_app/portfolio.py`: Tracks holdings and simulates trades.
-- `src/fintech_app/utils.py`: Helpers for calculations (e.g., premiums, yields).
-- `data/config.json`: Configuration settings.
-
-## Testing
-The app includes comprehensive unit and integration tests using pytest.
-
-### Running Tests
-```bash
-# Activate virtual environment first
-source venv/bin/activate
-
-# Run all tests
-pytest
-
-# Run with verbose output
-pytest -v
-
-# Run specific test file
-pytest tests/test_portfolio.py
-
-# Run with coverage (optional)
-pytest --cov=. --cov-report=html
+```mermaid
+graph TD
+    A[User] -->|Interact| B[Streamlit UI]
+    B -->|API Calls| C[Python Backend]
+    C -->|Store/Retrieve| D[MongoDB]
+    C -->|Fetch Real-time Data| E[Polygon.io API]
+    C -->|Generate| F[Recommendations Engine]
+    F -->|Output| B
+    subgraph Frontend
+        B
+    end
+    subgraph Backend
+        C
+        F
+    end
+    subgraph Data
+        D
+        E
+    end
 ```
 
-### Test Structure
-- `tests/test_portfolio.py`: Unit tests for Portfolio class
-- `tests/test_utils.py`: Unit tests for utility functions (MA, RSI, premium estimation, etc.)
-- `tests/test_strategy_engine.py`: Unit tests for strategy recommendation logic
-- `tests/test_data_fetcher.py`: Unit tests for data fetching (with mocked yfinance)
-- `tests/test_integration.py`: Integration tests for full workflow
-
-All external API calls (yfinance) are mocked in tests to avoid network dependencies.
-
-## Database
-
-The app uses SQLite for portfolio tracking. The database file `portfolio.db` is created automatically in the project root.
-
-### Database Schema
-- **portfolio_snapshots**: Historical portfolio states (shares, cash, total value)
-- **transactions**: All trades (stock and options)
-- **options_positions**: Active and closed options positions
-- **stock_positions**: Current stock holdings
-
-### Features
-- Automatic portfolio snapshots on each run
-- Track all options positions (calls/puts)
-- Transaction history with P&L tracking
-- Portfolio value history with charts
-- Close positions and record profits/losses
-
-The database is file-based (SQLite) - no setup required, just works!
-
-## Contributing
-Fork and PR improvements, e.g., add brokerage integration or GUI.
-
-## License
-MIT License. Use at your own risk.
-
+## Next Steps
+Implement backend schemas and API endpoints first. Provide code snippets if requested for details. Reference PDF Chapter X for option risk integration in recommendations.
