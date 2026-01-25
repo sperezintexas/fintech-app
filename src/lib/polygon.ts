@@ -1,4 +1,4 @@
-import type { MarketConditions, MarketIndex } from "@/types/portfolio";
+import type { MarketConditions } from "@/types/portfolio";
 
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
 const BASE_URL = "https://api.polygon.io";

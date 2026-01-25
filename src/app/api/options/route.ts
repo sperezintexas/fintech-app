@@ -5,6 +5,32 @@ const BASE_URL = "https://api.polygon.io";
 
 export const dynamic = "force-dynamic";
 
+// Type definitions for options data
+type OptionContractData = {
+  ticker: string;
+  yahoo_symbol: string;
+  strike_price: number;
+  expiration_date: string;
+  contract_type: "call" | "put";
+  premium: number;
+  totalPremium: number;
+  last_quote: {
+    bid: number;
+    ask: number;
+  };
+  volume: number;
+  implied_volatility: number;
+  rationale: string;
+  dataSource: string;
+};
+
+type PolygonOptionContract = {
+  ticker: string;
+  strike_price: number;
+  expiration_date: string;
+  contract_type: string;
+};
+
 // Convert to Yahoo Finance option symbol format: TSLA260130C00170000
 function toYahooSymbol(
   underlying: string,
@@ -31,15 +57,15 @@ function estimateIV(
   // IV ≈ premium / (0.4 * stockPrice * sqrt(T))
   const timeYears = daysToExpiration / 365;
   if (timeYears <= 0) return 0;
-  
+
   const atTheMoneyApprox = premium / (0.4 * stockPrice * Math.sqrt(timeYears));
-  
+
   // Adjust for moneyness
-  const moneyness = isCall 
-    ? stockPrice / strikePrice 
+  const moneyness = isCall
+    ? stockPrice / strikePrice
     : strikePrice / stockPrice;
   const moneynessAdj = 1 + Math.abs(1 - moneyness) * 0.3;
-  
+
   const iv = atTheMoneyApprox * moneynessAdj;
   return Math.min(2.0, Math.max(0.1, iv)); // Cap between 10% and 200%
 }
@@ -54,12 +80,12 @@ function generateRationale(
   const otmPercent = contractType === "call"
     ? ((strikePrice - stockPrice) / stockPrice) * 100
     : ((stockPrice - strikePrice) / stockPrice) * 100;
-  
-  const isITM = contractType === "call" 
-    ? strikePrice < stockPrice 
+
+  const isITM = contractType === "call"
+    ? strikePrice < stockPrice
     : strikePrice > stockPrice;
   const isATM = Math.abs(otmPercent) < 2;
-  
+
   // Moneyness description
   let moneyness: string;
   if (isATM) {
@@ -69,7 +95,7 @@ function generateRationale(
   } else {
     moneyness = `${otmPercent.toFixed(0)}% OTM`;
   }
-  
+
   // Strategy suggestion
   let strategy: string;
   if (contractType === "call") {
@@ -96,10 +122,10 @@ function generateRationale(
       strategy = isITM ? "ITM put" : "Protective";
     }
   }
-  
+
   // IV note
   const ivNote = iv > 0.5 ? " • High IV" : iv < 0.25 ? " • Low IV" : "";
-  
+
   return `${moneyness} • ${strategy}${ivNote}`;
 }
 
@@ -112,10 +138,10 @@ function estimateVolume(
   // ATM options have highest volume, decreases further OTM
   const moneyness = Math.abs(stockPrice - strikePrice) / stockPrice;
   const moneynessMultiplier = Math.max(0.1, 1 - moneyness * 5);
-  
+
   // Nearer expiration = higher volume
   const timeMultiplier = daysToExpiration < 30 ? 2 : daysToExpiration < 60 ? 1.5 : 1;
-  
+
   // Base volume estimate
   const baseVolume = 500;
   return Math.round(baseVolume * moneynessMultiplier * timeMultiplier);
@@ -169,11 +195,11 @@ function generateSyntheticOptions(
   const strikeTolerance = targetStrike * 0.15;
   const minStrike = targetStrike - strikeTolerance;
   const maxStrike = targetStrike + strikeTolerance;
-  
+
   // Generate strikes at appropriate intervals
   const increment = stockPrice < 100 ? 2.5 : stockPrice < 500 ? 5 : 10;
   const strikes: number[] = [];
-  
+
   let strike = Math.floor(minStrike / increment) * increment;
   while (strike <= maxStrike) {
     if (strike > 0) strikes.push(strike);
@@ -187,7 +213,7 @@ function generateSyntheticOptions(
       daysToExp,
       contractType === "call"
     );
-    
+
     const iv = estimateIV(stockPrice, strikePrice, priceEstimate.premium, daysToExp, contractType === "call");
     const volume = estimateVolume(stockPrice, strikePrice, daysToExp);
     const rationale = generateRationale(stockPrice, strikePrice, contractType, iv);
@@ -220,7 +246,7 @@ async function fetchOptionsForType(
   contractType: "call" | "put",
   stockPrice: number,
   daysToExp: number
-): Promise<{ options: any[]; synthetic: boolean }> {
+): Promise<{ options: OptionContractData[]; synthetic: boolean }> {
   const strikeTolerance = targetStrike * 0.15;
   const minStrike = targetStrike - strikeTolerance;
   const maxStrike = targetStrike + strikeTolerance;
@@ -270,11 +296,11 @@ async function fetchOptionsForType(
 
     // Find the closest expiration date to target
     const expirations = new Set<string>();
-    refData.results.forEach((c: any) => expirations.add(c.expiration_date));
-    
+    refData.results.forEach((c: PolygonOptionContract) => expirations.add(c.expiration_date));
+
     let closestExpiration = targetExpiration;
     let minDiff = Infinity;
-    
+
     expirations.forEach((exp) => {
       const diff = Math.abs(new Date(exp).getTime() - targetDate.getTime());
       if (diff < minDiff) {
@@ -285,21 +311,21 @@ async function fetchOptionsForType(
 
     // Filter by strike range and closest expiration
     const options = refData.results
-      .filter((contract: any) => {
+      .filter((contract: PolygonOptionContract) => {
         return (
           contract.expiration_date === closestExpiration &&
-          contract.strike_price >= minStrike && 
+          contract.strike_price >= minStrike &&
           contract.strike_price <= maxStrike
         );
       })
-      .map((contract: any) => {
+      .map((contract: PolygonOptionContract) => {
         const priceEstimate = estimatePremium(
           stockPrice,
           contract.strike_price,
           daysToExp,
           contractType === "call"
         );
-        
+
         const iv = estimateIV(stockPrice, contract.strike_price, priceEstimate.premium, daysToExp, contractType === "call");
         const volume = estimateVolume(stockPrice, contract.strike_price, daysToExp);
         const rationale = generateRationale(stockPrice, contract.strike_price, contractType, iv);
@@ -410,14 +436,14 @@ export async function GET(request: NextRequest) {
 
     // Get unique strikes and sort them
     const allStrikes = new Set<number>();
-    calls.forEach((c: any) => allStrikes.add(c.strike_price));
-    puts.forEach((p: any) => allStrikes.add(p.strike_price));
+    calls.forEach((c: OptionContractData) => allStrikes.add(c.strike_price));
+    puts.forEach((p: OptionContractData) => allStrikes.add(p.strike_price));
     const strikes = Array.from(allStrikes).sort((a, b) => a - b);
 
     // Build option chain by strike
     const optionChain = strikes.map((strike) => {
-      const call = calls.find((c: any) => c.strike_price === strike);
-      const put = puts.find((p: any) => p.strike_price === strike);
+      const call = calls.find((c: OptionContractData) => c.strike_price === strike);
+      const put = puts.find((p: OptionContractData) => p.strike_price === strike);
       return {
         strike,
         call: call || null,
@@ -440,9 +466,9 @@ export async function GET(request: NextRequest) {
       totalPuts: puts.length,
       optionChain,
       dataSource: isSynthetic ? "synthetic" : "estimated",
-      note: isSynthetic 
+      note: isSynthetic
         ? "Premiums are modeled estimates (API rate limited). Actual market prices will vary."
-        : actualExpiration !== expiration 
+        : actualExpiration !== expiration
           ? `Showing options expiring ${actualExpiration} (closest to requested date). Premiums are estimated.`
           : "Premiums are estimated. Actual market prices may vary.",
     });
