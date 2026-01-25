@@ -1,0 +1,69 @@
+# Gitleaks configuration
+# https://github.com/gitleaks/gitleaks
+
+title = "myInvestments Gitleaks Config"
+
+[extend]
+# Use the default gitleaks rules as a base
+useDefault = true
+
+# Paths to ignore
+[allowlist]
+paths = [
+  '''node_modules''',
+  '''\.git''',
+  '''package-lock\.json''',
+  '''\.next''',
+  '''dist''',
+  '''build''',
+  '''coverage''',
+]
+
+# Additional rules for common secrets in this project
+[[rules]]
+id = "polygon-api-key"
+description = "Polygon.io API Key"
+regex = '''POLYGON_API_KEY\s*=\s*["\']?[A-Za-z0-9_]{20,}["\']?'''
+tags = ["api", "polygon"]
+
+[[rules]]
+id = "mongodb-connection-string"
+description = "MongoDB Connection String"
+regex = '''mongodb(\+srv)?:\/\/[^\s"'\`]+'''
+tags = ["database", "mongodb"]
+
+[[rules]]
+id = "next-auth-secret"
+description = "NextAuth Secret"
+regex = '''NEXTAUTH_SECRET\s*=\s*["\']?[A-Za-z0-9+/=]{20,}["\']?'''
+tags = ["auth", "nextauth"]
+
+[[rules]]
+id = "jwt-secret"
+description = "JWT Secret"
+regex = '''JWT_SECRET\s*=\s*["\']?[^\s"'\`]{16,}["\']?'''
+tags = ["auth", "jwt"]
+
+# Allowlist specific patterns that are false positives
+[[rules.allowlist]]
+regexes = [
+  # Example placeholders
+  '''your[-_]?api[-_]?key''',
+  '''example[-_]?secret''',
+  '''placeholder''',
+  '''xxxx+''',
+  # Test/mock data
+  '''test[-_]?key''',
+  '''mock[-_]?secret''',
+]
+
+# Files that commonly have false positives
+[rules.allowlist]
+paths = [
+  '''\.env\.example''',
+  '''\.env\.sample''',
+  '''\.env\.template''',
+  '''README\.md''',
+  '''CONTRIBUTING\.md''',
+  '''docs/.*''',
+]
