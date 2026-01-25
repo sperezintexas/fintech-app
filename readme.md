@@ -1,7 +1,13 @@
-# Investment Management Application Design Document
+# myInvestments 
 
 ## Overview
-This application manages investment portfolios, tracking accounts, positions (stocks, options, cash), watch lists, and generating recommendations. It aggregates portfolio values, supports risk profiles and strategies per account, and integrates real-time data from Polygon.io. Built with Python backend, Streamlit UI, and MongoDB for local storage.
+This application manages investment portfolios, tracking accounts, positions (stocks, options, cash), watch lists, and generating recommendations. It aggregates portfolio values, supports risk profiles and strategies per account, and integrates real-time data from Polygon.io. Built with Next.js, React, TypeScript, and MongoDB.
+
+## Tech Stack
+- **Frontend**: Next.js 16 (App Router), React 19, TypeScript
+- **Styling**: Tailwind CSS v4
+- **Database**: MongoDB
+- **Market Data**: Polygon.io API
 
 ## Requirements
 
@@ -15,54 +21,68 @@ This application manages investment portfolios, tracking accounts, positions (st
   - Recommendations generated based on positions (e.g., buy/sell suggestions using current/mid/future earnings data for stocks like TSLA, NVDA).
 - **Position Management**: Positions can be:
   - Stocks: Ticker, shares, purchase price, current value (fetched via Polygon).
-  - Options: Contract details (strike, expiration, type: call/put), quantity, premium (reference PDF risks in Chapter X for warnings).
+  - Options: Contract details (strike, expiration, type: call/put), quantity, premium.
   - Cash: Amount, currency.
   - Each position links to a watch list item (optional: alerts for price thresholds).
 - **Watch List**: Per position or account, track symbols with alerts (e.g., price changes, news).
-- **Recommendations**: Algorithmic suggestions per account, factoring risk/strategy. Moderate: Bull call spreads on TSLA/NVDA. Aggressive: OTM calls on volatile stocks like IONQ. Tie to user goal of portfolio growth.
+- **Recommendations**: Algorithmic suggestions per account, factoring risk/strategy. Moderate: Bull call spreads on TSLA/NVDA. Aggressive: OTM calls on volatile stocks like IONQ.
 - **Real-time Updates**: Fetch stock/option prices via Polygon API for live UI refreshes.
 - **Data Persistence**: Store portfolios, accounts, positions in MongoDB.
-- **UI Features**: Streamlit dashboard with views for portfolios, accounts, positions; real-time charts; input forms for adding/editing; recommendation panel.
+- **UI Features**: Dashboard with views for portfolios, accounts, positions; real-time charts; input forms for adding/editing; recommendation panel.
 
 ### Non-Functional Requirements
 - **Performance**: Real-time updates via WebSockets or polling (every 5-10s during market hours).
-- **Security**: Local app; basic auth for UI. API keys for Polygon stored securely.
-- **Scalability**: Local use; MongoDB handles small datasets.
-- **Tech Stack**: Python (FastAPI or Flask backend), Streamlit (UI), PyMongo (DB), Polygon.io SDK.
-- **Deployment**: Local run; potential Docker for portability.
+- **Security**: Environment variables for API keys. Next.js API routes for secure backend calls.
+- **Scalability**: MongoDB handles datasets efficiently. Next.js supports edge deployment.
+- **Deployment**: Local dev with `npm run dev`. Production via Vercel or Docker.
+
+## Project Structure
+```
+src/
+├── app/                    # Next.js App Router
+│   ├── globals.css         # Tailwind styles
+│   ├── layout.tsx          # Root layout
+│   └── page.tsx            # Landing page
+├── components/             # React components
+│   ├── PortfolioCard.tsx   # Portfolio overview
+│   └── MarketConditions.tsx # Market indices
+├── lib/                    # Utilities
+│   ├── mongodb.ts          # DB connection
+│   └── mock-data.ts        # Sample data
+└── types/                  # TypeScript types
+    └── portfolio.ts        # Domain types
+```
 
 ## High-Level Design
 
 ### Components
-- **Backend**: Python service handling CRUD for portfolios/accounts/positions. Integrates Polygon for quotes. Generates recommendations using simple rules/ML (e.g., pandas for analysis).
+- **Frontend**: Next.js App Router with React Server Components and Client Components for interactivity.
+- **API Layer**: Next.js API routes (`/api/*`) for backend logic, Polygon integration, and MongoDB operations.
 - **Database**: MongoDB schemas:
   - Portfolio: {_id, name, accounts: [account_ids], total_value}.
   - Account: {_id, name, risk_level, strategy, positions: [position_ids], recommendations: []}.
   - Position: {_id, type (stock/option/cash), details (ticker/strike/etc.), watch_list: {symbol, alerts}}.
-- **UI**: Streamlit pages: Login, Dashboard (portfolio overview), Account View (positions/recommendations), Add/Edit forms.
-- **Integration**: Polygon API for real-time data (stocks, options chains). WebSocket for updates.
-- **Recommendation Engine**: Rule-based: For moderate, suggest spreads on TSLA (e.g., buy $450 call, sell $500); aggressive, OTM calls. Factor PDF risks (e.g., premium loss).
+- **Integration**: Polygon API for real-time data (stocks, options chains). WebSocket or polling for updates.
+- **Recommendation Engine**: Rule-based logic: For moderate risk, suggest spreads on TSLA; aggressive, OTM calls.
 
 ### Data Flow
 1. User adds portfolio/account/position via UI.
-2. Backend saves to MongoDB.
-3. UI requests updates; backend fetches from Polygon, computes values/recommendations.
+2. API route saves to MongoDB.
+3. UI requests updates; API fetches from Polygon, computes values/recommendations.
 4. Display aggregated portfolio value, positions, suggestions.
 
 ## Architecture Diagram
 
 ```mermaid
 graph TD
-    A[User] -->|Interact| B[Streamlit UI]
-    B -->|API Calls| C[Python Backend]
+    A[User] -->|Interact| B[Next.js Frontend]
+    B -->|API Routes| C[Next.js Backend]
     C -->|Store/Retrieve| D[MongoDB]
     C -->|Fetch Real-time Data| E[Polygon.io API]
     C -->|Generate| F[Recommendations Engine]
     F -->|Output| B
-    subgraph Frontend
+    subgraph Next.js App
         B
-    end
-    subgraph Backend
         C
         F
     end
@@ -72,5 +92,44 @@ graph TD
     end
 ```
 
+## Getting Started
+
+### Prerequisites
+- Node.js 18+
+- MongoDB (local or Atlas)
+- Polygon.io API key
+
+### Installation
+```bash
+npm install
+```
+
+### Environment Variables
+Create `.env.local`:
+```
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DB=myinvestments
+POLYGON_API_KEY=your_api_key_here
+```
+
+### Development
+```bash
+npm run dev
+```
+Open http://localhost:3000
+
+### Build
+```bash
+npm run build
+npm start
+```
+
 ## Next Steps
-Implement backend schemas and API endpoints first. Provide code snippets if requested for details. Reference PDF Chapter X for option risk integration in recommendations.
+1. Connect MongoDB for data persistence
+2. Integrate Polygon.io API for live market data
+3. Build Accounts, Positions, Watchlist pages
+4. Add forms for CRUD operations
+5. Implement recommendation engine
+
+## Version
+1.0.0
