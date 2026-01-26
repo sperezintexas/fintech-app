@@ -78,6 +78,27 @@ export default function WatchlistPage() {
   const [schedulerLoading, setSchedulerLoading] = useState(false);
   const [schedulerMessage, setSchedulerMessage] = useState("");
 
+  // Alert preview state
+  const [previewItemId, setPreviewItemId] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewData, setPreviewData] = useState<{
+    alert: WatchlistAlert;
+    formatted: {
+      subject: string;
+      body: string;
+      sms: string;
+      slack: string;
+    };
+    template: { id: string; name: string };
+    analysis: {
+      recommendation: string;
+      severity: string;
+      reason: string;
+      confidence: number;
+    };
+  } | null>(null);
+  const [previewTemplateId, setPreviewTemplateId] = useState<AlertTemplateId>("concise");
+
   // Alert preferences form
   const [prefsForm, setPrefsForm] = useState({
     templateId: "concise" as AlertTemplateId,
@@ -394,6 +415,36 @@ export default function WatchlistPage() {
       console.error(err);
     } finally {
       setSchedulerLoading(false);
+    }
+  };
+
+  // Fetch alert preview
+  const handlePreviewAlert = async (itemId: string, templateId?: AlertTemplateId) => {
+    setPreviewLoading(true);
+    setPreviewItemId(itemId);
+    setPreviewTemplateId(templateId || previewTemplateId);
+
+    try {
+      const res = await fetch("/api/watchlist/preview-alert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          watchlistItemId: itemId,
+          templateId: templateId || previewTemplateId,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setPreviewData(data);
+      } else {
+        const error = await res.json();
+        console.error("Failed to generate preview:", error);
+      }
+    } catch (err) {
+      console.error("Failed to generate preview:", err);
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -892,15 +943,27 @@ export default function WatchlistPage() {
                           {item.expirationDate ? new Date(item.expirationDate).toLocaleDateString() : "—"}
                         </td>
                         <td className="py-3 px-2 text-center">
-                          <button
-                            onClick={() => handleRemoveItem(item._id)}
-                            className="text-red-500 hover:text-red-700"
-                            title="Remove"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => handlePreviewAlert(item._id)}
+                              className="text-indigo-600 hover:text-indigo-800"
+                              title="Preview Alert"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleRemoveItem(item._id)}
+                              className="text-red-500 hover:text-red-700"
+                              title="Remove"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -910,6 +973,205 @@ export default function WatchlistPage() {
             </div>
           )}
         </div>
+        )}
+
+        {/* Alert Preview Modal */}
+        {previewItemId && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-gray-900">Alert Preview</h3>
+                <button
+                  onClick={() => {
+                    setPreviewItemId(null);
+                    setPreviewData(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {/* Template Selector */}
+                <div className="flex items-center gap-4">
+                  <label className="text-sm font-medium text-gray-700">Template:</label>
+                  <select
+                    value={previewTemplateId}
+                    onChange={(e) => {
+                      const newTemplate = e.target.value as AlertTemplateId;
+                      setPreviewTemplateId(newTemplate);
+                      if (previewItemId) {
+                        handlePreviewAlert(previewItemId, newTemplate);
+                      }
+                    }}
+                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  >
+                    {ALERT_TEMPLATES.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {previewLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : previewData ? (
+                  <>
+                    {/* Analysis Summary */}
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
+                      <h4 className="font-semibold text-blue-900 mb-3">Analysis Summary</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <p className="text-xs text-blue-600 mb-1">Recommendation</p>
+                          <p className={`font-bold ${getRecommendationBadge(previewData.analysis.recommendation)} px-2 py-1 rounded inline-block`}>
+                            {previewData.analysis.recommendation}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-blue-600 mb-1">Severity</p>
+                          <p className={`font-bold ${getSeverityColor(previewData.analysis.severity)} px-2 py-1 rounded inline-block`}>
+                            {previewData.analysis.severity}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-blue-600 mb-1">Confidence</p>
+                          <p className="font-bold text-blue-900">{previewData.analysis.confidence}%</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-blue-600 mb-1">Template</p>
+                          <p className="font-bold text-blue-900">{previewData.template.name}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-blue-200">
+                        <p className="text-sm text-blue-800">
+                          <strong>Reason:</strong> {previewData.analysis.reason}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Formatted Alerts by Channel */}
+                    <div className="space-y-4">
+                      {/* Email */}
+                      <div className="border border-gray-200 rounded-xl overflow-hidden">
+                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center gap-2">
+                          <span className="text-xl">📧</span>
+                          <span className="font-medium text-gray-900">Email</span>
+                        </div>
+                        <div className="p-4 bg-white">
+                          <div className="mb-2">
+                            <span className="text-xs text-gray-500">Subject:</span>
+                            <p className="font-semibold text-gray-900">{previewData.formatted.subject}</p>
+                          </div>
+                          <div className="mt-3">
+                            <span className="text-xs text-gray-500">Body:</span>
+                            <pre className="mt-1 p-3 bg-gray-50 rounded text-sm whitespace-pre-wrap font-sans">
+                              {previewData.formatted.body}
+                            </pre>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* SMS */}
+                      <div className="border border-gray-200 rounded-xl overflow-hidden">
+                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center gap-2">
+                          <span className="text-xl">📱</span>
+                          <span className="font-medium text-gray-900">SMS / Text</span>
+                          <span className="text-xs text-gray-500 ml-auto">
+                            {previewData.formatted.sms.length} / 160 chars
+                          </span>
+                        </div>
+                        <div className="p-4 bg-white">
+                          <pre className="p-3 bg-gray-50 rounded text-sm whitespace-pre-wrap font-sans">
+                            {previewData.formatted.sms}
+                          </pre>
+                        </div>
+                      </div>
+
+                      {/* Slack */}
+                      <div className="border border-gray-200 rounded-xl overflow-hidden">
+                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center gap-2">
+                          <span className="text-xl">💬</span>
+                          <span className="font-medium text-gray-900">Slack</span>
+                        </div>
+                        <div className="p-4 bg-white">
+                          <pre className="p-3 bg-gray-50 rounded text-sm whitespace-pre-wrap font-mono">
+                            {previewData.formatted.slack}
+                          </pre>
+                        </div>
+                      </div>
+
+                      {/* Push Notification */}
+                      <div className="border border-gray-200 rounded-xl overflow-hidden">
+                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center gap-2">
+                          <span className="text-xl">🔔</span>
+                          <span className="font-medium text-gray-900">Browser Push</span>
+                        </div>
+                        <div className="p-4 bg-white">
+                          <p className="font-semibold text-gray-900">{previewData.formatted.subject}</p>
+                          <p className="text-sm text-gray-600 mt-1">{previewData.formatted.sms}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Alert Details */}
+                    <div className="bg-gray-50 rounded-xl p-4">
+                      <h4 className="font-semibold text-gray-900 mb-3">Alert Details</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <p className="text-gray-600">Symbol</p>
+                          <p className="font-medium">{previewData.alert.symbol}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">Current Price</p>
+                          <p className="font-medium">{formatCurrency(previewData.alert.details.currentPrice)}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">P/L</p>
+                          <p className={`font-medium ${previewData.alert.details.priceChangePercent >= 0 ? "text-green-600" : "text-red-600"}`}>
+                            {formatPercent(previewData.alert.details.priceChangePercent)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">DTE</p>
+                          <p className="font-medium">
+                            {previewData.alert.details.daysToExpiration !== undefined
+                              ? `${previewData.alert.details.daysToExpiration} days`
+                              : "N/A"}
+                          </p>
+                        </div>
+                      </div>
+                      {previewData.alert.suggestedActions.length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-gray-600 mb-2">Suggested Actions:</p>
+                          <ul className="list-disc list-inside space-y-1 text-sm">
+                            {previewData.alert.suggestedActions.map((action, idx) => (
+                              <li key={idx} className="text-gray-800">{action}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {previewData.alert.riskWarning && (
+                        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded">
+                          <p className="text-xs font-medium text-amber-900 mb-1">Risk Warning:</p>
+                          <p className="text-sm text-amber-800">{previewData.alert.riskWarning}</p>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-12 text-gray-500">
+                    Click a watchlist item to preview its alert
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Alert Settings Tab */}
