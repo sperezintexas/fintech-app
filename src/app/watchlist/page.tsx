@@ -64,6 +64,7 @@ export default function WatchlistPage() {
 
   // Scheduler state
   type ScheduledJob = {
+    id: string;
     name: string;
     lastRunAt: string | null;
     nextRunAt: string | null;
@@ -1295,7 +1296,7 @@ export default function WatchlistPage() {
                         </tr>
                       ) : (
                         schedulerStatus.jobs.map((job) => (
-                          <tr key={job.name} className="border-b border-gray-100 hover:bg-gray-50">
+                          <tr key={job.id} className="border-b border-gray-100 hover:bg-gray-50">
                             <td className="py-3 px-3 font-medium">{job.name}</td>
                             <td className="py-3 px-3 text-gray-600">
                               {job.lastRunAt ? new Date(job.lastRunAt).toLocaleString() : "Never"}

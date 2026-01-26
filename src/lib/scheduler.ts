@@ -307,6 +307,7 @@ export async function runJobNow(
 
 export async function getJobStatus(): Promise<{
   jobs: Array<{
+    id: string;
     name: string;
     lastRunAt: Date | null;
     nextRunAt: Date | null;
@@ -318,8 +319,24 @@ export async function getJobStatus(): Promise<{
   const ag = await getAgenda();
   const jobs = await ag.jobs({});
 
+  // Deduplicate by name - keep the most recent/active one
+  const jobsByName = new Map<string, typeof jobs[0]>();
+
+  for (const job of jobs) {
+    const name = job.attrs.name;
+    const existing = jobsByName.get(name);
+
+    // Keep the one with nextRunAt (scheduled), or most recent lastRunAt
+    if (!existing ||
+        (job.attrs.nextRunAt && !existing.attrs.nextRunAt) ||
+        (job.attrs.lastRunAt && (!existing.attrs.lastRunAt || job.attrs.lastRunAt > existing.attrs.lastRunAt))) {
+      jobsByName.set(name, job);
+    }
+  }
+
   return {
-    jobs: jobs.map((job) => ({
+    jobs: Array.from(jobsByName.values()).map((job) => ({
+      id: job.attrs._id?.toString() || `${job.attrs.name}-${Date.now()}`,
       name: job.attrs.name,
       lastRunAt: job.attrs.lastRunAt || null,
       nextRunAt: job.attrs.nextRunAt || null,
