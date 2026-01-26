@@ -83,6 +83,29 @@ type TickerData = {
   expiration?: string;
 };
 
+type UserOutlook = "bullish" | "neutral" | "bearish";
+
+const OUTLOOK_OPTIONS: { value: UserOutlook; label: string; icon: string; description: string }[] = [
+  {
+    value: "bullish",
+    label: "Goes Up",
+    icon: "↑",
+    description: "I expect the price to increase",
+  },
+  {
+    value: "neutral",
+    label: "Stays Flat",
+    icon: "—",
+    description: "I expect sideways movement, little net change",
+  },
+  {
+    value: "bearish",
+    label: "Goes Down",
+    icon: "↓",
+    description: "I expect the price to decrease",
+  },
+];
+
 type CoveredCallAnalysis = {
   sentiment: "bullish" | "neutral" | "bearish";
   volatility: "low" | "medium" | "high";
@@ -109,15 +132,12 @@ type CashSecuredPutAnalysis = {
 };
 
 // Generate covered call analysis
-function analyzeCoveredCall(ticker: TickerData, riskLevel: RiskLevel): CoveredCallAnalysis {
+function analyzeCoveredCall(ticker: TickerData, riskLevel: RiskLevel, userOutlook: UserOutlook): CoveredCallAnalysis {
   const { price, changePercent, high, low } = ticker;
   const volatility = ((high - low) / low) * 100;
 
-  // Determine sentiment
-  let sentiment: "bullish" | "neutral" | "bearish";
-  if (changePercent > 1.5) sentiment = "bullish";
-  else if (changePercent < -1.5) sentiment = "bearish";
-  else sentiment = "neutral";
+  // Use user outlook as primary sentiment
+  const sentiment = userOutlook;
 
   // Determine volatility level
   let volLevel: "low" | "medium" | "high";
@@ -125,7 +145,7 @@ function analyzeCoveredCall(ticker: TickerData, riskLevel: RiskLevel): CoveredCa
   else if (volatility < 4) volLevel = "medium";
   else volLevel = "high";
 
-  // Calculate suggested strikes based on risk level
+  // Calculate suggested strikes based on risk level AND user outlook
   let strikeMultiplier: number;
   let premiumEstimate: number;
 
@@ -140,6 +160,16 @@ function analyzeCoveredCall(ticker: TickerData, riskLevel: RiskLevel): CoveredCa
     premiumEstimate = 1.2;
   }
 
+  // Adjust based on user outlook
+  if (userOutlook === "bullish") {
+    // If bullish, suggest higher strike to capture more upside
+    strikeMultiplier += 0.02;
+  } else if (userOutlook === "bearish") {
+    // If bearish, suggest lower strike for more premium protection
+    strikeMultiplier -= 0.02;
+    premiumEstimate *= 1.1;
+  }
+
   // Adjust premium for volatility
   if (volLevel === "high") premiumEstimate *= 1.5;
   else if (volLevel === "low") premiumEstimate *= 0.7;
@@ -149,17 +179,24 @@ function analyzeCoveredCall(ticker: TickerData, riskLevel: RiskLevel): CoveredCa
   const maxProfit = (suggestedStrike - price) + estimatedPremium;
   const breakeven = price - estimatedPremium;
 
-  // Generate recommendation
+  // Generate recommendation based on user outlook
   let recommendation: string;
   if (sentiment === "bearish") {
-    recommendation = "Consider waiting for stabilization. Selling calls now may result in assignment at lower prices. The stock shows bearish momentum.";
-  } else if (sentiment === "bullish" && volLevel === "high") {
-    recommendation = "Good opportunity for covered calls. High volatility means better premiums. Consider slightly OTM strikes to capture some upside.";
-  } else if (sentiment === "neutral") {
-    recommendation = "Ideal conditions for covered calls. Neutral market with moderate volatility provides good risk/reward for income generation.";
+    recommendation = "CAUTION: With a bearish outlook, covered calls can provide downside protection via premium. Consider ATM/ITM strikes for maximum premium. Be prepared if stock rallies unexpectedly.";
+  } else if (sentiment === "bullish") {
+    if (volLevel === "high") {
+      recommendation = "FAVORABLE: Bullish outlook with high volatility. Sell OTM calls to capture upside while collecting elevated premiums. Risk: shares called away if stock exceeds strike.";
+    } else {
+      recommendation = "GOOD: Bullish outlook suits covered calls. Sell OTM strikes to participate in upside while generating income. Be aware of early assignment if stock rallies sharply.";
+    }
   } else {
-    recommendation = "Decent setup for covered calls. Bullish sentiment may lead to early assignment, but premium income compensates.";
+    recommendation = "IDEAL: Neutral outlook is perfect for covered calls. Stock likely stays in range, maximizing premium income. Theta decay works in your favor.";
   }
+
+  // Add market context
+  const marketContext = changePercent > 1.5 ? " Market currently showing bullish momentum." :
+                        changePercent < -1.5 ? " Market currently showing bearish momentum." : "";
+  recommendation += marketContext;
 
   return {
     sentiment,
@@ -178,15 +215,12 @@ function analyzeCoveredCall(ticker: TickerData, riskLevel: RiskLevel): CoveredCa
 }
 
 // Generate cash-secured put analysis
-function analyzeCashSecuredPut(ticker: TickerData, riskLevel: RiskLevel): CashSecuredPutAnalysis {
+function analyzeCashSecuredPut(ticker: TickerData, riskLevel: RiskLevel, userOutlook: UserOutlook): CashSecuredPutAnalysis {
   const { price, changePercent, high, low } = ticker;
   const volatility = ((high - low) / low) * 100;
 
-  // Determine sentiment
-  let sentiment: "bullish" | "neutral" | "bearish";
-  if (changePercent > 1.5) sentiment = "bullish";
-  else if (changePercent < -1.5) sentiment = "bearish";
-  else sentiment = "neutral";
+  // Use user outlook as primary sentiment
+  const sentiment = userOutlook;
 
   // Determine volatility level
   let volLevel: "low" | "medium" | "high";
@@ -194,7 +228,7 @@ function analyzeCashSecuredPut(ticker: TickerData, riskLevel: RiskLevel): CashSe
   else if (volatility < 4) volLevel = "medium";
   else volLevel = "high";
 
-  // Calculate suggested strikes based on risk level (OTM puts = below current price)
+  // Calculate suggested strikes based on risk level AND user outlook (OTM puts = below current price)
   let strikeMultiplier: number;
   let premiumEstimate: number;
 
@@ -209,6 +243,16 @@ function analyzeCashSecuredPut(ticker: TickerData, riskLevel: RiskLevel): CashSe
     premiumEstimate = 1.0;
   }
 
+  // Adjust based on user outlook
+  if (userOutlook === "bullish") {
+    // If bullish, can be more aggressive with strike (closer to ATM)
+    strikeMultiplier += 0.02;
+    premiumEstimate *= 1.1;
+  } else if (userOutlook === "bearish") {
+    // If bearish, go deeper OTM to reduce assignment risk
+    strikeMultiplier -= 0.03;
+  }
+
   // Adjust premium for volatility
   if (volLevel === "high") premiumEstimate *= 1.5;
   else if (volLevel === "low") premiumEstimate *= 0.7;
@@ -221,17 +265,24 @@ function analyzeCashSecuredPut(ticker: TickerData, riskLevel: RiskLevel): CashSe
   const effectiveBuyPrice = suggestedStrike - estimatedPremium;
   const maxLoss = (breakeven) * 100; // If stock goes to $0
 
-  // Generate recommendation
+  // Generate recommendation based on user outlook
   let recommendation: string;
   if (sentiment === "bearish") {
-    recommendation = "CAUTION: Bearish sentiment increases assignment risk. If assigned, you'll own shares in a downtrend. Consider waiting or using a lower strike.";
-  } else if (sentiment === "bullish" && volLevel === "high") {
-    recommendation = "FAVORABLE: High volatility means better premiums for CSPs. Bullish sentiment reduces assignment likelihood. Good setup for income.";
-  } else if (sentiment === "neutral") {
-    recommendation = "IDEAL: Neutral market is perfect for CSPs. Stock likely stays above strike, keeping premium. Good risk/reward.";
+    recommendation = "CAUTION: With a bearish outlook, CSPs carry higher assignment risk. If you proceed, use deep OTM strikes. Be prepared to own shares at a loss if assigned.";
+  } else if (sentiment === "bullish") {
+    if (volLevel === "high") {
+      recommendation = "FAVORABLE: Bullish outlook with high volatility is ideal for CSPs. Elevated premiums + low assignment probability = great income opportunity.";
+    } else {
+      recommendation = "GOOD: Bullish outlook suits CSPs well. Stock likely stays above strike. If assigned, you acquire shares you want at your effective buy price.";
+    }
   } else {
-    recommendation = "GOOD: Bullish sentiment means lower assignment chance. You'll likely keep the premium. If assigned, you buy stock you're bullish on.";
+    recommendation = "SOLID: Neutral outlook works for CSPs. Stock range-bound above strike = keep premium. Lower assignment risk than bearish scenario.";
   }
+
+  // Add market context
+  const marketContext = changePercent > 1.5 ? " Market currently showing bullish momentum." :
+                        changePercent < -1.5 ? " Market currently showing bearish momentum." : "";
+  recommendation += marketContext;
 
   return {
     sentiment,
@@ -390,6 +441,7 @@ export default function FindProfitsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [tickerData, setTickerData] = useState<TickerData | null>(null);
+  const [userOutlook, setUserOutlook] = useState<UserOutlook | null>(null);
   const [analysis, setAnalysis] = useState<CoveredCallAnalysis | null>(null);
   const [cspAnalysis, setCspAnalysis] = useState<CashSecuredPutAnalysis | null>(null);
   const [searchHistory, setSearchHistory] = useState<TickerData[]>([]);
@@ -474,6 +526,7 @@ export default function FindProfitsPage() {
     setLoading(true);
     setError("");
     setTickerData(null);
+    setUserOutlook(null);
     setAnalysis(null);
     setCspAnalysis(null);
     setSmaData(null);
@@ -500,19 +553,7 @@ export default function FindProfitsPage() {
 
       setTickerData(data);
 
-      // Generate analysis based on selected strategy
-      if (selectedAccount) {
-        if (selectedStrategy === "covered-calls") {
-          const ccAnalysis = analyzeCoveredCall(data, selectedAccount.riskLevel);
-          setAnalysis(ccAnalysis);
-        } else if (selectedStrategy === "cash-secured-puts") {
-          const cspResult = analyzeCashSecuredPut(data, selectedAccount.riskLevel);
-          setCspAnalysis(cspResult);
-          // For CSP, default strike is below current price
-          const suggestedStrike = Math.round(data.price * 0.95);
-          setSelectedStrike(suggestedStrike);
-        }
-      }
+      // Don't generate analysis yet - wait for user to select outlook
 
       // Fetch SMA data (check rate limit again)
       setSmaLoading(true);
@@ -548,6 +589,28 @@ export default function FindProfitsPage() {
     } finally {
       setLoading(false);
       updateRateLimitDisplay();
+    }
+  };
+
+  // Handle user outlook selection and generate analysis
+  const handleOutlookSelect = (outlook: UserOutlook) => {
+    setUserOutlook(outlook);
+
+    if (!tickerData || !selectedAccount) return;
+
+    // Generate analysis based on selected strategy and user outlook
+    if (selectedStrategy === "covered-calls") {
+      const ccAnalysis = analyzeCoveredCall(tickerData, selectedAccount.riskLevel, outlook);
+      setAnalysis(ccAnalysis);
+      // Default strike based on outlook
+      const strikeMultiplier = outlook === "bullish" ? 1.05 : outlook === "bearish" ? 1.00 : 1.03;
+      setSelectedStrike(Math.round(tickerData.price * strikeMultiplier));
+    } else if (selectedStrategy === "cash-secured-puts") {
+      const cspResult = analyzeCashSecuredPut(tickerData, selectedAccount.riskLevel, outlook);
+      setCspAnalysis(cspResult);
+      // Default strike based on outlook - CSP strikes below current price
+      const strikeMultiplier = outlook === "bullish" ? 0.97 : outlook === "bearish" ? 0.90 : 0.95;
+      setSelectedStrike(Math.round(tickerData.price * strikeMultiplier));
     }
   };
 
@@ -866,7 +929,7 @@ export default function FindProfitsPage() {
                   </div>
 
                   {/* Analysis Results */}
-                  {tickerData && (analysis || cspAnalysis) && (
+                  {tickerData && (
                     <>
                       {/* Stock Overview */}
                       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
@@ -909,8 +972,71 @@ export default function FindProfitsPage() {
                         </div>
                       </div>
 
+                      {/* User Outlook Selector */}
+                      <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-sm border border-purple-200 p-6">
+                        <div className="flex items-center gap-3 mb-4">
+                          <span className="text-2xl">🔮</span>
+                          <div>
+                            <h3 className="text-lg font-semibold text-purple-900">Your Outlook on {tickerData.symbol}</h3>
+                            <p className="text-sm text-purple-700">What do you expect the stock price to do?</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-4">
+                          {OUTLOOK_OPTIONS.map((option) => (
+                            <button
+                              key={option.value}
+                              onClick={() => handleOutlookSelect(option.value)}
+                              className={`p-4 rounded-xl border-2 text-center transition-all ${
+                                userOutlook === option.value
+                                  ? option.value === "bullish"
+                                    ? "border-green-500 bg-green-50"
+                                    : option.value === "bearish"
+                                    ? "border-red-500 bg-red-50"
+                                    : "border-gray-500 bg-gray-50"
+                                  : "border-gray-200 hover:border-purple-300 hover:bg-white"
+                              }`}
+                            >
+                              <div className={`text-4xl mb-2 ${
+                                option.value === "bullish" ? "text-green-600" :
+                                option.value === "bearish" ? "text-red-600" : "text-gray-600"
+                              }`}>
+                                {option.icon}
+                              </div>
+                              <p className={`font-semibold ${
+                                userOutlook === option.value
+                                  ? option.value === "bullish"
+                                    ? "text-green-800"
+                                    : option.value === "bearish"
+                                    ? "text-red-800"
+                                    : "text-gray-800"
+                                  : "text-gray-800"
+                              }`}>
+                                {option.label}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">{option.description}</p>
+                            </button>
+                          ))}
+                        </div>
+
+                        {userOutlook && (
+                          <div className={`mt-4 p-3 rounded-lg ${
+                            userOutlook === "bullish" ? "bg-green-100 text-green-800" :
+                            userOutlook === "bearish" ? "bg-red-100 text-red-800" :
+                            "bg-gray-100 text-gray-800"
+                          }`}>
+                            <p className="text-sm">
+                              <strong>Your outlook:</strong> You expect {tickerData.symbol} to{" "}
+                              {userOutlook === "bullish" ? "go up ↑" :
+                               userOutlook === "bearish" ? "go down ↓" : "stay flat —"}
+                              . Analysis adjusted accordingly.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Covered Call Analysis */}
-                      {analysis && selectedStrategy === "covered-calls" && (
+                      {analysis && selectedStrategy === "covered-calls" && userOutlook && (
                         <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl shadow-sm border border-green-200 p-6">
                           <div className="flex items-center gap-3 mb-4">
                             <span className="text-2xl">📈</span>
@@ -920,13 +1046,13 @@ export default function FindProfitsPage() {
                           {/* Sentiment & Volatility */}
                           <div className="grid grid-cols-2 gap-4 mb-6">
                             <div className="bg-white/60 rounded-lg p-4">
-                              <p className="text-sm text-gray-600 mb-1">Market Sentiment</p>
+                              <p className="text-sm text-gray-600 mb-1">Your Outlook</p>
                               <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
                                 analysis.sentiment === "bullish" ? "bg-green-100 text-green-700" :
                                 analysis.sentiment === "bearish" ? "bg-red-100 text-red-700" :
                                 "bg-gray-100 text-gray-700"
                               }`}>
-                                {analysis.sentiment === "bullish" ? "🟢" : analysis.sentiment === "bearish" ? "🔴" : "⚪"}
+                                {analysis.sentiment === "bullish" ? "↑" : analysis.sentiment === "bearish" ? "↓" : "—"}
                                 {analysis.sentiment.charAt(0).toUpperCase() + analysis.sentiment.slice(1)}
                               </div>
                             </div>
@@ -978,7 +1104,7 @@ export default function FindProfitsPage() {
                       )}
 
                       {/* Cash-Secured Put Analysis */}
-                      {cspAnalysis && selectedStrategy === "cash-secured-puts" && (
+                      {cspAnalysis && selectedStrategy === "cash-secured-puts" && userOutlook && (
                         <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl shadow-sm border border-amber-200 p-6">
                           <div className="flex items-center gap-3 mb-4">
                             <span className="text-2xl">💵</span>
@@ -988,13 +1114,13 @@ export default function FindProfitsPage() {
                           {/* Sentiment & Volatility */}
                           <div className="grid grid-cols-2 gap-4 mb-6">
                             <div className="bg-white/60 rounded-lg p-4">
-                              <p className="text-sm text-gray-600 mb-1">Market Sentiment</p>
+                              <p className="text-sm text-gray-600 mb-1">Your Outlook</p>
                               <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
                                 cspAnalysis.sentiment === "bullish" ? "bg-green-100 text-green-700" :
                                 cspAnalysis.sentiment === "bearish" ? "bg-red-100 text-red-700" :
                                 "bg-gray-100 text-gray-700"
                               }`}>
-                                {cspAnalysis.sentiment === "bullish" ? "🟢" : cspAnalysis.sentiment === "bearish" ? "🔴" : "⚪"}
+                                {cspAnalysis.sentiment === "bullish" ? "↑" : cspAnalysis.sentiment === "bearish" ? "↓" : "—"}
                                 {cspAnalysis.sentiment.charAt(0).toUpperCase() + cspAnalysis.sentiment.slice(1)}
                               </div>
                             </div>
@@ -1060,7 +1186,8 @@ export default function FindProfitsPage() {
                         </div>
                       )}
 
-                      {/* Recommendations Section */}
+                      {/* Recommendations Section - Only show after outlook selected */}
+                      {userOutlook && (
                       <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl shadow-sm border border-indigo-200 p-6">
                         <div className="flex items-center gap-3 mb-4">
                           <span className="text-2xl">🎯</span>
@@ -1797,6 +1924,7 @@ export default function FindProfitsPage() {
                           </div>
                         )}
                       </div>
+                      )}
                     </>
                   )}
                 </div>
