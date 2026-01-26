@@ -470,6 +470,11 @@ export default function FindProfitsPage() {
   const [monitorLoading, setMonitorLoading] = useState(false);
   const [monitorError, setMonitorError] = useState("");
 
+  // Watchlist state
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
+  const [watchlistSuccess, setWatchlistSuccess] = useState<string | null>(null);
+  const [watchlistError, setWatchlistError] = useState("");
+
   const updateRateLimitDisplay = useCallback(() => {
     setRateLimitInfo(getRateLimitStatus());
   }, []);
@@ -666,6 +671,55 @@ export default function FindProfitsPage() {
     } finally {
       setMonitorLoading(false);
       updateRateLimitDisplay();
+    }
+  };
+
+  // Add option to watchlist
+  const handleAddToWatchlist = async () => {
+    if (!selectedOption || !tickerData || !selectedAccountId) return;
+
+    setWatchlistLoading(true);
+    setWatchlistError("");
+    setWatchlistSuccess(null);
+
+    try {
+      const strategy = selectedStrategy === "cash-secured-puts" ? "cash-secured-put" : "covered-call";
+      const itemType = selectedOption.contract_type === "put" ? "csp" : "covered-call";
+
+      const res = await fetch("/api/watchlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: selectedAccountId,
+          symbol: selectedOption.yahoo_symbol,
+          underlyingSymbol: tickerData.symbol,
+          type: itemType,
+          strategy: strategy,
+          quantity: numContracts,
+          entryPrice: tickerData.price,
+          strikePrice: selectedOption.strike_price,
+          expirationDate: selectedOption.expiration_date,
+          entryPremium: selectedOption.premium,
+          notes: `Added from Find Profits - ${userOutlook} outlook on ${tickerData.symbol}`,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setWatchlistError(data.error || "Failed to add to watchlist");
+        return;
+      }
+
+      setWatchlistSuccess(`Added ${selectedOption.yahoo_symbol} to watchlist!`);
+
+      // Clear success message after 5 seconds
+      setTimeout(() => setWatchlistSuccess(null), 5000);
+    } catch (err) {
+      setWatchlistError("Failed to add to watchlist");
+      console.error(err);
+    } finally {
+      setWatchlistLoading(false);
     }
   };
 
@@ -1735,6 +1789,51 @@ export default function FindProfitsPage() {
                                         </p>
                                       </div>
                                     )}
+
+                                    {/* Add to Watchlist Button */}
+                                    <div className="mt-4 pt-4 border-t border-green-200">
+                                      <button
+                                        onClick={handleAddToWatchlist}
+                                        disabled={watchlistLoading}
+                                        className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                      >
+                                        {watchlistLoading ? (
+                                          <>
+                                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            Adding to Watchlist...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                            </svg>
+                                            Add {selectedOption.contract_type === "put" ? "CSP" : "Covered Call"} to Watchlist
+                                          </>
+                                        )}
+                                      </button>
+
+                                      {watchlistSuccess && (
+                                        <div className="mt-3 p-3 bg-green-100 text-green-800 rounded-lg flex items-center gap-2">
+                                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                          </svg>
+                                          {watchlistSuccess}
+                                        </div>
+                                      )}
+
+                                      {watchlistError && (
+                                        <div className="mt-3 p-3 bg-red-100 text-red-800 rounded-lg flex items-center gap-2">
+                                          <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                          </svg>
+                                          {watchlistError}
+                                        </div>
+                                      )}
+
+                                      <p className="text-xs text-gray-500 mt-2 text-center">
+                                        Track this position and get daily Hold/Close recommendations
+                                      </p>
+                                    </div>
 
                                     {/* Monitor Position Toggle */}
                                     {selectedOption.contract_type === "call" && (
