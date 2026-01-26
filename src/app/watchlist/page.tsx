@@ -247,22 +247,27 @@ export default function WatchlistPage() {
     }
   }, [fetchWatchlist, fetchAlerts, fetchScheduledAlerts, activeTab]);
 
-  // Run analysis
+  // Run analysis - Generate SmartXAI report
   const handleRunAnalysis = async () => {
     setAnalyzing(true);
     try {
-      const res = await fetch("/api/watchlist/analyze", {
+      const res = await fetch("/api/reports/smartxai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accountId: selectedAccountId }),
       });
 
       if (res.ok) {
-        await fetchWatchlist();
-        await fetchAlerts();
+        const data = await res.json();
+        // Navigate to the report page
+        window.location.href = `/reports/${data.report._id}`;
+      } else {
+        const error = await res.json();
+        alert(error.error || "Failed to generate report");
       }
     } catch (err) {
       console.error("Failed to run analysis:", err);
+      alert("Failed to generate SmartXAI report");
     } finally {
       setAnalyzing(false);
     }

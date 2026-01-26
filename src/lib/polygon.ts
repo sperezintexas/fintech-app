@@ -143,20 +143,20 @@ export async function getMarketConditions(): Promise<MarketConditions> {
 
 // Cache for grouped daily data (refreshes every 5 minutes)
 let groupedDailyCache: {
-  data: Map<string, { close: number; open: number }>;
+  data: Map<string, { close: number; open: number; high: number; low: number; volume: number }>;
   timestamp: number;
 } | null = null;
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Get previous day's grouped daily data (ONE API call for all tickers)
-async function getGroupedDailyData(): Promise<Map<string, { close: number; open: number }>> {
+export async function getGroupedDailyData(): Promise<Map<string, { close: number; open: number; high: number; low: number; volume: number }>> {
   // Return cached data if still valid
   if (groupedDailyCache && Date.now() - groupedDailyCache.timestamp < CACHE_TTL) {
     return groupedDailyCache.data;
   }
 
-  const dataMap = new Map<string, { close: number; open: number }>();
+  const dataMap = new Map<string, { close: number; open: number; high: number; low: number; volume: number }>();
 
   try {
     // Get previous trading day's date
@@ -188,6 +188,9 @@ async function getGroupedDailyData(): Promise<Map<string, { close: number; open:
           dataMap.set(result.T, {
             close: result.c,
             open: result.o,
+            high: result.h || result.c,
+            low: result.l || result.c,
+            volume: result.v || 0,
           });
         }
       }

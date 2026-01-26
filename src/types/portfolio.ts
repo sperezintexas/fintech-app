@@ -287,3 +287,93 @@ export const ALERT_TEMPLATES: AlertTemplate[] = [
     slackTemplate: ":warning: *{riskLevel} RISK* | `{symbol}`\n> {riskWarning}\n*Action:* {action}\n*Reason:* {reason}",
   },
 ];
+
+// SmartXAI Report Types
+export type MarketSentiment = "bullish" | "neutral" | "bearish";
+
+export type StockSnapshot = {
+  symbol: string;
+  price: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  change: number;
+  changePercent: number;
+  previousClose: number;
+};
+
+export type StockRationale = {
+  technical: string;
+  fundamental: string;
+  sentiment: MarketSentiment;
+  keyMetrics: {
+    rsi?: number;
+    volatility?: number;
+    volumeVsAverage?: number;
+    priceVsMA50?: number;
+    priceVsMA200?: number;
+  };
+  marketConditions: string;
+};
+
+export type PositionAnalysis = {
+  watchlistItemId: string;
+  symbol: string;
+  underlyingSymbol: string;
+  strategy: WatchlistStrategy;
+  type: WatchlistItemType;
+  quantity: number;
+  entryPrice: number;
+  currentPrice: number;
+  profitLoss: number;
+  profitLossPercent: number;
+  // Market snapshot
+  snapshot: StockSnapshot;
+  // AI-generated rationale
+  rationale: StockRationale;
+  // Recommendation from analysis
+  recommendation: AlertRecommendation;
+  recommendationReason: string;
+  // Position-specific insights
+  positionInsights: {
+    entryVsCurrent: string;
+    riskAssessment: string;
+    opportunity: string;
+    timeHorizon: string;
+  };
+};
+
+export type SmartXAIReport = {
+  _id: string;
+  accountId: string;
+  reportDate: string; // ISO date string (YYYY-MM-DD)
+  reportDateTime: string; // Full ISO datetime
+  title: string; // "SmartXAI Says - January 26, 2026"
+  summary: {
+    totalPositions: number;
+    totalValue: number;
+    totalProfitLoss: number;
+    totalProfitLossPercent: number;
+    bullishCount: number;
+    neutralCount: number;
+    bearishCount: number;
+    recommendations: {
+      HOLD: number;
+      CLOSE: number;
+      BTC: number;
+      STC: number;
+      ROLL: number;
+      WATCH: number;
+    };
+  };
+  positions: PositionAnalysis[];
+  marketOverview: {
+    marketStatus: "open" | "closed" | "pre-market" | "after-hours";
+    indices: MarketIndex[];
+    overallSentiment: MarketSentiment;
+  };
+  createdAt: string;
+  expiresAt: string; // 30 days from creation
+};
