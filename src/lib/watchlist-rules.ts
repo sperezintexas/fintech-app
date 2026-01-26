@@ -219,7 +219,7 @@ export function analyzeWatchlistItem(
  */
 function analyzeCoveredCall(
   item: WatchlistItem,
-  _riskLevel: RiskLevel,
+  riskLevel: RiskLevel,
   marketData: MarketData,
   technicals: TechnicalIndicators | undefined,
   details: WatchlistAlert["details"],
