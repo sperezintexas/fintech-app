@@ -8,7 +8,12 @@ import type {
   WatchlistAlert,
   WatchlistStrategy,
   WatchlistItemType,
+  AlertDeliveryChannel,
+  AlertTemplateId,
+  AlertFrequency,
+  AlertSeverity,
 } from "@/types/portfolio";
+import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS } from "@/types/portfolio";
 
 const STRATEGIES: { value: WatchlistStrategy; label: string }[] = [
   { value: "covered-call", label: "Covered Call" },
@@ -50,6 +55,30 @@ export default function WatchlistPage() {
     notes: "",
   });
   const [formError, setFormError] = useState("");
+
+  // Alert preferences state
+  const [activeTab, setActiveTab] = useState<"watchlist" | "alerts" | "settings">("watchlist");
+  const [prefsLoading, setPrefsLoading] = useState(false);
+  const [prefsSaving, setPrefsSaving] = useState(false);
+  const [prefsMessage, setPrefsMessage] = useState("");
+
+  // Alert preferences form
+  const [prefsForm, setPrefsForm] = useState({
+    templateId: "concise" as AlertTemplateId,
+    frequency: "daily" as AlertFrequency,
+    severityFilter: ["warning", "urgent", "critical"] as AlertSeverity[],
+    profitThreshold: 50,
+    lossThreshold: 20,
+    dteWarning: 7,
+    quietHoursStart: "",
+    quietHoursEnd: "",
+    channels: {
+      email: { enabled: false, target: "" },
+      sms: { enabled: false, target: "" },
+      slack: { enabled: false, target: "" },
+      push: { enabled: false, target: "" },
+    },
+  });
 
   // Fetch accounts
   useEffect(() => {
@@ -198,6 +227,109 @@ export default function WatchlistPage() {
     }
   };
 
+  // Fetch alert preferences
+  const fetchAlertPrefs = useCallback(async () => {
+    if (!selectedAccountId) return;
+
+    setPrefsLoading(true);
+    try {
+      const res = await fetch(`/api/alert-preferences?accountId=${selectedAccountId}`);
+      if (res.ok) {
+        const data = await res.json();
+
+        // Update form with fetched data
+        setPrefsForm({
+          templateId: data.templateId || "concise",
+          frequency: data.frequency || "daily",
+          severityFilter: data.severityFilter || ["warning", "urgent", "critical"],
+          profitThreshold: data.thresholds?.profitThreshold || 50,
+          lossThreshold: data.thresholds?.lossThreshold || 20,
+          dteWarning: data.thresholds?.dteWarning || 7,
+          quietHoursStart: data.quietHoursStart || "",
+          quietHoursEnd: data.quietHoursEnd || "",
+          channels: {
+            email: data.channels?.find((c: { channel: string }) => c.channel === "email") || { enabled: false, target: "" },
+            sms: data.channels?.find((c: { channel: string }) => c.channel === "sms") || { enabled: false, target: "" },
+            slack: data.channels?.find((c: { channel: string }) => c.channel === "slack") || { enabled: false, target: "" },
+            push: data.channels?.find((c: { channel: string }) => c.channel === "push") || { enabled: false, target: "" },
+          },
+        });
+      }
+    } catch (err) {
+      console.error("Failed to fetch alert preferences:", err);
+    } finally {
+      setPrefsLoading(false);
+    }
+  }, [selectedAccountId]);
+
+  useEffect(() => {
+    if (activeTab === "settings") {
+      fetchAlertPrefs();
+    }
+  }, [activeTab, fetchAlertPrefs]);
+
+  // Save alert preferences
+  const handleSavePrefs = async () => {
+    setPrefsSaving(true);
+    setPrefsMessage("");
+
+    try {
+      const channels = Object.entries(prefsForm.channels)
+        .filter(([, config]) => config.enabled || config.target)
+        .map(([channel, config]) => ({
+          channel: channel as AlertDeliveryChannel,
+          enabled: config.enabled,
+          target: config.target,
+          estimatedCost: ALERT_CHANNEL_COSTS[channel as AlertDeliveryChannel]?.perMessage || 0,
+        }));
+
+      const res = await fetch("/api/alert-preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: selectedAccountId,
+          channels,
+          templateId: prefsForm.templateId,
+          frequency: prefsForm.frequency,
+          severityFilter: prefsForm.severityFilter,
+          quietHoursStart: prefsForm.quietHoursStart || undefined,
+          quietHoursEnd: prefsForm.quietHoursEnd || undefined,
+          thresholds: {
+            profitThreshold: prefsForm.profitThreshold,
+            lossThreshold: prefsForm.lossThreshold,
+            dteWarning: prefsForm.dteWarning,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        setPrefsMessage("Alert preferences saved!");
+        setTimeout(() => setPrefsMessage(""), 3000);
+      } else {
+        const data = await res.json();
+        setPrefsMessage(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      setPrefsMessage("Failed to save preferences");
+      console.error(err);
+    } finally {
+      setPrefsSaving(false);
+    }
+  };
+
+  // Calculate estimated monthly cost
+  const estimatedMonthlyCost = () => {
+    const enabledChannels = Object.entries(prefsForm.channels).filter(([, c]) => c.enabled);
+    const alertsPerMonth = prefsForm.frequency === "daily" ? 30 : prefsForm.frequency === "weekly" ? 4 : 60;
+
+    let totalCents = 0;
+    enabledChannels.forEach(([channel]) => {
+      totalCents += (ALERT_CHANNEL_COSTS[channel as AlertDeliveryChannel]?.perMessage || 0) * alertsPerMonth;
+    });
+
+    return totalCents / 100;
+  };
+
   const formatCurrency = (value: number | undefined) => {
     if (value === undefined) return "—";
     return new Intl.NumberFormat("en-US", {
@@ -290,6 +422,7 @@ export default function WatchlistPage() {
                 </option>
               ))}
             </select>
+            {activeTab === "watchlist" && (
             <button
               onClick={handleRunAnalysis}
               disabled={analyzing}
@@ -309,11 +442,63 @@ export default function WatchlistPage() {
                 </>
               )}
             </button>
+            )}
           </div>
         </div>
 
-        {/* Alerts Section */}
-        {alerts.length > 0 && (
+        {/* Tabs */}
+        <div className="border-b border-gray-200 mb-6">
+          <nav className="flex gap-4">
+            <button
+              onClick={() => setActiveTab("watchlist")}
+              className={`py-3 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "watchlist"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Watchlist
+            </button>
+            <button
+              onClick={() => setActiveTab("alerts")}
+              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+                activeTab === "alerts"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Alerts
+              {alerts.length > 0 && (
+                <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full">
+                  {alerts.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("settings")}
+              className={`py-3 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "settings"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Alert Settings
+            </button>
+          </nav>
+        </div>
+
+        {/* Alerts Section (shown on both watchlist and alerts tabs) */}
+        {activeTab === "alerts" && alerts.length === 0 && (
+          <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
+            <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Active Alerts</h3>
+            <p className="text-gray-500">Run analysis to generate alerts for your watchlist positions</p>
+          </div>
+        )}
+
+        {(activeTab === "watchlist" || activeTab === "alerts") && alerts.length > 0 && (
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
@@ -398,6 +583,7 @@ export default function WatchlistPage() {
         )}
 
         {/* Watchlist Section */}
+        {activeTab === "watchlist" && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold text-gray-900">
@@ -657,6 +843,354 @@ export default function WatchlistPage() {
             </div>
           )}
         </div>
+        )}
+
+        {/* Alert Settings Tab */}
+        {activeTab === "settings" && (
+          <div className="space-y-6">
+            {prefsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <span className="ml-3 text-gray-600">Loading preferences...</span>
+              </div>
+            ) : (
+            <>
+            {/* Alert Delivery Channels */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Alert Delivery Channels</h3>
+              <p className="text-sm text-gray-600 mb-6">Choose how you want to receive alerts for your watchlist positions.</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Email */}
+                <div className={`p-4 rounded-xl border-2 ${prefsForm.channels.email.enabled ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">📧</span>
+                      <div>
+                        <p className="font-medium">Email</p>
+                        <p className="text-xs text-gray-500">{ALERT_CHANNEL_COSTS.email.description}</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={prefsForm.channels.email.enabled}
+                        onChange={(e) => setPrefsForm({
+                          ...prefsForm,
+                          channels: { ...prefsForm.channels, email: { ...prefsForm.channels.email, enabled: e.target.checked } }
+                        })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  {prefsForm.channels.email.enabled && (
+                    <input
+                      type="email"
+                      placeholder="your@email.com"
+                      value={prefsForm.channels.email.target}
+                      onChange={(e) => setPrefsForm({
+                        ...prefsForm,
+                        channels: { ...prefsForm.channels, email: { ...prefsForm.channels.email, target: e.target.value } }
+                      })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    />
+                  )}
+                </div>
+
+                {/* SMS */}
+                <div className={`p-4 rounded-xl border-2 ${prefsForm.channels.sms.enabled ? "border-green-500 bg-green-50" : "border-gray-200"}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">📱</span>
+                      <div>
+                        <p className="font-medium">SMS / Text</p>
+                        <p className="text-xs text-gray-500">{ALERT_CHANNEL_COSTS.sms.description}</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={prefsForm.channels.sms.enabled}
+                        onChange={(e) => setPrefsForm({
+                          ...prefsForm,
+                          channels: { ...prefsForm.channels, sms: { ...prefsForm.channels.sms, enabled: e.target.checked } }
+                        })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                    </label>
+                  </div>
+                  {prefsForm.channels.sms.enabled && (
+                    <input
+                      type="tel"
+                      placeholder="+1 (555) 123-4567"
+                      value={prefsForm.channels.sms.target}
+                      onChange={(e) => setPrefsForm({
+                        ...prefsForm,
+                        channels: { ...prefsForm.channels, sms: { ...prefsForm.channels.sms, target: e.target.value } }
+                      })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    />
+                  )}
+                </div>
+
+                {/* Slack */}
+                <div className={`p-4 rounded-xl border-2 ${prefsForm.channels.slack.enabled ? "border-purple-500 bg-purple-50" : "border-gray-200"}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">💬</span>
+                      <div>
+                        <p className="font-medium">Slack</p>
+                        <p className="text-xs text-gray-500">{ALERT_CHANNEL_COSTS.slack.description}</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={prefsForm.channels.slack.enabled}
+                        onChange={(e) => setPrefsForm({
+                          ...prefsForm,
+                          channels: { ...prefsForm.channels, slack: { ...prefsForm.channels.slack, enabled: e.target.checked } }
+                        })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                  </div>
+                  {prefsForm.channels.slack.enabled && (
+                    <input
+                      type="url"
+                      placeholder="https://hooks.slack.com/services/..."
+                      value={prefsForm.channels.slack.target}
+                      onChange={(e) => setPrefsForm({
+                        ...prefsForm,
+                        channels: { ...prefsForm.channels, slack: { ...prefsForm.channels.slack, target: e.target.value } }
+                      })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    />
+                  )}
+                </div>
+
+                {/* Push */}
+                <div className={`p-4 rounded-xl border-2 ${prefsForm.channels.push.enabled ? "border-orange-500 bg-orange-50" : "border-gray-200"}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🔔</span>
+                      <div>
+                        <p className="font-medium">Browser Push</p>
+                        <p className="text-xs text-gray-500">{ALERT_CHANNEL_COSTS.push.description}</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={prefsForm.channels.push.enabled}
+                        onChange={(e) => setPrefsForm({
+                          ...prefsForm,
+                          channels: { ...prefsForm.channels, push: { ...prefsForm.channels.push, enabled: e.target.checked } }
+                        })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-orange-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                    </label>
+                  </div>
+                  {prefsForm.channels.push.enabled && (
+                    <p className="text-xs text-gray-500">Push notifications will be sent to this browser.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Estimated Cost */}
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600">
+                  <strong>Estimated monthly cost:</strong>{" "}
+                  <span className="font-bold text-green-600">${estimatedMonthlyCost().toFixed(2)}</span>
+                  <span className="text-gray-500 ml-2">(based on {prefsForm.frequency === "daily" ? "30" : prefsForm.frequency === "weekly" ? "4" : "60"} alerts/month)</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Alert Template */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Message Template</h3>
+              <p className="text-sm text-gray-600 mb-6">Choose how detailed your alert messages should be.</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {ALERT_TEMPLATES.map((template) => (
+                  <button
+                    key={template.id}
+                    onClick={() => setPrefsForm({ ...prefsForm, templateId: template.id })}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      prefsForm.templateId === template.id
+                        ? "border-blue-500 bg-blue-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <p className="font-medium text-gray-900">{template.name}</p>
+                    <p className="text-sm text-gray-600 mt-1">{template.description}</p>
+                    <div className="mt-3 p-2 bg-gray-100 rounded text-xs font-mono text-gray-700 overflow-hidden">
+                      {template.smsTemplate.substring(0, 60)}...
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Alert Frequency & Thresholds */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Frequency & Thresholds</h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Frequency */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Alert Frequency</label>
+                  <select
+                    value={prefsForm.frequency}
+                    onChange={(e) => setPrefsForm({ ...prefsForm, frequency: e.target.value as AlertFrequency })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                  >
+                    <option value="realtime">Real-time (as events occur)</option>
+                    <option value="daily">Daily Summary (end of day)</option>
+                    <option value="weekly">Weekly Digest</option>
+                  </select>
+                </div>
+
+                {/* Severity Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Alert Severity Filter</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(["info", "warning", "urgent", "critical"] as AlertSeverity[]).map((sev) => (
+                      <button
+                        key={sev}
+                        onClick={() => {
+                          const current = prefsForm.severityFilter;
+                          const updated = current.includes(sev)
+                            ? current.filter((s) => s !== sev)
+                            : [...current, sev];
+                          setPrefsForm({ ...prefsForm, severityFilter: updated });
+                        }}
+                        className={`px-3 py-1 rounded-full text-sm ${
+                          prefsForm.severityFilter.includes(sev)
+                            ? sev === "critical" ? "bg-red-100 text-red-700 border-2 border-red-300"
+                            : sev === "urgent" ? "bg-orange-100 text-orange-700 border-2 border-orange-300"
+                            : sev === "warning" ? "bg-yellow-100 text-yellow-700 border-2 border-yellow-300"
+                            : "bg-blue-100 text-blue-700 border-2 border-blue-300"
+                            : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        {sev}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Profit Threshold */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Profit Alert Threshold: {prefsForm.profitThreshold}%
+                  </label>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    step="5"
+                    value={prefsForm.profitThreshold}
+                    onChange={(e) => setPrefsForm({ ...prefsForm, profitThreshold: parseInt(e.target.value) })}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Alert when profit exceeds this percentage</p>
+                </div>
+
+                {/* Loss Threshold */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Loss Alert Threshold: {prefsForm.lossThreshold}%
+                  </label>
+                  <input
+                    type="range"
+                    min="5"
+                    max="50"
+                    step="5"
+                    value={prefsForm.lossThreshold}
+                    onChange={(e) => setPrefsForm({ ...prefsForm, lossThreshold: parseInt(e.target.value) })}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Alert when loss exceeds this percentage</p>
+                </div>
+
+                {/* DTE Warning */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    DTE Warning: {prefsForm.dteWarning} days
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="30"
+                    value={prefsForm.dteWarning}
+                    onChange={(e) => setPrefsForm({ ...prefsForm, dteWarning: parseInt(e.target.value) })}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Warn when options have this many days or fewer to expiration</p>
+                </div>
+
+                {/* Quiet Hours */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Quiet Hours (optional)</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      value={prefsForm.quietHoursStart}
+                      onChange={(e) => setPrefsForm({ ...prefsForm, quietHoursStart: e.target.value })}
+                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    />
+                    <span className="text-gray-500">to</span>
+                    <input
+                      type="time"
+                      value={prefsForm.quietHoursEnd}
+                      onChange={(e) => setPrefsForm({ ...prefsForm, quietHoursEnd: e.target.value })}
+                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">No alerts during these hours</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="flex items-center justify-between">
+              <div>
+                {prefsMessage && (
+                  <p className={`text-sm ${prefsMessage.startsWith("Error") ? "text-red-600" : "text-green-600"}`}>
+                    {prefsMessage}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={handleSavePrefs}
+                disabled={prefsSaving}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {prefsSaving ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Save Alert Preferences
+                  </>
+                )}
+              </button>
+            </div>
+            </>
+            )}
+          </div>
+        )}
 
         {/* Risk Disclosure */}
         <div className="mt-8 p-4 bg-amber-50 rounded-xl border border-amber-200">
