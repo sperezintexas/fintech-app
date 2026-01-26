@@ -12,6 +12,7 @@ import type {
   AlertTemplateId,
   AlertFrequency,
   AlertSeverity,
+  ScheduledAlert,
 } from "@/types/portfolio";
 import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS } from "@/types/portfolio";
 
@@ -37,6 +38,7 @@ export default function WatchlistPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [watchlistItems, setWatchlistItems] = useState<WatchlistItem[]>([]);
   const [alerts, setAlerts] = useState<WatchlistAlert[]>([]);
+  const [scheduledAlerts, setScheduledAlerts] = useState<ScheduledAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
 
@@ -98,6 +100,17 @@ export default function WatchlistPage() {
     };
   } | null>(null);
   const [previewTemplateId, setPreviewTemplateId] = useState<AlertTemplateId>("concise");
+
+  // Schedule alert state
+  const [showScheduleForm, setShowScheduleForm] = useState(false);
+  const [scheduleChannels, setScheduleChannels] = useState<AlertDeliveryChannel[]>([]);
+  const [scheduleType, setScheduleType] = useState<"immediate" | "daily" | "weekly" | "once" | "recurring">("immediate");
+  const [scheduleTime, setScheduleTime] = useState("16:00");
+  const [scheduleDay, setScheduleDay] = useState(1); // Monday
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleCron, setScheduleCron] = useState("0 16 * * 1-5");
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleMessage, setScheduleMessage] = useState("");
 
   // Alert preferences form
   const [prefsForm, setPrefsForm] = useState({
@@ -169,10 +182,28 @@ export default function WatchlistPage() {
     }
   }, [selectedAccountId]);
 
+  // Fetch scheduled alerts
+  const fetchScheduledAlerts = useCallback(async () => {
+    if (!selectedAccountId) return;
+
+    try {
+      const res = await fetch(`/api/alerts/schedule?accountId=${selectedAccountId}&status=pending`);
+      if (res.ok) {
+        const data = await res.json();
+        setScheduledAlerts(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch scheduled alerts:", err);
+    }
+  }, [selectedAccountId]);
+
   useEffect(() => {
     fetchWatchlist();
     fetchAlerts();
-  }, [fetchWatchlist, fetchAlerts]);
+    if (activeTab === "alerts") {
+      fetchScheduledAlerts();
+    }
+  }, [fetchWatchlist, fetchAlerts, fetchScheduledAlerts, activeTab]);
 
   // Run analysis
   const handleRunAnalysis = async () => {
@@ -448,6 +479,86 @@ export default function WatchlistPage() {
     }
   };
 
+  // Schedule alert
+  const handleScheduleAlert = async () => {
+    if (!previewData || !previewItemId || scheduleChannels.length === 0) {
+      setScheduleMessage("Please select at least one delivery channel");
+      return;
+    }
+
+    setScheduling(true);
+    setScheduleMessage("");
+
+    try {
+      // Build schedule object
+      let schedule: {
+        type: string;
+        time?: string;
+        dayOfWeek?: number;
+        datetime?: string;
+        cron?: string;
+      };
+
+      switch (scheduleType) {
+        case "immediate":
+          schedule = { type: "immediate" };
+          break;
+        case "daily":
+          schedule = { type: "daily", time: scheduleTime };
+          break;
+        case "weekly":
+          schedule = { type: "weekly", dayOfWeek: scheduleDay, time: scheduleTime };
+          break;
+        case "once":
+          if (!scheduleDate) {
+            setScheduleMessage("Please select a date");
+            setScheduling(false);
+            return;
+          }
+          schedule = { type: "once", datetime: new Date(`${scheduleDate}T${scheduleTime}`).toISOString() };
+          break;
+        case "recurring":
+          schedule = { type: "recurring", cron: scheduleCron };
+          break;
+        default:
+          setScheduleMessage("Invalid schedule type");
+          setScheduling(false);
+          return;
+      }
+
+      const res = await fetch("/api/alerts/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          watchlistItemId: previewItemId,
+          alert: previewData.alert,
+          channels: scheduleChannels,
+          templateId: previewTemplateId,
+          schedule,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setScheduleMessage("Alert scheduled successfully!");
+        setShowScheduleForm(false);
+        setTimeout(() => {
+          setScheduleMessage("");
+          setPreviewItemId(null);
+          setPreviewData(null);
+        }, 2000);
+      } else {
+        setScheduleMessage(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      setScheduleMessage("Failed to schedule alert");
+      console.error(err);
+    } finally {
+      setScheduling(false);
+    }
+  };
+
   const formatCurrency = (value: number | undefined) => {
     if (value === undefined) return "—";
     return new Intl.NumberFormat("en-US", {
@@ -697,6 +808,85 @@ export default function WatchlistPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Scheduled Alerts Section */}
+        {activeTab === "alerts" && (
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Scheduled Alerts ({scheduledAlerts.length})
+            </h3>
+            {scheduledAlerts.length === 0 ? (
+              <div className="text-center py-8 bg-white rounded-2xl border border-gray-100">
+                <p className="text-gray-500">No scheduled alerts. Preview an alert and schedule it to send.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {scheduledAlerts.map((scheduled: ScheduledAlert) => {
+                  const scheduleDesc =
+                    scheduled.schedule.type === "immediate" ? "Immediate" :
+                    scheduled.schedule.type === "daily" ? `Daily at ${scheduled.schedule.time}` :
+                    scheduled.schedule.type === "weekly" ? `Weekly on ${["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][scheduled.schedule.dayOfWeek || 0]} at ${scheduled.schedule.time}` :
+                    scheduled.schedule.type === "once" ? `Once on ${new Date(scheduled.schedule.datetime || "").toLocaleString()}` :
+                    `Recurring: ${scheduled.schedule.cron}`;
+
+                  return (
+                    <div
+                      key={scheduled._id}
+                      className="p-4 rounded-xl border border-indigo-200 bg-indigo-50"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-bold text-lg">{scheduled.alert.symbol}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRecommendationBadge(scheduled.alert.recommendation)}`}>
+                              {scheduled.alert.recommendation}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                              {scheduled.status}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-700 mb-2">{scheduled.alert.reason}</p>
+                          <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+                            <div>
+                              <span className="font-medium">Schedule:</span> {scheduleDesc}
+                            </div>
+                            <div>
+                              <span className="font-medium">Channels:</span> {scheduled.channels.join(", ")}
+                            </div>
+                            <div>
+                              <span className="font-medium">Template:</span> {scheduled.templateId}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (confirm("Cancel this scheduled alert?")) {
+                              try {
+                                await fetch(`/api/alerts/schedule/${scheduled._id}`, { method: "DELETE" });
+                                await fetchScheduledAlerts();
+                              } catch (err) {
+                                console.error("Failed to cancel:", err);
+                              }
+                            }
+                          }}
+                          className="text-red-500 hover:text-red-700 ml-4"
+                          title="Cancel"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -1160,6 +1350,201 @@ export default function WatchlistPage() {
                         <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded">
                           <p className="text-xs font-medium text-amber-900 mb-1">Risk Warning:</p>
                           <p className="text-sm text-amber-800">{previewData.alert.riskWarning}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Schedule Alert Section */}
+                    <div className="border-t border-gray-200 pt-6">
+                      {!showScheduleForm ? (
+                        <button
+                          onClick={() => setShowScheduleForm(true)}
+                          className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Schedule This Alert
+                        </button>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-semibold text-gray-900">Schedule Alert</h4>
+                            <button
+                              onClick={() => setShowScheduleForm(false)}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+
+                          {/* Delivery Channels */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Delivery Channels *
+                            </label>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              {(["email", "sms", "slack", "push"] as AlertDeliveryChannel[]).map((channel) => (
+                                <label
+                                  key={channel}
+                                  className={`flex items-center gap-2 p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                                    scheduleChannels.includes(channel)
+                                      ? "border-indigo-500 bg-indigo-50"
+                                      : "border-gray-200 hover:border-gray-300"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={scheduleChannels.includes(channel)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setScheduleChannels([...scheduleChannels, channel]);
+                                      } else {
+                                        setScheduleChannels(scheduleChannels.filter((c) => c !== channel));
+                                      }
+                                    }}
+                                    className="rounded"
+                                  />
+                                  <span className="text-sm font-medium capitalize">{channel}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Schedule Type */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Schedule *
+                            </label>
+                            <select
+                              value={scheduleType}
+                              onChange={(e) => setScheduleType(e.target.value as typeof scheduleType)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                            >
+                              <option value="immediate">Send Immediately</option>
+                              <option value="daily">Daily at specific time</option>
+                              <option value="weekly">Weekly on specific day</option>
+                              <option value="once">Once at specific date/time</option>
+                              <option value="recurring">Recurring (Cron expression)</option>
+                            </select>
+                          </div>
+
+                          {/* Schedule Options */}
+                          {scheduleType === "daily" && (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
+                              <input
+                                type="time"
+                                value={scheduleTime}
+                                onChange={(e) => setScheduleTime(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                              />
+                            </div>
+                          )}
+
+                          {scheduleType === "weekly" && (
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Day of Week</label>
+                                <select
+                                  value={scheduleDay}
+                                  onChange={(e) => setScheduleDay(parseInt(e.target.value))}
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                                >
+                                  <option value={0}>Sunday</option>
+                                  <option value={1}>Monday</option>
+                                  <option value={2}>Tuesday</option>
+                                  <option value={3}>Wednesday</option>
+                                  <option value={4}>Thursday</option>
+                                  <option value={5}>Friday</option>
+                                  <option value={6}>Saturday</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
+                                <input
+                                  type="time"
+                                  value={scheduleTime}
+                                  onChange={(e) => setScheduleTime(e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {scheduleType === "once" && (
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+                                <input
+                                  type="date"
+                                  value={scheduleDate}
+                                  onChange={(e) => setScheduleDate(e.target.value)}
+                                  min={new Date().toISOString().split("T")[0]}
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
+                                <input
+                                  type="time"
+                                  value={scheduleTime}
+                                  onChange={(e) => setScheduleTime(e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {scheduleType === "recurring" && (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Cron Expression</label>
+                              <input
+                                type="text"
+                                value={scheduleCron}
+                                onChange={(e) => setScheduleCron(e.target.value)}
+                                placeholder="0 16 * * 1-5"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono text-sm"
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                Format: minute hour day month dayOfWeek (e.g., "0 16 * * 1-5" = 4 PM Mon-Fri)
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Message */}
+                          {scheduleMessage && (
+                            <div className={`p-3 rounded-lg ${
+                              scheduleMessage.includes("Error") || scheduleMessage.includes("Please")
+                                ? "bg-red-100 text-red-800"
+                                : "bg-green-100 text-green-800"
+                            }`}>
+                              {scheduleMessage}
+                            </div>
+                          )}
+
+                          {/* Submit Button */}
+                          <button
+                            onClick={handleScheduleAlert}
+                            disabled={scheduling || scheduleChannels.length === 0}
+                            className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                          >
+                            {scheduling ? (
+                              <>
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Scheduling...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Schedule Alert
+                              </>
+                            )}
+                          </button>
                         </div>
                       )}
                     </div>

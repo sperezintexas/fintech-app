@@ -150,6 +150,37 @@ export type TechnicalIndicators = {
   avgVolume: number;
 };
 
+// Scheduled Alert Types
+export type ScheduledAlertStatus = "pending" | "sent" | "failed" | "cancelled";
+
+export type ScheduledAlertSchedule =
+  | { type: "immediate" }
+  | { type: "daily"; time: string } // HH:MM format
+  | { type: "weekly"; dayOfWeek: number; time: string } // 0-6 (Sunday-Saturday)
+  | { type: "once"; datetime: string } // ISO datetime
+  | { type: "recurring"; cron: string }; // Cron expression
+
+export type ScheduledAlert = {
+  _id: string;
+  watchlistItemId: string;
+  accountId: string;
+  // Alert data
+  alert: Omit<WatchlistAlert, "_id" | "createdAt" | "acknowledged" | "acknowledgedAt">;
+  // Delivery configuration
+  channels: AlertDeliveryChannel[];
+  templateId: AlertTemplateId;
+  // Schedule
+  schedule: ScheduledAlertSchedule;
+  // Status
+  status: ScheduledAlertStatus;
+  sentAt?: string;
+  failedAt?: string;
+  errorMessage?: string;
+  // Metadata
+  createdAt: string;
+  updatedAt: string;
+};
+
 // Alert Configuration Types
 export type AlertDeliveryChannel = "email" | "sms" | "slack" | "push";
 
