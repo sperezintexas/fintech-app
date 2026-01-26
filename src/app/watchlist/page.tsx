@@ -15,6 +15,11 @@ import type {
   ScheduledAlert,
 } from "@/types/portfolio";
 import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS } from "@/types/portfolio";
+import {
+  requestPushPermission,
+  registerPushSubscription,
+  showDirectNotification,
+} from "@/lib/push-client";
 
 const STRATEGIES: { value: WatchlistStrategy; label: string }[] = [
   { value: "covered-call", label: "Covered Call" },
@@ -111,6 +116,43 @@ export default function WatchlistPage() {
   const [scheduleCron, setScheduleCron] = useState("0 16 * * 1-5");
   const [scheduling, setScheduling] = useState(false);
   const [scheduleMessage, setScheduleMessage] = useState("");
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | null>(null);
+  const [enablingPush, setEnablingPush] = useState(false);
+
+  // Check push notification permission on mount
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      setPushPermission(Notification.permission);
+      setPushEnabled(Notification.permission === "granted");
+    }
+  }, []);
+
+  // Enable push notifications
+  const handleEnablePush = async () => {
+    setEnablingPush(true);
+    try {
+      const result = await requestPushPermission();
+
+      if (result.success && result.subscription) {
+        // Register with server
+        await registerPushSubscription(result.subscription, selectedAccountId);
+        setPushEnabled(true);
+        setPushPermission("granted");
+      } else if (result.error?.includes("VAPID")) {
+        // VAPID not configured, use direct notifications
+        setPushEnabled(true);
+        setPushPermission("granted");
+      } else {
+        alert(result.error || "Failed to enable push notifications");
+      }
+    } catch (err) {
+      console.error("Failed to enable push:", err);
+      alert("Failed to enable push notifications");
+    } finally {
+      setEnablingPush(false);
+    }
+  };
 
   // Alert preferences form
   const [prefsForm, setPrefsForm] = useState({
@@ -486,6 +528,12 @@ export default function WatchlistPage() {
       return;
     }
 
+    // Check if push is selected but not enabled
+    if (scheduleChannels.includes("push") && pushPermission !== "granted") {
+      setScheduleMessage("Please enable push notifications first in Alert Settings");
+      return;
+    }
+
     setScheduling(true);
     setScheduleMessage("");
 
@@ -542,6 +590,20 @@ export default function WatchlistPage() {
 
       if (res.ok) {
         setScheduleMessage("Alert scheduled successfully!");
+
+        // If immediate schedule and push enabled, show notification now
+        if (scheduleType === "immediate" && scheduleChannels.includes("push") && pushEnabled && previewData) {
+          showDirectNotification(
+            previewData.formatted.subject,
+            previewData.formatted.sms,
+            {
+              symbol: previewData.alert.symbol,
+              recommendation: previewData.alert.recommendation,
+              url: "/watchlist",
+            }
+          );
+        }
+
         setShowScheduleForm(false);
         setTimeout(() => {
           setScheduleMessage("");
@@ -1710,7 +1772,56 @@ export default function WatchlistPage() {
                     </label>
                   </div>
                   {prefsForm.channels.push.enabled && (
-                    <p className="text-xs text-gray-500">Push notifications will be sent to this browser.</p>
+                    <div className="space-y-2">
+                      {pushPermission === "granted" ? (
+                        <div className="space-y-2">
+                          <div className="p-2 bg-green-50 border border-green-200 rounded text-xs text-green-800">
+                            ✓ Push notifications enabled
+                          </div>
+                          <button
+                            onClick={() => {
+                              showDirectNotification(
+                                "Test Alert",
+                                "This is a test notification from myInvestments",
+                                { url: "/watchlist" }
+                              );
+                            }}
+                            className="w-full px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs text-gray-700"
+                          >
+                            Test Notification
+                          </button>
+                        </div>
+                      ) : pushPermission === "denied" ? (
+                        <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
+                          ✗ Push notifications blocked. Please enable in browser settings.
+                        </div>
+                      ) : (
+                        <button
+                          onClick={handleEnablePush}
+                          disabled={enablingPush}
+                          className="w-full px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm flex items-center justify-center gap-2"
+                        >
+                          {enablingPush ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Enabling...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                              </svg>
+                              Enable Push Notifications
+                            </>
+                          )}
+                        </button>
+                      )}
+                      <p className="text-xs text-gray-500">
+                        {pushPermission === "granted"
+                          ? "You'll receive push notifications for scheduled alerts."
+                          : "Click to enable browser push notifications."}
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>
