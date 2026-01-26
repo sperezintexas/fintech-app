@@ -23,6 +23,7 @@
     "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^25.0.10",
     "@types/react": "^19.2.9",
+    "agenda": "^5.0.0",
     "autoprefixer": "^10.4.23",
     "mongodb": "^7.0.0",
     "next": "^16.1.4",

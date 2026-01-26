@@ -127,48 +127,62 @@ npm start
 
 ## Scheduled Alert Analysis
 
-The watchlist alert system analyzes your positions daily and generates HOLD/CLOSE/BTC recommendations. There are multiple ways to schedule this:
+The watchlist alert system analyzes your positions daily and generates HOLD/CLOSE/BTC recommendations.
 
-### Option 1: Vercel Cron (Recommended for Vercel deployments)
-The `vercel.json` is pre-configured to run daily at 4:00 PM EST (market close):
-```json
-{
-  "crons": [
-    {
-      "path": "/api/cron/daily-analysis",
-      "schedule": "0 21 * * 1-5"
-    }
-  ]
-}
+### Built-in Scheduler (Recommended)
+The app includes an **Agenda.js** scheduler backed by MongoDB for persistent job scheduling:
+
+1. Go to **Watchlist → Alert Settings → Scheduled Jobs**
+2. Click **"Setup Default Schedule"** to create:
+   - `daily-analysis`: 4:00 PM Mon-Fri (market close)
+   - `cleanup-alerts`: 2:00 AM Sunday (removes old alerts)
+3. Jobs persist in MongoDB and survive app restarts
+
+**API Endpoints:**
+```bash
+# Get scheduler status
+GET /api/scheduler
+
+# Setup default jobs
+POST /api/scheduler
+{ "action": "setup-defaults" }
+
+# Run job immediately
+POST /api/scheduler
+{ "action": "run", "jobName": "daily-analysis" }
+
+# Schedule custom job
+POST /api/scheduler
+{ "action": "schedule", "jobName": "daily-analysis", "schedule": "0 16 * * 1-5" }
+
+# Cancel job
+POST /api/scheduler
+{ "action": "cancel", "jobName": "daily-analysis" }
 ```
-Just deploy to Vercel and cron runs automatically (Pro plan required for cron).
 
-### Option 2: GitHub Actions
-A workflow is configured in `.github/workflows/daily-analysis.yml`. Set these repository secrets:
-- `APP_URL`: Your deployed app URL (e.g., `https://myinvestments.vercel.app`)
-- `CRON_SECRET`: Same value as your `CRON_SECRET` env variable
+### Alternative: External Cron
+If you prefer external triggers:
 
-The workflow runs at 4:00 PM EST (21:00 UTC) Monday-Friday.
+**Vercel Cron** (vercel.json pre-configured):
+```json
+{ "crons": [{ "path": "/api/cron/daily-analysis", "schedule": "0 21 * * 1-5" }] }
+```
 
-### Option 3: External Cron Service
-Use any cron service (cron-job.org, EasyCron, etc.) to call:
+**GitHub Actions** (.github/workflows/daily-analysis.yml):
+- Set secrets: `APP_URL`, `CRON_SECRET`
+- Runs at 4 PM EST Mon-Fri
+
+**Any Cron Service:**
 ```
 GET https://your-app.com/api/cron/daily-analysis?secret=YOUR_CRON_SECRET
 ```
-Or with Authorization header:
-```
-Authorization: Bearer YOUR_CRON_SECRET
-```
 
-### Option 4: Manual Trigger
-Click "Run Analysis" button on the Watchlist page, or call the API directly.
-
-### Configuring Alert Frequency
-In the Watchlist → Alert Settings tab, you can configure:
-- **Frequency**: Realtime, Daily, or Weekly
+### Alert Configuration
+In Watchlist → Alert Settings:
 - **Delivery Channels**: Email, SMS, Slack, Push
-- **Thresholds**: Profit %, Loss %, DTE warnings
 - **Message Templates**: Concise, Detailed, Actionable, Risk-Aware
+- **Thresholds**: Profit %, Loss %, DTE warnings
+- **Quiet Hours**: Don't alert during specified times
 
 ## Version
 1.0.0

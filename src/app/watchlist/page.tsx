@@ -62,6 +62,21 @@ export default function WatchlistPage() {
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsMessage, setPrefsMessage] = useState("");
 
+  // Scheduler state
+  type ScheduledJob = {
+    name: string;
+    lastRunAt: string | null;
+    nextRunAt: string | null;
+    lastFinishedAt: string | null;
+    failCount: number;
+  };
+  const [schedulerStatus, setSchedulerStatus] = useState<{
+    status: string;
+    jobs: ScheduledJob[];
+  } | null>(null);
+  const [schedulerLoading, setSchedulerLoading] = useState(false);
+  const [schedulerMessage, setSchedulerMessage] = useState("");
+
   // Alert preferences form
   const [prefsForm, setPrefsForm] = useState({
     templateId: "concise" as AlertTemplateId,
@@ -328,6 +343,57 @@ export default function WatchlistPage() {
     });
 
     return totalCents / 100;
+  };
+
+  // Fetch scheduler status
+  const fetchSchedulerStatus = useCallback(async () => {
+    setSchedulerLoading(true);
+    try {
+      const res = await fetch("/api/scheduler");
+      if (res.ok) {
+        const data = await res.json();
+        setSchedulerStatus(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch scheduler status:", err);
+    } finally {
+      setSchedulerLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "settings") {
+      fetchSchedulerStatus();
+    }
+  }, [activeTab, fetchSchedulerStatus]);
+
+  // Scheduler actions
+  const handleSchedulerAction = async (action: string, jobName?: string) => {
+    setSchedulerLoading(true);
+    setSchedulerMessage("");
+
+    try {
+      const res = await fetch("/api/scheduler", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, jobName }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setSchedulerMessage(data.message || "Action completed");
+        await fetchSchedulerStatus();
+        setTimeout(() => setSchedulerMessage(""), 3000);
+      } else {
+        setSchedulerMessage(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      setSchedulerMessage("Action failed");
+      console.error(err);
+    } finally {
+      setSchedulerLoading(false);
+    }
   };
 
   const formatCurrency = (value: number | undefined) => {
@@ -1155,6 +1221,143 @@ export default function WatchlistPage() {
                   </div>
                   <p className="text-xs text-gray-500 mt-1">No alerts during these hours</p>
                 </div>
+              </div>
+            </div>
+
+            {/* Scheduler Management */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Scheduled Jobs</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Automatic analysis runs on a schedule using MongoDB-backed jobs. Jobs persist across restarts.
+              </p>
+
+              {/* Quick Actions */}
+              <div className="flex flex-wrap gap-3 mb-6">
+                <button
+                  onClick={() => handleSchedulerAction("setup-defaults")}
+                  disabled={schedulerLoading}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Setup Default Schedule
+                </button>
+                <button
+                  onClick={() => handleSchedulerAction("run", "daily-analysis")}
+                  disabled={schedulerLoading}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Run Analysis Now
+                </button>
+                <button
+                  onClick={fetchSchedulerStatus}
+                  disabled={schedulerLoading}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <svg className={`w-5 h-5 ${schedulerLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh Status
+                </button>
+              </div>
+
+              {/* Status Message */}
+              {schedulerMessage && (
+                <div className={`mb-4 p-3 rounded-lg ${schedulerMessage.startsWith("Error") ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                  {schedulerMessage}
+                </div>
+              )}
+
+              {/* Jobs Table */}
+              {schedulerStatus && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="py-2 px-3 text-left font-medium text-gray-600">Job Name</th>
+                        <th className="py-2 px-3 text-left font-medium text-gray-600">Last Run</th>
+                        <th className="py-2 px-3 text-left font-medium text-gray-600">Next Run</th>
+                        <th className="py-2 px-3 text-left font-medium text-gray-600">Status</th>
+                        <th className="py-2 px-3 text-center font-medium text-gray-600">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schedulerStatus.jobs.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-gray-500">
+                            No scheduled jobs. Click &quot;Setup Default Schedule&quot; to create them.
+                          </td>
+                        </tr>
+                      ) : (
+                        schedulerStatus.jobs.map((job) => (
+                          <tr key={job.name} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-3 px-3 font-medium">{job.name}</td>
+                            <td className="py-3 px-3 text-gray-600">
+                              {job.lastRunAt ? new Date(job.lastRunAt).toLocaleString() : "Never"}
+                            </td>
+                            <td className="py-3 px-3 text-gray-600">
+                              {job.nextRunAt ? new Date(job.nextRunAt).toLocaleString() : "Not scheduled"}
+                            </td>
+                            <td className="py-3 px-3">
+                              {job.failCount > 0 ? (
+                                <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+                                  Failed ({job.failCount}x)
+                                </span>
+                              ) : job.nextRunAt ? (
+                                <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+                                  Scheduled
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
+                                  Inactive
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => handleSchedulerAction("run", job.name)}
+                                  className="text-indigo-600 hover:text-indigo-800"
+                                  title="Run Now"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => handleSchedulerAction("cancel", job.name)}
+                                  className="text-red-600 hover:text-red-800"
+                                  title="Cancel"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Schedule Info */}
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                <h4 className="font-medium text-blue-900 mb-2">Default Schedules</h4>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li><strong>daily-analysis:</strong> 4:00 PM Mon-Fri (market close)</li>
+                  <li><strong>cleanup-alerts:</strong> 2:00 AM Sunday (removes old acknowledged alerts)</li>
+                </ul>
+                <p className="text-xs text-blue-700 mt-2">
+                  Jobs are stored in MongoDB and persist across app restarts.
+                </p>
               </div>
             </div>
 
