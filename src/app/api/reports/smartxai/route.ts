@@ -11,7 +11,8 @@ import type {
   RiskLevel,
 } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "@/lib/watchlist-rules";
-import { getGroupedDailyData, getMarketConditions } from "@/lib/polygon";
+import { getGroupedDailyData } from "@/lib/polygon";
+import type { MarketIndex } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
@@ -177,13 +178,68 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get market data for all symbols (batch call)
+    // Get market data for all symbols (batch call - ONE API call for everything)
+    // This uses Polygon's grouped daily endpoint which returns ALL stocks in a single call
+    // Cached for 5 minutes to avoid hitting rate limits
     const marketDataMap = await getGroupedDailyData();
 
-    // Get market conditions
-    const marketConditions = await getMarketConditions();
-    const marketStatus = marketConditions.status;
-    const indices = marketConditions.indices;
+    if (marketDataMap.size === 0) {
+      return NextResponse.json(
+        { error: "Failed to fetch market data. Please try again in a moment." },
+        { status: 503 }
+      );
+    }
+
+    // Build market conditions from the batch data (no additional API calls)
+    const INDEX_TICKERS = [
+      { symbol: "SPY", name: "S&P 500" },
+      { symbol: "QQQ", name: "Nasdaq 100" },
+      { symbol: "DIA", name: "Dow Jones" },
+      { symbol: "IWM", name: "Russell 2000" },
+    ];
+
+    const indices: MarketIndex[] = INDEX_TICKERS.map((indexInfo) => {
+      const data = marketDataMap.get(indexInfo.symbol);
+
+      if (data) {
+        const change = data.close - data.open;
+        const changePercent = data.open > 0 ? (change / data.open) * 100 : 0;
+
+        return {
+          symbol: indexInfo.symbol,
+          name: indexInfo.name,
+          price: data.close,
+          change,
+          changePercent,
+        };
+      }
+
+      // Fallback if not found
+      return {
+        symbol: indexInfo.symbol,
+        name: indexInfo.name,
+        price: 0,
+        change: 0,
+        changePercent: 0,
+      };
+    });
+
+    // Get market status (lightweight call, separate from price data)
+    let marketStatus: "open" | "closed" | "pre-market" | "after-hours" = "closed";
+    try {
+      const statusRes = await fetch(
+        `https://api.polygon.io/v1/marketstatus/now?apiKey=${process.env.POLYGON_API_KEY}`,
+        { next: { revalidate: 60 } }
+      );
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        if (statusData.market === "open") marketStatus = "open";
+        else if (statusData.earlyHours) marketStatus = "pre-market";
+        else if (statusData.afterHours) marketStatus = "after-hours";
+      }
+    } catch (err) {
+      console.error("Failed to fetch market status:", err);
+    }
 
     // Analyze each position
     const positions: PositionAnalysis[] = [];

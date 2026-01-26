@@ -3,40 +3,30 @@ import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import type { WatchlistItem, WatchlistAlert, RiskLevel, TechnicalIndicators } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "@/lib/watchlist-rules";
+import { getGroupedDailyData } from "@/lib/polygon";
 
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
 const BASE_URL = "https://api.polygon.io";
 
 export const dynamic = "force-dynamic";
 
-// Fetch current price data from Polygon
-async function fetchMarketData(symbol: string): Promise<MarketData | null> {
-  try {
-    // Use previous day close (free tier)
-    const res = await fetch(
-      `${BASE_URL}/v2/aggs/ticker/${symbol}/prev?adjusted=true&apiKey=${POLYGON_API_KEY}`
-    );
+// Fetch market data from batch (no individual API calls)
+function getMarketDataFromBatch(
+  symbol: string,
+  batchData: Map<string, { close: number; open: number; high: number; low: number; volume: number }>
+): MarketData | null {
+  const data = batchData.get(symbol);
+  if (!data) return null;
 
-    if (!res.ok) {
-      console.error(`Failed to fetch market data for ${symbol}:`, res.status);
-      return null;
-    }
+  const change = data.close - data.open;
+  const changePercent = data.open > 0 ? (change / data.open) * 100 : 0;
 
-    const data = await res.json();
-    if (data.results && data.results.length > 0) {
-      const result = data.results[0];
-      return {
-        currentPrice: result.c,
-        previousClose: result.o,
-        change: result.c - result.o,
-        changePercent: ((result.c - result.o) / result.o) * 100,
-      };
-    }
-    return null;
-  } catch (error) {
-    console.error(`Error fetching market data for ${symbol}:`, error);
-    return null;
-  }
+  return {
+    currentPrice: data.close,
+    previousClose: data.open,
+    change,
+    changePercent,
+  };
 }
 
 // Fetch technical indicators (RSI) from Polygon
@@ -135,9 +125,11 @@ export async function POST(request: NextRequest) {
       accountRiskMap.set(acc._id.toString(), acc.riskLevel as RiskLevel);
     });
 
+    // Get ALL market data in ONE batch API call
+    const batchMarketData = await getGroupedDailyData();
+
     // Analyze each item
     const alerts: WatchlistAlert[] = [];
-    const processedSymbols = new Map<string, MarketData>();
     const processedTechnicals = new Map<string, Partial<TechnicalIndicators>>();
 
     for (const item of items) {
@@ -148,17 +140,11 @@ export async function POST(request: NextRequest) {
 
       const riskLevel = accountRiskMap.get(item.accountId) || "medium";
 
-      // Get market data (cache by symbol)
-      let marketData = processedSymbols.get(watchlistItem.underlyingSymbol);
-      if (!marketData) {
-        marketData = await fetchMarketData(watchlistItem.underlyingSymbol);
-        if (marketData) {
-          processedSymbols.set(watchlistItem.underlyingSymbol, marketData);
-        }
-      }
+      // Get market data from batch (no API call)
+      const marketData = getMarketDataFromBatch(watchlistItem.underlyingSymbol, batchMarketData);
 
       if (!marketData) {
-        console.log(`Skipping ${watchlistItem.symbol} - no market data`);
+        console.log(`Skipping ${watchlistItem.symbol} - no market data for ${watchlistItem.underlyingSymbol}`);
         continue;
       }
 
