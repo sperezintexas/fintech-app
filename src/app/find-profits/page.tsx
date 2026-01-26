@@ -553,7 +553,22 @@ export default function FindProfitsPage() {
 
       setTickerData(data);
 
-      // Don't generate analysis yet - wait for user to select outlook
+      // Generate analysis based on selected strategy and user outlook
+      if (selectedAccount && userOutlook) {
+        if (selectedStrategy === "covered-calls") {
+          const ccAnalysis = analyzeCoveredCall(data, selectedAccount.riskLevel, userOutlook);
+          setAnalysis(ccAnalysis);
+          // Default strike based on outlook
+          const strikeMultiplier = userOutlook === "bullish" ? 1.05 : userOutlook === "bearish" ? 1.00 : 1.03;
+          setSelectedStrike(Math.round(data.price * strikeMultiplier));
+        } else if (selectedStrategy === "cash-secured-puts") {
+          const cspResult = analyzeCashSecuredPut(data, selectedAccount.riskLevel, userOutlook);
+          setCspAnalysis(cspResult);
+          // Default strike based on outlook - CSP strikes below current price
+          const strikeMultiplier = userOutlook === "bullish" ? 0.97 : userOutlook === "bearish" ? 0.90 : 0.95;
+          setSelectedStrike(Math.round(data.price * strikeMultiplier));
+        }
+      }
 
       // Fetch SMA data (check rate limit again)
       setSmaLoading(true);
@@ -589,28 +604,6 @@ export default function FindProfitsPage() {
     } finally {
       setLoading(false);
       updateRateLimitDisplay();
-    }
-  };
-
-  // Handle user outlook selection and generate analysis
-  const handleOutlookSelect = (outlook: UserOutlook) => {
-    setUserOutlook(outlook);
-
-    if (!tickerData || !selectedAccount) return;
-
-    // Generate analysis based on selected strategy and user outlook
-    if (selectedStrategy === "covered-calls") {
-      const ccAnalysis = analyzeCoveredCall(tickerData, selectedAccount.riskLevel, outlook);
-      setAnalysis(ccAnalysis);
-      // Default strike based on outlook
-      const strikeMultiplier = outlook === "bullish" ? 1.05 : outlook === "bearish" ? 1.00 : 1.03;
-      setSelectedStrike(Math.round(tickerData.price * strikeMultiplier));
-    } else if (selectedStrategy === "cash-secured-puts") {
-      const cspResult = analyzeCashSecuredPut(tickerData, selectedAccount.riskLevel, outlook);
-      setCspAnalysis(cspResult);
-      // Default strike based on outlook - CSP strikes below current price
-      const strikeMultiplier = outlook === "bullish" ? 0.97 : outlook === "bearish" ? 0.90 : 0.95;
-      setSelectedStrike(Math.round(tickerData.price * strikeMultiplier));
     }
   };
 
@@ -893,10 +886,59 @@ export default function FindProfitsPage() {
               /* Covered Calls - Supported */
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
+                  {/* User Outlook Selector */}
+                  <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-sm border border-purple-200 p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">3</div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-purple-900">Your Market Outlook</h3>
+                        <p className="text-sm text-purple-700">What do you expect the stock to do?</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      {OUTLOOK_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setUserOutlook(option.value)}
+                          className={`p-4 rounded-xl border-2 text-center transition-all ${
+                            userOutlook === option.value
+                              ? option.value === "bullish"
+                                ? "border-green-500 bg-green-50 shadow-md"
+                                : option.value === "bearish"
+                                ? "border-red-500 bg-red-50 shadow-md"
+                                : "border-gray-500 bg-gray-50 shadow-md"
+                              : "border-gray-200 hover:border-purple-300 hover:bg-white"
+                          }`}
+                        >
+                          <div className={`text-3xl mb-1 ${
+                            option.value === "bullish" ? "text-green-600" :
+                            option.value === "bearish" ? "text-red-600" : "text-gray-600"
+                          }`}>
+                            {option.icon}
+                          </div>
+                          <p className={`font-semibold text-sm ${
+                            userOutlook === option.value
+                              ? option.value === "bullish"
+                                ? "text-green-800"
+                                : option.value === "bearish"
+                                ? "text-red-800"
+                                : "text-gray-800"
+                              : "text-gray-800"
+                          }`}>
+                            {option.label}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">{option.description}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Symbol Search */}
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">3</div>
+                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">4</div>
                       <h3 className="text-lg font-semibold text-gray-900">Enter Stock Symbol</h3>
                     </div>
                     <form onSubmit={handleSearch} className="flex gap-3">
@@ -909,7 +951,7 @@ export default function FindProfitsPage() {
                       />
                       <button
                         type="submit"
-                        disabled={loading || !symbol.trim()}
+                        disabled={loading || !symbol.trim() || !userOutlook}
                         className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                       >
                         {loading ? (
@@ -923,9 +965,22 @@ export default function FindProfitsPage() {
                       </button>
                     </form>
                     {error && <p className="mt-3 text-red-600 text-sm">{error}</p>}
-                    <p className="mt-2 text-xs text-gray-500">
-                      Enter a stock symbol to analyze {selectedStrategy === "cash-secured-puts" ? "cash-secured put" : "covered call"} opportunities
-                    </p>
+                    {!userOutlook && (
+                      <p className="mt-2 text-xs text-amber-600">
+                        ↑ Please select your market outlook above before analyzing
+                      </p>
+                    )}
+                    {userOutlook && (
+                      <p className="mt-2 text-xs text-gray-500">
+                        Analyzing with <span className={`font-medium ${
+                          userOutlook === "bullish" ? "text-green-600" :
+                          userOutlook === "bearish" ? "text-red-600" : "text-gray-600"
+                        }`}>
+                          {userOutlook === "bullish" ? "↑ bullish" :
+                           userOutlook === "bearish" ? "↓ bearish" : "— neutral"} outlook
+                        </span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Analysis Results */}
@@ -972,71 +1027,8 @@ export default function FindProfitsPage() {
                         </div>
                       </div>
 
-                      {/* User Outlook Selector */}
-                      <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-sm border border-purple-200 p-6">
-                        <div className="flex items-center gap-3 mb-4">
-                          <span className="text-2xl">🔮</span>
-                          <div>
-                            <h3 className="text-lg font-semibold text-purple-900">Your Outlook on {tickerData.symbol}</h3>
-                            <p className="text-sm text-purple-700">What do you expect the stock price to do?</p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-4">
-                          {OUTLOOK_OPTIONS.map((option) => (
-                            <button
-                              key={option.value}
-                              onClick={() => handleOutlookSelect(option.value)}
-                              className={`p-4 rounded-xl border-2 text-center transition-all ${
-                                userOutlook === option.value
-                                  ? option.value === "bullish"
-                                    ? "border-green-500 bg-green-50"
-                                    : option.value === "bearish"
-                                    ? "border-red-500 bg-red-50"
-                                    : "border-gray-500 bg-gray-50"
-                                  : "border-gray-200 hover:border-purple-300 hover:bg-white"
-                              }`}
-                            >
-                              <div className={`text-4xl mb-2 ${
-                                option.value === "bullish" ? "text-green-600" :
-                                option.value === "bearish" ? "text-red-600" : "text-gray-600"
-                              }`}>
-                                {option.icon}
-                              </div>
-                              <p className={`font-semibold ${
-                                userOutlook === option.value
-                                  ? option.value === "bullish"
-                                    ? "text-green-800"
-                                    : option.value === "bearish"
-                                    ? "text-red-800"
-                                    : "text-gray-800"
-                                  : "text-gray-800"
-                              }`}>
-                                {option.label}
-                              </p>
-                              <p className="text-xs text-gray-500 mt-1">{option.description}</p>
-                            </button>
-                          ))}
-                        </div>
-
-                        {userOutlook && (
-                          <div className={`mt-4 p-3 rounded-lg ${
-                            userOutlook === "bullish" ? "bg-green-100 text-green-800" :
-                            userOutlook === "bearish" ? "bg-red-100 text-red-800" :
-                            "bg-gray-100 text-gray-800"
-                          }`}>
-                            <p className="text-sm">
-                              <strong>Your outlook:</strong> You expect {tickerData.symbol} to{" "}
-                              {userOutlook === "bullish" ? "go up ↑" :
-                               userOutlook === "bearish" ? "go down ↓" : "stay flat —"}
-                              . Analysis adjusted accordingly.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
                       {/* Covered Call Analysis */}
-                      {analysis && selectedStrategy === "covered-calls" && userOutlook && (
+                      {analysis && selectedStrategy === "covered-calls" && (
                         <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl shadow-sm border border-green-200 p-6">
                           <div className="flex items-center gap-3 mb-4">
                             <span className="text-2xl">📈</span>
@@ -1104,7 +1096,7 @@ export default function FindProfitsPage() {
                       )}
 
                       {/* Cash-Secured Put Analysis */}
-                      {cspAnalysis && selectedStrategy === "cash-secured-puts" && userOutlook && (
+                      {cspAnalysis && selectedStrategy === "cash-secured-puts" && (
                         <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl shadow-sm border border-amber-200 p-6">
                           <div className="flex items-center gap-3 mb-4">
                             <span className="text-2xl">💵</span>
@@ -1186,8 +1178,8 @@ export default function FindProfitsPage() {
                         </div>
                       )}
 
-                      {/* Recommendations Section - Only show after outlook selected */}
-                      {userOutlook && (
+                      {/* Recommendations Section - Only show after analysis */}
+                      {(analysis || cspAnalysis) && (
                       <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl shadow-sm border border-indigo-200 p-6">
                         <div className="flex items-center gap-3 mb-4">
                           <span className="text-2xl">🎯</span>
