@@ -1,4 +1,4 @@
-# myInvestments 
+# myInvestments
 
 ## Overview
 This application manages investment portfolios, tracking accounts, positions (stocks, options, cash), watch lists, and generating recommendations. It aggregates portfolio values, supports risk profiles and strategies per account, and integrates real-time data from Polygon.io. Built with Next.js, React, TypeScript, and MongoDB.
@@ -110,6 +110,7 @@ Create `.env.local`:
 MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB=myinvestments
 POLYGON_API_KEY=your_api_key_here
+CRON_SECRET=your_random_secret_here
 ```
 
 ### Development
@@ -124,12 +125,50 @@ npm run build
 npm start
 ```
 
-## Next Steps
-1. Connect MongoDB for data persistence
-2. Integrate Polygon.io API for live market data
-3. Build Accounts, Positions, Watchlist pages
-4. Add forms for CRUD operations
-5. Implement recommendation engine
+## Scheduled Alert Analysis
+
+The watchlist alert system analyzes your positions daily and generates HOLD/CLOSE/BTC recommendations. There are multiple ways to schedule this:
+
+### Option 1: Vercel Cron (Recommended for Vercel deployments)
+The `vercel.json` is pre-configured to run daily at 4:00 PM EST (market close):
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily-analysis",
+      "schedule": "0 21 * * 1-5"
+    }
+  ]
+}
+```
+Just deploy to Vercel and cron runs automatically (Pro plan required for cron).
+
+### Option 2: GitHub Actions
+A workflow is configured in `.github/workflows/daily-analysis.yml`. Set these repository secrets:
+- `APP_URL`: Your deployed app URL (e.g., `https://myinvestments.vercel.app`)
+- `CRON_SECRET`: Same value as your `CRON_SECRET` env variable
+
+The workflow runs at 4:00 PM EST (21:00 UTC) Monday-Friday.
+
+### Option 3: External Cron Service
+Use any cron service (cron-job.org, EasyCron, etc.) to call:
+```
+GET https://your-app.com/api/cron/daily-analysis?secret=YOUR_CRON_SECRET
+```
+Or with Authorization header:
+```
+Authorization: Bearer YOUR_CRON_SECRET
+```
+
+### Option 4: Manual Trigger
+Click "Run Analysis" button on the Watchlist page, or call the API directly.
+
+### Configuring Alert Frequency
+In the Watchlist → Alert Settings tab, you can configure:
+- **Frequency**: Realtime, Daily, or Weekly
+- **Delivery Channels**: Email, SMS, Slack, Push
+- **Thresholds**: Profit %, Loss %, DTE warnings
+- **Message Templates**: Concise, Detailed, Actionable, Risk-Aware
 
 ## Version
 1.0.0
