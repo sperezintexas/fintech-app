@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { AppHeader } from "@/components/AppHeader";
 import type {
   Account,
   WatchlistItem,
@@ -14,6 +15,8 @@ import type {
   AlertFrequency,
   AlertSeverity,
   ScheduledAlert,
+  ReportDefinition,
+  ReportJob,
 } from "@/types/portfolio";
 import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS } from "@/types/portfolio";
 import {
@@ -21,6 +24,8 @@ import {
   registerPushSubscription,
   showDirectNotification,
 } from "@/lib/push-client";
+
+type TestChannel = "slack" | "twitter" | "push";
 
 const STRATEGIES: { value: WatchlistStrategy; label: string }[] = [
   { value: "covered-call", label: "Covered Call" },
@@ -66,10 +71,47 @@ export default function AutomationPage() {
   const [formError, setFormError] = useState("");
 
   // Alert preferences state
-  const [activeTab, setActiveTab] = useState<"automation" | "alerts" | "settings">("automation");
+  const [activeTab, setActiveTab] = useState<"automation" | "alerts" | "settings" | "reports" | "jobs">("automation");
   const [prefsLoading, setPrefsLoading] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsMessage, setPrefsMessage] = useState("");
+  const [channelTest, setChannelTest] = useState<
+    Record<TestChannel, { status: "idle" | "sending" | "success" | "error"; message?: string }>
+  >({
+    slack: { status: "idle" },
+    twitter: { status: "idle" },
+    push: { status: "idle" },
+  });
+  // Reports & Jobs state
+  const [reportDefinitions, setReportDefinitions] = useState<ReportDefinition[]>([]);
+  const [reportJobs, setReportJobs] = useState<ReportJob[]>([]);
+  const [showReportForm, setShowReportForm] = useState(false);
+  const [reportFormError, setReportFormError] = useState<string>("");
+  const [reportFormSaving, setReportFormSaving] = useState(false);
+  const [editingReportId, setEditingReportId] = useState<string | null>(null);
+  const [reportForm, setReportForm] = useState<{ name: string; description: string; type: "smartxai" | "portfoliosummary" }>({
+    name: "",
+    description: "",
+    type: "smartxai",
+  });
+
+  const [showJobForm, setShowJobForm] = useState(false);
+  const [jobFormError, setJobFormError] = useState<string>("");
+  const [jobFormSaving, setJobFormSaving] = useState(false);
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
+  const [jobForm, setJobForm] = useState<{
+    name: string;
+    reportId: string;
+    scheduleCron: string;
+    channels: AlertDeliveryChannel[];
+    status: "active" | "paused";
+  }>({
+    name: "",
+    reportId: "",
+    scheduleCron: "0 16 * * 1-5",
+    channels: ["slack"],
+    status: "active",
+  });
 
   // Scheduler state
   type ScheduledJob = {
@@ -156,6 +198,58 @@ export default function AutomationPage() {
     }
   };
 
+  const runChannelTest = async (channel: TestChannel) => {
+    if (!selectedAccountId) return;
+
+    setChannelTest((prev) => ({
+      ...prev,
+      [channel]: { status: "sending", message: "Sending test..." },
+    }));
+
+    try {
+      if (channel === "push") {
+        showDirectNotification("Hello world", "Push notifications are working.", {
+          url: "/automation",
+        });
+        setChannelTest((prev) => ({
+          ...prev,
+          push: { status: "success", message: "Displayed browser notification." },
+        }));
+        return;
+      }
+
+      const res = await fetch("/api/alert-preferences/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: selectedAccountId,
+          channel,
+          message: "Hello world from myInvestments",
+        }),
+      });
+
+      const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
+      if (!res.ok) {
+        setChannelTest((prev) => ({
+          ...prev,
+          [channel]: { status: "error", message: data.error || "Test failed" },
+        }));
+        return;
+      }
+
+      setChannelTest((prev) => ({
+        ...prev,
+        [channel]: { status: "success", message: data.message || "Test sent" },
+      }));
+    } catch (err) {
+      console.error(err);
+      setChannelTest((prev) => ({
+        ...prev,
+        [channel]: { status: "error", message: "Test failed" },
+      }));
+    }
+  };
+
   // Alert preferences form
   const [prefsForm, setPrefsForm] = useState({
     templateId: "concise" as AlertTemplateId,
@@ -167,10 +261,9 @@ export default function AutomationPage() {
     quietHoursStart: "",
     quietHoursEnd: "",
     channels: {
-      email: { enabled: false, target: "" },
-      sms: { enabled: false, target: "" },
       slack: { enabled: false, target: "" },
       push: { enabled: false, target: "" },
+      twitter: { enabled: false, target: "" },
     },
   });
 
@@ -229,7 +322,7 @@ export default function AutomationPage() {
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/automation?accountId=${selectedAccountId}`);
+      const res = await fetch(`/api/watchlist?accountId=${selectedAccountId}`);
       if (res.ok) {
         const data = await res.json();
         setWatchlistItems(data);
@@ -311,7 +404,7 @@ export default function AutomationPage() {
     setFormError("");
 
     try {
-      const res = await fetch("/api/automation", {
+      const res = await fetch("/api/watchlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -352,7 +445,7 @@ export default function AutomationPage() {
     if (!confirm("Remove this item from automation?")) return;
 
     try {
-      await fetch(`/api/automation/${id}`, { method: "DELETE" });
+      await fetch(`/api/watchlist/${id}`, { method: "DELETE" });
       await fetchWatchlist();
       await fetchAlerts();
     } catch (err) {
@@ -395,10 +488,9 @@ export default function AutomationPage() {
           quietHoursStart: data.quietHoursStart || "",
           quietHoursEnd: data.quietHoursEnd || "",
           channels: {
-            email: data.channels?.find((c: { channel: string }) => c.channel === "email") || { enabled: false, target: "" },
-            sms: data.channels?.find((c: { channel: string }) => c.channel === "sms") || { enabled: false, target: "" },
             slack: data.channels?.find((c: { channel: string }) => c.channel === "slack") || { enabled: false, target: "" },
             push: data.channels?.find((c: { channel: string }) => c.channel === "push") || { enabled: false, target: "" },
+            twitter: data.channels?.find((c: { channel: string }) => c.channel === "twitter") || { enabled: false, target: "" },
           },
         });
       }
@@ -414,6 +506,192 @@ export default function AutomationPage() {
       fetchAlertPrefs();
     }
   }, [activeTab, fetchAlertPrefs]);
+
+  const fetchReportDefinitions = useCallback(async () => {
+    if (!selectedAccountId) return;
+    try {
+      const res = await fetch(`/api/report-definitions?accountId=${selectedAccountId}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setReportDefinitions(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch report definitions:", err);
+    }
+  }, [selectedAccountId]);
+
+  const fetchReportJobs = useCallback(async () => {
+    if (!selectedAccountId) return;
+    try {
+      const res = await fetch(`/api/report-jobs?accountId=${selectedAccountId}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setReportJobs(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch report jobs:", err);
+    }
+  }, [selectedAccountId]);
+
+  useEffect(() => {
+    if (activeTab === "reports") fetchReportDefinitions();
+    if (activeTab === "jobs") {
+      fetchReportDefinitions();
+      fetchReportJobs();
+    }
+  }, [activeTab, fetchReportDefinitions, fetchReportJobs]);
+
+  const openNewReport = () => {
+    setEditingReportId(null);
+    setReportForm({ name: "", description: "", type: "smartxai" });
+    setReportFormError("");
+    setShowReportForm(true);
+  };
+
+  const openEditReport = (def: ReportDefinition) => {
+    setEditingReportId(def._id);
+    setReportForm({ name: def.name, description: def.description, type: def.type });
+    setReportFormError("");
+    setShowReportForm(true);
+  };
+
+  const saveReportDefinition = async () => {
+    if (!selectedAccountId) return;
+    const name = reportForm.name.trim();
+    if (!name) {
+      setReportFormError("Report name is required");
+      return;
+    }
+    setReportFormSaving(true);
+    setReportFormError("");
+    try {
+      const res = await fetch(
+        editingReportId ? `/api/report-definitions/${editingReportId}` : "/api/report-definitions",
+        {
+          method: editingReportId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            editingReportId
+              ? { name, description: reportForm.description, type: reportForm.type }
+              : { accountId: selectedAccountId, name, description: reportForm.description, type: reportForm.type }
+          ),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setReportFormError(data.error || "Failed to save report");
+        return;
+      }
+      setShowReportForm(false);
+      await fetchReportDefinitions();
+    } catch (err) {
+      console.error(err);
+      setReportFormError("Failed to save report");
+    } finally {
+      setReportFormSaving(false);
+    }
+  };
+
+  const deleteReportDefinition = async (id: string) => {
+    if (!confirm("Delete this report definition? This will also delete any jobs that reference it.")) return;
+    try {
+      const res = await fetch(`/api/report-definitions/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        await fetchReportDefinitions();
+        await fetchReportJobs();
+      }
+    } catch (err) {
+      console.error("Failed to delete report definition:", err);
+    }
+  };
+
+  const openNewJob = () => {
+    setEditingJobId(null);
+    setJobFormError("");
+    setJobForm((prev) => ({
+      ...prev,
+      name: "",
+      reportId: reportDefinitions[0]?._id ?? "",
+      scheduleCron: "0 16 * * 1-5",
+      channels: ["slack"],
+      status: "active",
+    }));
+    setShowJobForm(true);
+  };
+
+  const openEditJob = (j: ReportJob) => {
+    setEditingJobId(j._id);
+    setJobFormError("");
+    setJobForm({
+      name: j.name,
+      reportId: j.reportId,
+      scheduleCron: j.scheduleCron,
+      channels: j.channels,
+      status: j.status,
+    });
+    setShowJobForm(true);
+  };
+
+  const saveReportJob = async () => {
+    if (!selectedAccountId) return;
+    const name = jobForm.name.trim();
+    if (!name) return setJobFormError("Job name is required");
+    if (!jobForm.reportId) return setJobFormError("Select a report to run");
+    if (!jobForm.scheduleCron.trim()) return setJobFormError("Cron schedule is required");
+    if (!jobForm.channels.length) return setJobFormError("Select at least one delivery channel");
+
+    setJobFormSaving(true);
+    setJobFormError("");
+    try {
+      const res = await fetch(
+        editingJobId ? `/api/report-jobs/${editingJobId}` : "/api/report-jobs",
+        {
+          method: editingJobId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            editingJobId
+              ? { ...jobForm, name }
+              : { accountId: selectedAccountId, ...jobForm, name }
+          ),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setJobFormError(data.error || "Failed to save job");
+        return;
+      }
+      setShowJobForm(false);
+      await fetchReportJobs();
+    } catch (err) {
+      console.error(err);
+      setJobFormError("Failed to save job");
+    } finally {
+      setJobFormSaving(false);
+    }
+  };
+
+  const deleteReportJob = async (id: string) => {
+    if (!confirm("Delete this scheduled job?")) return;
+    try {
+      const res = await fetch(`/api/report-jobs/${id}`, { method: "DELETE" });
+      if (res.ok) await fetchReportJobs();
+    } catch (err) {
+      console.error("Failed to delete job:", err);
+    }
+  };
+
+  const runReportJobNow = async (jobId: string) => {
+    try {
+      await fetch("/api/scheduler", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "run", jobName: "scheduled-report", data: { jobId } }),
+      });
+      await fetchReportJobs();
+    } catch (err) {
+      console.error("Failed to run job now:", err);
+    }
+  };
 
   // Save alert preferences
   const handleSavePrefs = async () => {
@@ -462,19 +740,6 @@ export default function AutomationPage() {
     } finally {
       setPrefsSaving(false);
     }
-  };
-
-  // Calculate estimated monthly cost
-  const estimatedMonthlyCost = () => {
-    const enabledChannels = Object.entries(prefsForm.channels).filter(([, c]) => c.enabled);
-    const alertsPerMonth = prefsForm.frequency === "daily" ? 30 : prefsForm.frequency === "weekly" ? 4 : 60;
-
-    let totalCents = 0;
-    enabledChannels.forEach(([channel]) => {
-      totalCents += (ALERT_CHANNEL_COSTS[channel as AlertDeliveryChannel]?.perMessage || 0) * alertsPerMonth;
-    });
-
-    return totalCents / 100;
   };
 
   // Fetch scheduler status
@@ -535,11 +800,11 @@ export default function AutomationPage() {
     setPreviewTemplateId(templateId || previewTemplateId);
 
     try {
-      const res = await fetch("/api/automation/preview-alert", {
+      const res = await fetch("/api/watchlist/preview-alert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          automationItemId: itemId,
+          watchlistItemId: itemId,
           templateId: templateId || previewTemplateId,
         }),
       });
@@ -615,7 +880,7 @@ export default function AutomationPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          automationItemId: previewItemId,
+          watchlistItemId: previewItemId,
           alert: previewData.alert,
           channels: scheduleChannels,
           templateId: previewTemplateId,
@@ -704,39 +969,14 @@ export default function AutomationPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <Link href="/" className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                </div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">
-                  myInvestments
-                </h1>
-              </Link>
-            </div>
-            <nav className="hidden md:flex items-center gap-6">
-              <Link href="/" className="text-gray-500 hover:text-blue-600">Dashboard</Link>
-              <Link href="/accounts" className="text-gray-500 hover:text-blue-600">Accounts</Link>
-              <Link href="/holdings" className="text-gray-500 hover:text-blue-600">Holdings</Link>
-              <Link href="/find-profits" className="text-gray-500 hover:text-blue-600">Find Profits</Link>
-              <Link href="/automation" className="text-gray-800 font-medium hover:text-blue-600">Watchlist</Link>
-            </nav>
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-3xl font-bold text-gray-900">Watchlist & Alerts</h2>
-            <p className="text-gray-600 mt-1">Monitor your positions and receive daily recommendations</p>
+            <h2 className="text-3xl font-bold text-gray-900">Configure Automation</h2>
+            <p className="text-gray-600 mt-1">Manage watchlist items, alerts, and schedules</p>
           </div>
           <div className="flex items-center gap-4">
             <select
@@ -785,7 +1025,7 @@ export default function AutomationPage() {
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
-              Watchlist
+              WatchList
             </button>
             <button
               onClick={() => setActiveTab("alerts")}
@@ -811,6 +1051,26 @@ export default function AutomationPage() {
               }`}
             >
               Alert Settings
+            </button>
+            <button
+              onClick={() => setActiveTab("reports")}
+              className={`py-3 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "reports"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Reports
+            </button>
+            <button
+              onClick={() => setActiveTab("jobs")}
+              className={`py-3 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "jobs"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Scheduled Jobs
             </button>
           </nav>
         </div>
@@ -994,7 +1254,7 @@ export default function AutomationPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold text-gray-900">
-              Watchlist Items ({watchlistItems.length})
+              WatchList Items ({watchlistItems.length})
             </h3>
             <button
               onClick={() => setShowAddForm(true)}
@@ -1012,7 +1272,7 @@ export default function AutomationPage() {
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-lg font-semibold">Add to Watchlist</h4>
+                  <h4 className="text-lg font-semibold">Add WatchList Item</h4>
                   <button onClick={() => setShowAddForm(false)} className="text-gray-400 hover:text-gray-600">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1161,7 +1421,7 @@ export default function AutomationPage() {
                       type="submit"
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                     >
-                      Add to Watchlist
+                      Add WatchList Item
                     </button>
                   </div>
                 </form>
@@ -1201,7 +1461,7 @@ export default function AutomationPage() {
                 </thead>
                 <tbody>
                   {watchlistItems.map((item) => {
-                    const hasAlert = alerts.some((a) => a.automationItemId === item._id);
+                    const hasAlert = alerts.some((a) => a.watchlistItemId === item._id);
                     return (
                       <tr key={item._id} className={`border-b border-gray-100 hover:bg-gray-50 ${hasAlert ? "bg-yellow-50" : ""}`}>
                         <td className="py-3 px-2">
@@ -1484,8 +1744,8 @@ export default function AutomationPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                               Delivery Channels *
                             </label>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                              {(["email", "sms", "slack", "push"] as AlertDeliveryChannel[]).map((channel) => (
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                              {(["slack", "push", "twitter"] as AlertDeliveryChannel[]).map((channel) => (
                                 <label
                                   key={channel}
                                   className={`flex items-center gap-2 p-3 border-2 rounded-lg cursor-pointer transition-all ${
@@ -1506,7 +1766,9 @@ export default function AutomationPage() {
                                     }}
                                     className="rounded"
                                   />
-                                  <span className="text-sm font-medium capitalize">{channel}</span>
+                                  <span className="text-sm font-medium">
+                                    {channel === "slack" ? "Slack" : channel === "push" ? "Push" : "X"}
+                                  </span>
                                 </label>
                               ))}
                             </div>
@@ -1673,80 +1935,7 @@ export default function AutomationPage() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Alert Delivery Channels</h3>
               <p className="text-sm text-gray-600 mb-6">Choose how you want to receive alerts for your automation positions.</p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Email */}
-                <div className={`p-4 rounded-xl border-2 ${prefsForm.channels.email.enabled ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">📧</span>
-                      <div>
-                        <p className="font-medium">Email</p>
-                        <p className="text-xs text-gray-500">{ALERT_CHANNEL_COSTS.email.description}</p>
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={prefsForm.channels.email.enabled}
-                        onChange={(e) => setPrefsForm({
-                          ...prefsForm,
-                          channels: { ...prefsForm.channels, email: { ...prefsForm.channels.email, enabled: e.target.checked } }
-                        })}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
-                  </div>
-                  {prefsForm.channels.email.enabled && (
-                    <input
-                      type="email"
-                      placeholder="your@email.com"
-                      value={prefsForm.channels.email.target}
-                      onChange={(e) => setPrefsForm({
-                        ...prefsForm,
-                        channels: { ...prefsForm.channels, email: { ...prefsForm.channels.email, target: e.target.value } }
-                      })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                    />
-                  )}
-                </div>
-
-                {/* SMS */}
-                <div className={`p-4 rounded-xl border-2 ${prefsForm.channels.sms.enabled ? "border-green-500 bg-green-50" : "border-gray-200"}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">📱</span>
-                      <div>
-                        <p className="font-medium">SMS / Text</p>
-                        <p className="text-xs text-gray-500">{ALERT_CHANNEL_COSTS.sms.description}</p>
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={prefsForm.channels.sms.enabled}
-                        onChange={(e) => setPrefsForm({
-                          ...prefsForm,
-                          channels: { ...prefsForm.channels, sms: { ...prefsForm.channels.sms, enabled: e.target.checked } }
-                        })}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
-                    </label>
-                  </div>
-                  {prefsForm.channels.sms.enabled && (
-                    <input
-                      type="tel"
-                      placeholder="+1 (555) 123-4567"
-                      value={prefsForm.channels.sms.target}
-                      onChange={(e) => setPrefsForm({
-                        ...prefsForm,
-                        channels: { ...prefsForm.channels, sms: { ...prefsForm.channels.sms, target: e.target.value } }
-                      })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                    />
-                  )}
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
                 {/* Slack */}
                 <div className={`p-4 rounded-xl border-2 ${prefsForm.channels.slack.enabled ? "border-purple-500 bg-purple-50" : "border-gray-200"}`}>
@@ -1772,16 +1961,109 @@ export default function AutomationPage() {
                     </label>
                   </div>
                   {prefsForm.channels.slack.enabled && (
-                    <input
-                      type="url"
-                      placeholder="https://hooks.slack.com/services/..."
-                      value={prefsForm.channels.slack.target}
-                      onChange={(e) => setPrefsForm({
-                        ...prefsForm,
-                        channels: { ...prefsForm.channels, slack: { ...prefsForm.channels.slack, target: e.target.value } }
-                      })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                    />
+                    <div className="space-y-2">
+                      <input
+                        type="url"
+                        placeholder="https://hooks.slack.com/services/..."
+                        value={prefsForm.channels.slack.target}
+                        onChange={(e) =>
+                          setPrefsForm({
+                            ...prefsForm,
+                            channels: {
+                              ...prefsForm.channels,
+                              slack: { ...prefsForm.channels.slack, target: e.target.value },
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => runChannelTest("slack")}
+                        disabled={!selectedAccountId || channelTest.slack.status === "sending"}
+                        className="w-full px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs text-gray-700 disabled:opacity-50"
+                      >
+                        {channelTest.slack.status === "sending" ? "Sending..." : "Preview / Hello world"}
+                      </button>
+                      {channelTest.slack.status !== "idle" && channelTest.slack.message && (
+                        <div
+                          className={`p-2 rounded text-xs ${
+                            channelTest.slack.status === "success"
+                              ? "bg-green-50 border border-green-200 text-green-800"
+                              : channelTest.slack.status === "error"
+                                ? "bg-red-50 border border-red-200 text-red-800"
+                                : "bg-gray-50 border border-gray-200 text-gray-700"
+                          }`}
+                        >
+                          {channelTest.slack.message}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* X / Twitter */}
+                <div className={`p-4 rounded-xl border-2 ${prefsForm.channels.twitter.enabled ? "border-gray-800 bg-gray-50" : "border-gray-200"}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">𝕏</span>
+                      <div>
+                        <p className="font-medium">X / Twitter</p>
+                        <p className="text-xs text-gray-500">{ALERT_CHANNEL_COSTS.twitter.description}</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={prefsForm.channels.twitter.enabled}
+                        onChange={(e) => setPrefsForm({
+                          ...prefsForm,
+                          channels: { ...prefsForm.channels, twitter: { ...prefsForm.channels.twitter, enabled: e.target.checked } }
+                        })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-gray-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gray-900"></div>
+                    </label>
+                  </div>
+                  {prefsForm.channels.twitter.enabled && (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="@yourhandle"
+                        value={prefsForm.channels.twitter.target}
+                        onChange={(e) =>
+                          setPrefsForm({
+                            ...prefsForm,
+                            channels: {
+                              ...prefsForm.channels,
+                              twitter: { ...prefsForm.channels.twitter, target: e.target.value },
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => runChannelTest("twitter")}
+                        disabled={!selectedAccountId || channelTest.twitter.status === "sending"}
+                        className="w-full px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs text-gray-700 disabled:opacity-50"
+                      >
+                        {channelTest.twitter.status === "sending" ? "Checking..." : "Preview / Hello world"}
+                      </button>
+                      {channelTest.twitter.status !== "idle" && channelTest.twitter.message && (
+                        <div
+                          className={`p-2 rounded text-xs ${
+                            channelTest.twitter.status === "success"
+                              ? "bg-green-50 border border-green-200 text-green-800"
+                              : channelTest.twitter.status === "error"
+                                ? "bg-red-50 border border-red-200 text-red-800"
+                                : "bg-gray-50 border border-gray-200 text-gray-700"
+                          }`}
+                        >
+                          {channelTest.twitter.message}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -1817,16 +2099,25 @@ export default function AutomationPage() {
                           </div>
                           <button
                             onClick={() => {
-                              showDirectNotification(
-                                "Test Alert",
-                                "This is a test notification from myInvestments",
-                                { url: "/automation" }
-                              );
+                              runChannelTest("push");
                             }}
                             className="w-full px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs text-gray-700"
                           >
-                            Test Notification
+                            Preview / Hello world
                           </button>
+                          {channelTest.push.status !== "idle" && channelTest.push.message && (
+                            <div
+                              className={`p-2 rounded text-xs ${
+                                channelTest.push.status === "success"
+                                  ? "bg-green-50 border border-green-200 text-green-800"
+                                  : channelTest.push.status === "error"
+                                    ? "bg-red-50 border border-red-200 text-red-800"
+                                    : "bg-gray-50 border border-gray-200 text-gray-700"
+                              }`}
+                            >
+                              {channelTest.push.message}
+                            </div>
+                          )}
                         </div>
                       ) : pushPermission === "denied" ? (
                         <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
@@ -1863,14 +2154,6 @@ export default function AutomationPage() {
                 </div>
               </div>
 
-              {/* Estimated Cost */}
-              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">
-                  <strong>Estimated monthly cost:</strong>{" "}
-                  <span className="font-bold text-green-600">${estimatedMonthlyCost().toFixed(2)}</span>
-                  <span className="text-gray-500 ml-2">(based on {prefsForm.frequency === "daily" ? "30" : prefsForm.frequency === "weekly" ? "4" : "60"} alerts/month)</span>
-                </p>
-              </div>
             </div>
 
             {/* Alert Template */}
@@ -2187,6 +2470,313 @@ export default function AutomationPage() {
               </button>
             </div>
             </>
+            )}
+          </div>
+        )}
+
+        {/* Reports Tab */}
+        {activeTab === "reports" && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Reports</h3>
+                  <p className="text-sm text-gray-600">Define reusable report templates (name + description).</p>
+                </div>
+                <button
+                  onClick={openNewReport}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  New Report
+                </button>
+              </div>
+
+              {reportDefinitions.length === 0 ? (
+                <div className="text-center py-10 text-gray-500">
+                  No reports yet. Create one to start scheduling it.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {reportDefinitions.map((def) => (
+                    <div key={def._id} className="p-4 rounded-xl border border-gray-200 bg-gray-50">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-gray-900 truncate">{def.name}</p>
+                          {def.description && <p className="text-sm text-gray-600 mt-1">{def.description}</p>}
+                          <p className="text-xs text-gray-500 mt-2">Type: {def.type}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openEditReport(def)}
+                            className="px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-100"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteReportDefinition(def._id)}
+                            className="px-3 py-1.5 text-sm bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {showReportForm && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-lg font-semibold">
+                      {editingReportId ? "Edit Report" : "New Report"}
+                    </h4>
+                    <button onClick={() => setShowReportForm(false)} className="text-gray-400 hover:text-gray-600">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {reportFormError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                      {reportFormError}
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
+                      <select
+                        value={reportForm.type}
+                        onChange={(e) => setReportForm({ ...reportForm, type: e.target.value as "smartxai" | "portfoliosummary" })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                      >
+                        <option value="smartxai">SmartXAI Report</option>
+                        <option value="portfoliosummary">Portfolio Summary</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Report Name</label>
+                      <input
+                        value={reportForm.name}
+                        onChange={(e) => setReportForm({ ...reportForm, name: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                        placeholder={reportForm.type === "smartxai" ? "e.g. Daily SmartXAI Summary" : "e.g. Daily Portfolio Update"}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                      <textarea
+                        value={reportForm.description}
+                        onChange={(e) => setReportForm({ ...reportForm, description: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                        rows={3}
+                        placeholder="What does this report contain?"
+                      />
+                    </div>
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button
+                        onClick={() => setShowReportForm(false)}
+                        className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={saveReportDefinition}
+                        disabled={reportFormSaving}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {reportFormSaving ? "Saving..." : "Save"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Scheduled Jobs Tab */}
+        {activeTab === "jobs" && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Scheduled Jobs</h3>
+                  <p className="text-sm text-gray-600">Create jobs that run a report on a cron schedule.</p>
+                </div>
+                <button
+                  onClick={openNewJob}
+                  disabled={reportDefinitions.length === 0}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  New Job
+                </button>
+              </div>
+
+              {reportDefinitions.length === 0 ? (
+                <div className="text-center py-10 text-gray-500">
+                  Create a report first, then you can schedule it.
+                </div>
+              ) : reportJobs.length === 0 ? (
+                <div className="text-center py-10 text-gray-500">
+                  No jobs yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {reportJobs.map((j) => {
+                    const reportName = reportDefinitions.find((d) => d._id === j.reportId)?.name ?? "Unknown report";
+                    return (
+                      <div key={j._id} className="p-4 rounded-xl border border-gray-200 bg-gray-50">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-900 truncate">{j.name}</p>
+                            <p className="text-sm text-gray-600 mt-1">Report: {reportName}</p>
+                            <p className="text-xs text-gray-500 mt-2">
+                              Cron: <span className="font-mono">{j.scheduleCron}</span> · Channels: {j.channels.join(", ")} · Status: {j.status}
+                            </p>
+                            {j.lastRunAt && (
+                              <p className="text-xs text-gray-500 mt-1">Last run: {new Date(j.lastRunAt).toLocaleString()}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => runReportJobNow(j._id)}
+                              className="px-3 py-1.5 text-sm bg-white border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50"
+                            >
+                              Run now
+                            </button>
+                            <button
+                              onClick={() => openEditJob(j)}
+                              className="px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-100"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => deleteReportJob(j._id)}
+                              className="px-3 py-1.5 text-sm bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {showJobForm && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-lg font-semibold">
+                      {editingJobId ? "Edit Job" : "New Job"}
+                    </h4>
+                    <button onClick={() => setShowJobForm(false)} className="text-gray-400 hover:text-gray-600">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {jobFormError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                      {jobFormError}
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Job Name</label>
+                      <input
+                        value={jobForm.name}
+                        onChange={(e) => setJobForm({ ...jobForm, name: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                        placeholder="e.g. Daily close report"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Report</label>
+                      <select
+                        value={jobForm.reportId}
+                        onChange={(e) => setJobForm({ ...jobForm, reportId: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white"
+                      >
+                        <option value="" disabled>Select a report</option>
+                        {reportDefinitions.map((d) => (
+                          <option key={d._id} value={d._id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Cron Schedule</label>
+                      <input
+                        value={jobForm.scheduleCron}
+                        onChange={(e) => setJobForm({ ...jobForm, scheduleCron: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono"
+                        placeholder="0 16 * * 1-5"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Example: 4 PM Mon–Fri = <span className="font-mono">0 16 * * 1-5</span></p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Channels</label>
+                      <div className="flex flex-wrap gap-2">
+                        {(["slack", "push", "twitter"] as AlertDeliveryChannel[]).map((ch) => {
+                          const checked = jobForm.channels.includes(ch);
+                          return (
+                            <label
+                              key={ch}
+                              className={`px-3 py-2 rounded-lg border cursor-pointer text-sm ${checked ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-700"}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mr-2"
+                                checked={checked}
+                                onChange={(e) => {
+                                  if (e.target.checked) setJobForm({ ...jobForm, channels: [...jobForm.channels, ch] });
+                                  else setJobForm({ ...jobForm, channels: jobForm.channels.filter((c) => c !== ch) });
+                                }}
+                              />
+                              {ch === "twitter" ? "X" : ch}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <select
+                        value={jobForm.status}
+                        onChange={(e) => setJobForm({ ...jobForm, status: e.target.value as "active" | "paused" })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white"
+                      >
+                        <option value="active">Active</option>
+                        <option value="paused">Paused</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button
+                        onClick={() => setShowJobForm(false)}
+                        className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={saveReportJob}
+                        disabled={jobFormSaving}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {jobFormSaving ? "Saving..." : "Save"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         )}

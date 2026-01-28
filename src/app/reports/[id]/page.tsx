@@ -3,26 +3,41 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { AppHeader } from "@/components/AppHeader";
 import type { SmartXAIReport, MarketSentiment } from "@/types/portfolio";
 
 export default function ReportPage() {
   const params = useParams();
   const reportId = params.id as string;
 
-  const [report, setReport] = useState<SmartXAIReport | null>(null);
+  const [report, setReport] = useState<(SmartXAIReport & { reportType?: string }) | any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     async function fetchReport() {
       try {
-        const res = await fetch(`/api/reports/smartxai?id=${reportId}`);
+        // Try SmartXAI first
+        let res = await fetch(`/api/reports/smartxai?id=${reportId}`);
         if (res.ok) {
           const data = await res.json();
-          setReport(data);
-        } else {
-          setError("Report not found");
+          setReport({ ...data, reportType: "smartxai" } as any);
+          setLoading(false);
+          return;
         }
+
+        // Try PortfolioSummary
+        res = await fetch(`/api/reports/portfoliosummary?id=${reportId}`);
+        if (res.ok) {
+          const portfolioReport = await res.json();
+          if (portfolioReport && !portfolioReport.error) {
+            setReport({ ...portfolioReport, reportType: "portfoliosummary" } as any);
+            setLoading(false);
+            return;
+          }
+        }
+
+        setError("Report not found");
       } catch (err) {
         setError("Failed to load report");
         console.error(err);
@@ -89,38 +104,107 @@ export default function ReportPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Report Not Found</h1>
           <Link href="/automation" className="text-blue-600 hover:text-blue-800">
-            Back to Watchlist
+            Back to Configure Automation
           </Link>
         </div>
       </div>
     );
   }
 
+  // Render PortfolioSummary report
+  if (report.reportType === "portfoliosummary") {
+    const formatCurrency = (value: number) =>
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(value);
+
+    const formatPercent = (value: number) =>
+      `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <AppHeader />
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-6">
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">{report.title}</h2>
+            <p className="text-gray-600 mb-6">
+              Generated: {new Date(report.reportDateTime).toLocaleString()}
+            </p>
+
+            <div className="space-y-6">
+              {report.accounts.map((acc: any, idx: number) => (
+                <div key={idx} className="border-t border-gray-200 pt-6 first:border-t-0 first:pt-0">
+                  <h3 className="text-xl font-semibold text-gray-900 mb-3">
+                    {acc.broker || acc.name} ({acc.riskLevel === "low" || acc.riskLevel === "medium" ? "Moderate" : "Aggressive"} – {acc.strategy || "Core"})
+                  </h3>
+                  <div className="space-y-2 text-sm font-mono">
+                    <p>• Total Value:          {formatCurrency(acc.totalValue)}</p>
+                    {acc.positions.length > 0 && acc.positions[0] && (
+                      <p>
+                        • {acc.positions[0].symbol} Position:        {acc.positions[0].shares || 0} shares @ avg {formatCurrency(acc.positions[0].avgCost)} → current {formatCurrency(acc.positions[0].currentPrice)} ({formatPercent(acc.positions[0].dailyChangePercent)} today / {formatPercent(acc.positions[0].unrealizedPnLPercent)} unrealized)
+                      </p>
+                    )}
+                    <p>
+                      • Portfolio Change:     Today: {formatCurrency(acc.dailyChange)} ({formatPercent(acc.dailyChangePercent)})    Week: {formatCurrency(acc.weekChange || 0)} ({formatPercent(acc.weekChangePercent || 0)})
+                    </p>
+                    {acc.optionsActivity && <p>• Options Activity:     {acc.optionsActivity}</p>}
+                    {acc.recommendation && <p>• Recommendation:       {acc.recommendation}</p>}
+                  </div>
+                </div>
+              ))}
+
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-xl font-semibold text-gray-900 mb-3">Market Snapshot</h3>
+                <div className="space-y-2 text-sm font-mono">
+                  <p>• SPY:      {formatCurrency(report.marketSnapshot.SPY.price)} ({formatPercent(report.marketSnapshot.SPY.changePercent)})</p>
+                  <p>• QQQ:      {formatCurrency(report.marketSnapshot.QQQ.price)} ({formatPercent(report.marketSnapshot.QQQ.changePercent)})</p>
+                  <p>• VIX:      {report.marketSnapshot.VIX.price.toFixed(1)} (fear level: {report.marketSnapshot.VIX.level})</p>
+                  <p>• TSLA:     {formatCurrency(report.marketSnapshot.TSLA.price)} ({formatPercent(report.marketSnapshot.TSLA.changePercent)})</p>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-xl font-semibold text-gray-900 mb-3">Progress Toward Goals</h3>
+                <div className="space-y-2 text-sm font-mono">
+                  <p>
+                    • Merrill → {formatCurrency(report.goalsProgress.merrill.target)} balanced by {report.goalsProgress.merrill.targetDate}: ~{report.goalsProgress.merrill.progressPercent.toFixed(1)}% of way (assuming {Math.round(report.goalsProgress.merrill.cagrNeeded)}-{Math.ceil(report.goalsProgress.merrill.cagrNeeded * 1.4)}% CAGR needed)
+                  </p>
+                  <p>
+                    • Fidelity → max growth by {report.goalsProgress.fidelity.targetDate}: current trajectory [{report.goalsProgress.fidelity.trajectory}]
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200 pt-6">
+                <p className="text-sm text-gray-700 italic">
+                  Risk Reminder: Options involve substantial risk of loss and are not suitable for all investors. Review OCC booklet before trading.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8">
+            <Link
+              href="/automation"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              Back to Configure Automation
+            </Link>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <Link href="/" className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                </div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">
-                  myInvestments
-                </h1>
-              </Link>
-            </div>
-            <nav className="hidden md:flex items-center gap-6">
-              <Link href="/" className="text-gray-500 hover:text-blue-600">Dashboard</Link>
-              <Link href="/automation" className="text-gray-800 font-medium hover:text-blue-600">Watchlist</Link>
-            </nav>
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -319,7 +403,7 @@ export default function ReportPage() {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            Back to Watchlist
+            Back to Configure Automation
           </Link>
         </div>
       </main>

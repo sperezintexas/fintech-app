@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Account, RiskLevel } from "@/types/portfolio";
+import { AppHeader } from "@/components/AppHeader";
 
 type Strategy = {
   id: string;
@@ -718,32 +719,7 @@ export default function FindProfitsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <Link href="/" className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                </div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">
-                  myInvestments
-                </h1>
-              </Link>
-            </div>
-            <nav className="hidden md:flex items-center gap-6">
-              <Link href="/" className="text-gray-500 hover:text-blue-600">Dashboard</Link>
-              <Link href="/accounts" className="text-gray-500 hover:text-blue-600">Accounts</Link>
-              <Link href="/holdings" className="text-gray-500 hover:text-blue-600">Holdings</Link>
-              <Link href="/find-profits" className="text-gray-800 font-medium hover:text-blue-600">Find Profits</Link>
-              <Link href="/automation" className="text-gray-500 hover:text-blue-600">Watchlist</Link>
-            </nav>
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -1732,14 +1708,14 @@ export default function FindProfitsPage() {
                                         {watchlistLoading ? (
                                           <>
                                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                            Adding to Watchlist...
+                                            Adding to Configure Automation...
                                           </>
                                         ) : (
                                           <>
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                             </svg>
-                                            Add {selectedOption.contract_type === "put" ? "CSP" : "Covered Call"} to Watchlist
+                                            Add {selectedOption.contract_type === "put" ? "CSP" : "Covered Call"} to Configure Automation
                                           </>
                                         )}
                                       </button>

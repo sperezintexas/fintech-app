@@ -189,7 +189,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, ac
                         <button
                           onClick={() => onAddToWatchlist(position)}
                           className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                          title="Add to Watchlist / Alert"
+                          title="Add to Configure Automation / Alert"
                         >
                           <svg
                             className="w-4 h-4"

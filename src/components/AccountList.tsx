@@ -1,6 +1,7 @@
 "use client";
 
 import type { Account } from "@/types/portfolio";
+import { useRouter } from "next/navigation";
 
 type AccountListProps = {
   accounts: Account[];
@@ -45,6 +46,8 @@ function getStrategyBadge(strategy: Account["strategy"]): { bg: string; text: st
 }
 
 export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountListProps) {
+  const router = useRouter();
+
   if (accounts.length === 0) {
     return (
       <div className="text-center py-12 bg-gray-50 rounded-2xl">
@@ -81,7 +84,16 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
         return (
           <div
             key={account._id}
-            className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow"
+            className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+            role="button"
+            tabIndex={0}
+            onClick={() => router.push(`/holdings?accountId=${account._id}`)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                router.push(`/holdings?accountId=${account._id}`);
+              }
+            }}
           >
             <div className="p-6">
               <div className="flex items-start justify-between">
@@ -118,13 +130,19 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
               {/* Actions */}
               <div className="flex gap-2 mt-6 pt-4 border-t border-gray-100">
                 <button
-                  onClick={() => onEdit(account)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(account);
+                  }}
                   className="flex-1 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                 >
                   Edit
                 </button>
                 <button
-                  onClick={() => onDelete(account._id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(account._id);
+                  }}
                   disabled={isDeleting === account._id}
                   className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
                 >

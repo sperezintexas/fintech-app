@@ -32,6 +32,7 @@
     "react-dom": "^19.2.3",
     "recharts": "^3.7.0",
     "tailwindcss": "^4.1.18",
+    "twitter-api-v2": "^1.29.0",
     "typescript": "^5.9.3",
     "web-push": "^3.6.7",
     "yahoo-finance2": "^3.13.0"

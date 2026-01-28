@@ -182,12 +182,12 @@ export type ScheduledAlert = {
 };
 
 // Alert Configuration Types
-export type AlertDeliveryChannel = "email" | "sms" | "slack" | "push";
+export type AlertDeliveryChannel = "email" | "sms" | "slack" | "push" | "twitter";
 
 export type AlertDeliveryConfig = {
   channel: AlertDeliveryChannel;
   enabled: boolean;
-  target: string; // email address, phone number, slack webhook/channel
+  target: string; // email address, phone number, slack webhook, twitter handle, etc.
   verified?: boolean;
   // Cost tracking (per message)
   estimatedCost?: number; // in cents
@@ -246,6 +246,7 @@ export const ALERT_CHANNEL_COSTS: Record<AlertDeliveryChannel, { perMessage: num
   sms: { perMessage: 1, description: "$0.01 per SMS (Twilio)" },
   slack: { perMessage: 0, description: "Free - webhook integration" },
   push: { perMessage: 0, description: "Free - browser notifications" },
+  twitter: { perMessage: 0, description: "Free - X/Twitter integration" },
 };
 
 // Predefined alert templates
@@ -376,4 +377,34 @@ export type SmartXAIReport = {
   };
   createdAt: string;
   expiresAt: string; // 30 days from creation
+};
+
+// Custom Report Definitions (user-configured)
+export type ReportDefinitionType = "smartxai" | "portfoliosummary";
+
+export type ReportDefinition = {
+  _id: string;
+  accountId: string;
+  name: string;
+  description: string;
+  type: ReportDefinitionType;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Scheduled Report Jobs (user-configured)
+export type ReportJobStatus = "active" | "paused";
+
+export type ReportJob = {
+  _id: string;
+  accountId: string;
+  name: string;
+  reportId: string;
+  scheduleCron: string; // cron expression
+  channels: AlertDeliveryChannel[]; // slack | push | twitter
+  status: ReportJobStatus;
+  lastRunAt?: string;
+  nextRunAt?: string;
+  createdAt: string;
+  updatedAt: string;
 };

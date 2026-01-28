@@ -1,9 +1,10 @@
 import Agenda, { Job } from "agenda";
 import { ObjectId } from "mongodb";
 import { getDb } from "./mongodb";
-import type { WatchlistItem, WatchlistAlert, RiskLevel } from "@/types/portfolio";
+import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, ReportJob, ReportDefinition } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
 import { getMultipleTickerOHLC } from "./yahoo";
+import { postToXTweet, truncateForX } from "./x";
 
 // Removed - using Yahoo Finance
 // Removed - using Yahoo Finance
@@ -82,6 +83,229 @@ function defineJobs(agenda: Agenda) {
       console.error("Alert cleanup failed:", error);
       throw error;
     }
+  });
+
+  // Scheduled report job (user-configured)
+  agenda.define("scheduled-report", async (job: Job) => {
+    const data = job.attrs.data as { jobId?: string } | undefined;
+    const jobId = data?.jobId;
+    if (!jobId) return;
+
+    const db = await getDb();
+    const reportJob = (await db.collection("reportJobs").findOne({ _id: new ObjectId(jobId) })) as (ReportJob & { _id: ObjectId }) | null;
+    if (!reportJob || reportJob.status !== "active") return;
+
+    const reportDef = (await db
+      .collection("reportDefinitions")
+      .findOne({ _id: new ObjectId(reportJob.reportId) })) as (ReportDefinition & { _id: ObjectId }) | null;
+    if (!reportDef) return;
+
+    // Generate report output (SmartXAI or PortfolioSummary)
+    let title = reportDef.name;
+    let bodyText = reportDef.description ? `${reportDef.description}\n\n` : "";
+    let reportLink: string | null = null;
+
+    if (reportDef.type === "smartxai") {
+      try {
+        const { POST: generateSmartXAI } = await import("@/app/api/reports/smartxai/route");
+        const res = await generateSmartXAI({ json: async () => ({ accountId: reportDef.accountId }) } as any);
+        const payload = (await res.json()) as { success?: boolean; report?: { _id: string; title: string; summary: any } };
+
+        if (payload.success && payload.report) {
+          title = payload.report.title;
+          reportLink = `/reports/${payload.report._id}`;
+          const summary = payload.report.summary;
+          bodyText += [
+            `Summary:`,
+            `- Positions: ${summary.totalPositions}`,
+            `- Total value: $${Number(summary.totalValue).toFixed(2)}`,
+            `- P/L: $${Number(summary.totalProfitLoss).toFixed(2)} (${Number(summary.totalProfitLossPercent).toFixed(2)}%)`,
+            `- Sentiment: bullish ${summary.bullishCount} / neutral ${summary.neutralCount} / bearish ${summary.bearishCount}`,
+          ].join("\n");
+        } else {
+          bodyText += `Failed to generate SmartXAI report.`;
+        }
+      } catch (e) {
+        console.error("Failed to generate SmartXAI report for scheduled job:", e);
+        bodyText += `Failed to generate SmartXAI report.`;
+      }
+    } else if (reportDef.type === "portfoliosummary") {
+      try {
+        const { POST: generatePortfolioSummary } = await import("@/app/api/reports/portfoliosummary/route");
+        const res = await generatePortfolioSummary({ json: async () => ({ accountId: reportDef.accountId }) } as any);
+        const payload = (await res.json()) as {
+          success?: boolean;
+          report?: {
+            _id: string;
+            title: string;
+            accounts: Array<{
+              name: string;
+              broker?: string;
+              riskLevel: string;
+              strategy: string;
+              totalValue: number;
+              dailyChange: number;
+              dailyChangePercent: number;
+              weekChange?: number;
+              weekChangePercent?: number;
+              positions: Array<{
+                symbol: string;
+                shares?: number;
+                avgCost: number;
+                currentPrice: number;
+                dailyChange: number;
+                dailyChangePercent: number;
+                unrealizedPnL: number;
+                unrealizedPnLPercent: number;
+              }>;
+              optionsActivity?: string;
+              recommendation?: string;
+            }>;
+            marketSnapshot: {
+              SPY: { price: number; change: number; changePercent: number };
+              QQQ: { price: number; change: number; changePercent: number };
+              VIX: { price: number; level: "low" | "moderate" | "elevated" };
+              TSLA: { price: number; change: number; changePercent: number };
+            };
+            goalsProgress: {
+              merrill: { target: number; targetDate: string; currentValue: number; progressPercent: number; cagrNeeded: number };
+              fidelity: { targetDate: string; currentValue: number; trajectory: "strong" | "moderate" | "weak" };
+            };
+          };
+        };
+
+        if (payload.success && payload.report) {
+          title = payload.report.title;
+          reportLink = `/reports/${payload.report._id}`;
+          const r = payload.report;
+
+          // Format report in the specified style
+          const lines: string[] = [r.title, ""];
+
+          // Account summaries
+          for (const acc of r.accounts) {
+            const riskLabel = acc.riskLevel === "low" || acc.riskLevel === "medium" ? "Moderate" : "Aggressive";
+            const strategyLabel = acc.strategy || "Core";
+            lines.push(`${acc.broker || acc.name} (${riskLabel} – ${strategyLabel})`);
+
+            lines.push(`• Total Value:          $${acc.totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+
+            // Main position (TSLA if available, otherwise first position)
+            const mainPos = acc.positions.find((p) => p.symbol === "TSLA") || acc.positions[0];
+            if (mainPos) {
+              const sign = mainPos.dailyChangePercent >= 0 ? "+" : "";
+              const signUnreal = mainPos.unrealizedPnLPercent >= 0 ? "+" : "";
+              lines.push(
+                `• ${mainPos.symbol} Position:        ${mainPos.shares || 0} shares @ avg $${mainPos.avgCost.toFixed(2)} → current $${mainPos.currentPrice.toFixed(2)} (${sign}${mainPos.dailyChangePercent.toFixed(2)}% today / ${signUnreal}${mainPos.unrealizedPnLPercent.toFixed(2)}% unrealized)`
+              );
+            }
+
+            const signDay = acc.dailyChangePercent >= 0 ? "+" : "";
+            const signWeek = acc.weekChangePercent && acc.weekChangePercent >= 0 ? "+" : "";
+            lines.push(
+              `• Portfolio Change:     Today: ${signDay}$${acc.dailyChange.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${signDay}${acc.dailyChangePercent.toFixed(2)}%)    Week: ${signWeek}$${acc.weekChange?.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0.00"} (${signWeek}${acc.weekChangePercent?.toFixed(2) || "0.00"}%)`
+            );
+
+            // Key drivers (simplified - top movers)
+            const topMovers = acc.positions
+              .filter((p) => Math.abs(p.dailyChangePercent) > 0.5)
+              .sort((a, b) => Math.abs(b.dailyChangePercent) - Math.abs(a.dailyChangePercent))
+              .slice(0, 3);
+            if (topMovers.length > 0) {
+              const driverText = topMovers
+                .map((p) => {
+                  const sign = p.dailyChange >= 0 ? "+" : "";
+                  return `${p.symbol} ${sign}$${p.currentPrice.toFixed(2)} today`;
+                })
+                .join(" | ");
+              lines.push(`• Key Drivers:          ${driverText}`);
+            }
+
+            if (acc.optionsActivity) {
+              lines.push(`• Options Activity:     ${acc.optionsActivity}`);
+            }
+
+            if (acc.recommendation) {
+              lines.push(`• Recommendation:       ${acc.recommendation}`);
+            }
+
+            lines.push("");
+          }
+
+          // Market Snapshot
+          lines.push("Market Snapshot");
+          const m = r.marketSnapshot;
+          lines.push(`• SPY:      $${m.SPY.price.toFixed(2)} (${m.SPY.changePercent >= 0 ? "+" : ""}${m.SPY.changePercent.toFixed(2)}%)`);
+          lines.push(`• QQQ:      $${m.QQQ.price.toFixed(2)} (${m.QQQ.changePercent >= 0 ? "+" : ""}${m.QQQ.changePercent.toFixed(2)}%)`);
+          lines.push(`• VIX:      ${m.VIX.price.toFixed(1)} (fear level: ${m.VIX.level})`);
+          lines.push(`• TSLA:     $${m.TSLA.price.toFixed(2)} (${m.TSLA.changePercent >= 0 ? "+" : ""}${m.TSLA.changePercent.toFixed(2)}%)`);
+          lines.push("");
+
+          // Progress Toward Goals
+          lines.push("Progress Toward Goals");
+          const g = r.goalsProgress;
+          lines.push(
+            `• Merrill → $${g.merrill.target.toLocaleString()} balanced by ${g.merrill.targetDate}: ~${g.merrill.progressPercent.toFixed(1)}% of way (assuming ${g.merrill.cagrNeeded.toFixed(0)}-${Math.ceil(g.merrill.cagrNeeded * 1.4)}% CAGR needed)`
+          );
+          lines.push(`• Fidelity → max growth by ${g.fidelity.targetDate}: current trajectory [${g.fidelity.trajectory}]`);
+          lines.push("");
+
+          // Risk Reminder
+          lines.push(
+            "Risk Reminder: Options involve substantial risk of loss and are not suitable for all investors. Review OCC booklet before trading."
+          );
+
+          bodyText = lines.join("\n");
+        } else {
+          bodyText += `Failed to generate PortfolioSummary report.`;
+        }
+      } catch (e) {
+        console.error("Failed to generate PortfolioSummary report for scheduled job:", e);
+        bodyText += `Failed to generate PortfolioSummary report.`;
+      }
+    } else {
+      bodyText += `Unknown report type: ${reportDef.type}`;
+    }
+
+    // Deliver (Slack only for now; push/twitter are placeholders)
+    const prefs = await db.collection("alertPreferences").findOne({ accountId: reportJob.accountId });
+    const slackConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "slack");
+    const twitterConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "twitter");
+
+    if (reportJob.channels.includes("slack") && slackConfig?.target) {
+      try {
+        await fetch(slackConfig.target, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: `*${title}*\n${bodyText}${reportLink ? `\n\nView: ${reportLink}` : ""}`,
+          }),
+        });
+      } catch (e) {
+        console.error("Failed to post report to Slack:", e);
+      }
+    }
+
+    if (reportJob.channels.includes("twitter") && twitterConfig?.target) {
+      try {
+        const tweetText = truncateForX(
+          `${title}\n\n${bodyText}${reportLink ? `\n\n${reportLink}` : ""}`,
+          280
+        );
+        await postToXTweet(tweetText);
+      } catch (e) {
+        console.error("Failed to post report to X:", e);
+      }
+    }
+
+    if (reportJob.channels.includes("push")) {
+      console.log("Push delivery selected but not implemented server-side yet.");
+    }
+
+    await db.collection("reportJobs").updateOne(
+      { _id: new ObjectId(jobId) },
+      { $set: { lastRunAt: new Date().toISOString(), updatedAt: new Date().toISOString() } }
+    );
   });
 }
 
