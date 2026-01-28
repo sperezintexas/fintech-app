@@ -13,6 +13,9 @@ export type Position = {
   shares?: number;
   purchasePrice?: number;
   currentPrice?: number;
+  // Daily change (from market data)
+  dailyChange?: number;
+  dailyChangePercent?: number;
   // Option specific
   strike?: number;
   expiration?: string;

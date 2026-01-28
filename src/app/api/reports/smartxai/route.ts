@@ -3,6 +3,7 @@ import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import type {
   WatchlistItem,
+  Position,
   SmartXAIReport,
   PositionAnalysis,
   StockSnapshot,
@@ -165,11 +166,70 @@ export async function POST(request: NextRequest) {
 
     const riskLevel: RiskLevel = account.riskLevel || "medium";
 
-    // Fetch all watchlist items for this account
-    const watchlistItems = await db
-      .collection<WatchlistItem>("watchlist")
-      .find({ accountId })
-      .toArray();
+    // Prefer analyzing actual holdings (positions) when available; otherwise fall back to watchlist items
+    const positionsSource = (account.positions || []) as Position[];
+
+    let watchlistItems: WatchlistItem[];
+
+    if (positionsSource.some((p) => p.type === "stock" || p.type === "option")) {
+      // Map holdings (positions) into synthetic WatchList-style items so we can reuse the existing
+      // SmartXAI analysis pipeline and UI.
+      watchlistItems = positionsSource
+        .filter((p) => p.type === "stock" || p.type === "option")
+        .map((pos) => {
+          const isStock = pos.type === "stock";
+          const isOption = pos.type === "option";
+          const ticker = (pos.ticker || "").toUpperCase();
+
+          const quantity = isStock ? pos.shares || 0 : (pos.contracts || 0) * 100;
+
+          const entryPrice = isStock
+            ? pos.purchasePrice || pos.currentPrice || 0
+            : pos.premium || pos.currentPrice || 0;
+
+          const strategy =
+            isStock
+              ? "long-stock"
+              : pos.optionType === "put"
+              ? "cash-secured-put"
+              : "covered-call";
+
+          const type =
+            isStock
+              ? "stock"
+              : pos.optionType === "put"
+              ? "put"
+              : "call";
+
+          const nowIso = new Date().toISOString();
+
+          return {
+            _id: new ObjectId(), // synthetic id for reporting only
+            accountId,
+            symbol: ticker,
+            underlyingSymbol: ticker,
+            type,
+            quantity,
+            entryPrice,
+            entryPremium: !isStock ? entryPrice : undefined,
+            strikePrice: isOption ? pos.strike : undefined,
+            expirationDate: isOption ? pos.expiration : undefined,
+            notes: "",
+            strategy,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            entryDate: nowIso,
+            addedAt: nowIso,
+            alertsEnabled: true,
+          } as unknown as WatchlistItem;
+        });
+    } else {
+      // Fallback: analyze explicit WatchList items if no holdings are present
+      watchlistItems = await db
+        .collection<WatchlistItem>("watchlist")
+        .find({ accountId })
+        .toArray();
+    }
 
     if (watchlistItems.length === 0) {
       return NextResponse.json(

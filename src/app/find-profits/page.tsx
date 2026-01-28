@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { Account, RiskLevel } from "@/types/portfolio";
 import { AppHeader } from "@/components/AppHeader";
@@ -493,6 +493,36 @@ export default function FindProfitsPage() {
 
   const selectedAccount = accounts.find((a) => a._id === selectedAccountId);
   const selectedStrategyData = STRATEGIES.find((s) => s.id === selectedStrategy);
+
+  // Calculate estimated total cash across all accounts
+  // Cash should be stored as positions (type: "cash"), but we also check account.balance as fallback
+  const estimatedTotalCash = useMemo(() => {
+    if (accounts.length === 0) return 0;
+
+    const total = accounts.reduce((sum, account) => {
+      const positions = account.positions || [];
+
+      // Sum cash positions (type: "cash")
+      const cashPositions = positions.filter((p) => p.type === "cash");
+      const cashFromPositions = cashPositions.reduce((posSum, pos) => posSum + (pos.amount || 0), 0);
+
+      // If account has explicit cash positions, use those
+      if (cashFromPositions > 0) {
+        return sum + cashFromPositions;
+      }
+
+      // Fallback: if account has no positions at all, treat balance as cash
+      // (This handles legacy accounts where cash wasn't stored as a position)
+      if (positions.length === 0) {
+        return sum + (account.balance || 0);
+      }
+
+      // Account has positions but no cash positions - return 0 for this account
+      return sum;
+    }, 0);
+
+    return total;
+  }, [accounts]);
 
   // Filter strategies based on risk level
   const getStrategyFit = (strategy: Strategy): "recommended" | "caution" | "not-recommended" => {
@@ -1965,6 +1995,25 @@ export default function FindProfitsPage() {
                       <p className="text-sm text-amber-800 mb-4">
                         Sell put options while holding cash to cover potential stock purchase. Get paid premium upfront for agreeing to buy shares at the strike price.
                       </p>
+
+                      {/* Estimated Total Cash */}
+                      <div className="mb-4 p-3 bg-white/80 rounded-lg border border-amber-300">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-amber-900">Estimated Total Cash on Hand:</span>
+                          <span className="text-lg font-bold text-amber-900">
+                            {new Intl.NumberFormat("en-US", {
+                              style: "currency",
+                              currency: "USD",
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }).format(estimatedTotalCash)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-700 mt-1">
+                          Across all accounts (cash positions only)
+                        </p>
+                      </div>
+
                       <ul className="space-y-2 text-sm text-amber-800">
                         <li className="flex items-start gap-2">
                           <span className="text-green-500">✓</span>

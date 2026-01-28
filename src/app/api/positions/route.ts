@@ -31,21 +31,27 @@ export async function GET(request: NextRequest) {
 
     const positions: Position[] = account.positions || [];
 
-    // Fetch current prices for stock positions
-    const stockTickers = positions
-      .filter((p) => p.type === "stock" && p.ticker)
-      .map((p) => p.ticker!);
+    // Fetch current prices for stock and option positions (options use underlying ticker)
+    const tickers = positions
+      .filter((p) => (p.type === "stock" || p.type === "option") && p.ticker)
+      .map((p) => p.ticker!.toUpperCase());
+    const uniqueTickers = Array.from(new Set(tickers));
 
-    if (stockTickers.length > 0) {
+    if (uniqueTickers.length > 0) {
       try {
-        const prices = await getMultipleTickerPrices(stockTickers);
+        const prices = await getMultipleTickerPrices(uniqueTickers);
 
-        // Update positions with current prices
+        // Update positions with current prices and daily change data
         const updatedPositions = positions.map((position) => {
-          if (position.type === "stock" && position.ticker) {
+          if ((position.type === "stock" || position.type === "option") && position.ticker) {
             const priceData = prices.get(position.ticker.toUpperCase());
             if (priceData) {
-              return { ...position, currentPrice: priceData.price };
+              return {
+                ...position,
+                currentPrice: priceData.price,
+                dailyChange: priceData.change,
+                dailyChangePercent: priceData.changePercent,
+              };
             }
           }
           return position;
