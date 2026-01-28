@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "myInvestments - Portfolio Manager",
   description:
     "Track your investment portfolio, monitor market conditions, and get personalized recommendations.",
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({

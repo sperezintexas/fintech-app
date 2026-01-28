@@ -89,7 +89,7 @@ export default function AutomationPage() {
   const [reportFormError, setReportFormError] = useState<string>("");
   const [reportFormSaving, setReportFormSaving] = useState(false);
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
-  const [reportForm, setReportForm] = useState<{ name: string; description: string; type: "smartxai" | "portfoliosummary" }>({
+  const [reportForm, setReportForm] = useState<{ name: string; description: string; type: "smartxai" | "portfoliosummary" | "cleanup" }>({
     name: "",
     description: "",
     type: "smartxai",
@@ -2551,11 +2551,12 @@ export default function AutomationPage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
                       <select
                         value={reportForm.type}
-                        onChange={(e) => setReportForm({ ...reportForm, type: e.target.value as "smartxai" | "portfoliosummary" })}
+                        onChange={(e) => setReportForm({ ...reportForm, type: e.target.value as "smartxai" | "portfoliosummary" | "cleanup" })}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg"
                       >
                         <option value="smartxai">SmartXAI Report</option>
                         <option value="portfoliosummary">Portfolio Summary</option>
+                        <option value="cleanup">Data Cleanup</option>
                       </select>
                     </div>
                     <div>
@@ -2564,7 +2565,13 @@ export default function AutomationPage() {
                         value={reportForm.name}
                         onChange={(e) => setReportForm({ ...reportForm, name: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg"
-                        placeholder={reportForm.type === "smartxai" ? "e.g. Daily SmartXAI Summary" : "e.g. Daily Portfolio Update"}
+                        placeholder={
+                          reportForm.type === "smartxai"
+                            ? "e.g. Daily SmartXAI Summary"
+                            : reportForm.type === "portfoliosummary"
+                            ? "e.g. Daily Portfolio Update"
+                            : "e.g. Weekly Data Cleanup"
+                        }
                       />
                     </div>
                     <div>

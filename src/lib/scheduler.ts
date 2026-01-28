@@ -263,6 +263,59 @@ function defineJobs(agenda: Agenda) {
         console.error("Failed to generate PortfolioSummary report for scheduled job:", e);
         bodyText += `Failed to generate PortfolioSummary report.`;
       }
+    } else if (reportDef.type === "cleanup") {
+      // Run cleanup job - delete old data older than 30 days
+      try {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const cleanupResults: Record<string, number> = {};
+
+        // Cleanup old SmartXAI reports
+        const smartXAIResult = await db.collection("smartXAIReports").deleteMany({
+          createdAt: { $lt: thirtyDaysAgo.toISOString() },
+        });
+        cleanupResults.smartXAIReports = smartXAIResult.deletedCount;
+
+        // Cleanup old PortfolioSummary reports
+        const portfolioSummaryResult = await db.collection("portfolioSummaryReports").deleteMany({
+          createdAt: { $lt: thirtyDaysAgo.toISOString() },
+        });
+        cleanupResults.portfolioSummaryReports = portfolioSummaryResult.deletedCount;
+
+        // Cleanup old alerts (both acknowledged and unacknowledged older than 30 days)
+        const alertsResult = await db.collection("alerts").deleteMany({
+          createdAt: { $lt: thirtyDaysAgo.toISOString() },
+        });
+        cleanupResults.alerts = alertsResult.deletedCount;
+
+        // Cleanup old scheduled alerts (if they exist)
+        const scheduledAlertsResult = await db.collection("scheduledAlerts").deleteMany({
+          createdAt: { $lt: thirtyDaysAgo.toISOString() },
+        });
+        cleanupResults.scheduledAlerts = scheduledAlertsResult.deletedCount;
+
+        const totalDeleted = Object.values(cleanupResults).reduce((a, b) => a + b, 0);
+
+        title = "Data Cleanup Complete";
+        bodyText = [
+          `Cleanup completed on ${new Date().toLocaleString()}`,
+          "",
+          "Deleted records older than 30 days:",
+          `• SmartXAI Reports: ${cleanupResults.smartXAIReports}`,
+          `• Portfolio Summary Reports: ${cleanupResults.portfolioSummaryReports}`,
+          `• Alerts: ${cleanupResults.alerts}`,
+          `• Scheduled Alerts: ${cleanupResults.scheduledAlerts}`,
+          "",
+          `Total records deleted: ${totalDeleted}`,
+        ].join("\n");
+
+        console.log(`Cleanup job completed: ${totalDeleted} records deleted`);
+      } catch (e) {
+        console.error("Failed to run cleanup job:", e);
+        title = "Data Cleanup Failed";
+        bodyText = `Failed to run cleanup job: ${e instanceof Error ? e.message : String(e)}`;
+      }
     } else {
       bodyText += `Unknown report type: ${reportDef.type}`;
     }

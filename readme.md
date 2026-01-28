@@ -91,8 +91,6 @@ Create `.env.local`:
 ```
 MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB=myinvestments
-POLYGON_API_KEY=your_api_key_here
-CRON_SECRET=your_random_secret_here
 ```
 
 ### Development
@@ -111,7 +109,7 @@ npm start
 
 The watchlist alert system analyzes your positions daily and generates HOLD/CLOSE/BTC recommendations.
 
-### Built-in Scheduler (Recommended)
+### Built-in Scheduler
 The app includes an **Agenda.js** scheduler backed by MongoDB for persistent job scheduling:
 
 1. Go to **Watchlist → Alert Settings → Scheduled Jobs**

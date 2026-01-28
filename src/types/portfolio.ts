@@ -383,7 +383,7 @@ export type SmartXAIReport = {
 };
 
 // Custom Report Definitions (user-configured)
-export type ReportDefinitionType = "smartxai" | "portfoliosummary";
+export type ReportDefinitionType = "smartxai" | "portfoliosummary" | "cleanup";
 
 export type ReportDefinition = {
   _id: string;

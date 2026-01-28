@@ -10,7 +10,8 @@ import YahooFinance from "yahoo-finance2";
 import type { MarketConditions } from "@/types/portfolio";
 
 // Initialize Yahoo Finance instance (v3 requirement)
-const yahooFinance = new YahooFinance();
+// Suppress one-time upstream notice (see yahoo-finance2 issue #764)
+const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
 // Major indices ETFs to track
 const INDEX_TICKERS = [

@@ -494,6 +494,16 @@ export default function FindProfitsPage() {
   const selectedAccount = accounts.find((a) => a._id === selectedAccountId);
   const selectedStrategyData = STRATEGIES.find((s) => s.id === selectedStrategy);
 
+  // Calculate available shares for the selected account and ticker (for covered calls)
+  const availableShares = useMemo(() => {
+    if (!selectedAccount || !tickerData) return 0;
+    const positions = selectedAccount.positions || [];
+    // Sum shares from stock positions matching the ticker
+    return positions
+      .filter((p) => p.type === "stock" && p.ticker?.toUpperCase() === tickerData.symbol.toUpperCase())
+      .reduce((sum, p) => sum + (p.shares || 0), 0);
+  }, [selectedAccount, tickerData]);
+
   // Calculate estimated total cash across all accounts
   // Cash should be stored as positions (type: "cash"), but we also check account.balance as fallback
   const estimatedTotalCash = useMemo(() => {
@@ -1967,6 +1977,29 @@ export default function FindProfitsPage() {
                       <p className="text-sm text-blue-800 mb-4">
                         A covered call involves owning shares of stock and selling call options against them to generate income.
                       </p>
+
+                      {/* Available Shares Display */}
+                      {tickerData && selectedAccount && (
+                        <div className="mb-4 p-3 bg-white/80 rounded-lg border border-blue-300">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-blue-900">
+                              Available Shares ({tickerData.symbol}):
+                            </span>
+                            <span className="text-lg font-bold text-blue-900">
+                              {availableShares.toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-xs text-blue-700 mt-1">
+                            {selectedAccount.name}
+                          </p>
+                          {availableShares === 0 && (
+                            <p className="text-xs text-amber-600 mt-1">
+                              ⚠ No shares found. You need to own shares to write covered calls.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
                       <ul className="space-y-2 text-sm text-blue-800">
                         <li className="flex items-start gap-2">
                           <span className="text-green-500">✓</span>
