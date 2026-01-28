@@ -88,7 +88,7 @@ export default function ReportPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Report Not Found</h1>
-          <Link href="/watchlist" className="text-blue-600 hover:text-blue-800">
+          <Link href="/automation" className="text-blue-600 hover:text-blue-800">
             Back to Watchlist
           </Link>
         </div>
@@ -116,7 +116,7 @@ export default function ReportPage() {
             </div>
             <nav className="hidden md:flex items-center gap-6">
               <Link href="/" className="text-gray-500 hover:text-blue-600">Dashboard</Link>
-              <Link href="/watchlist" className="text-gray-800 font-medium hover:text-blue-600">Watchlist</Link>
+              <Link href="/automation" className="text-gray-800 font-medium hover:text-blue-600">Watchlist</Link>
             </nav>
           </div>
         </div>
@@ -313,7 +313,7 @@ export default function ReportPage() {
         {/* Back Button */}
         <div className="mt-8">
           <Link
-            href="/watchlist"
+            href="/automation"
             className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

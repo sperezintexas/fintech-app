@@ -135,13 +135,13 @@ export default function AccountsPage() {
               <Link href="/accounts" className="text-gray-800 font-medium hover:text-blue-600">
                 Accounts
               </Link>
-              <Link href="/positions" className="text-gray-500 hover:text-blue-600">
-                Positions
+              <Link href="/holdings" className="text-gray-500 hover:text-blue-600">
+                Holdings
               </Link>
               <Link href="/find-profits" className="text-gray-500 hover:text-blue-600">
                 Find Profits
               </Link>
-              <Link href="/watchlist" className="text-gray-500 hover:text-blue-600">
+              <Link href="/automation" className="text-gray-500 hover:text-blue-600">
                 Watchlist
               </Link>
             </nav>

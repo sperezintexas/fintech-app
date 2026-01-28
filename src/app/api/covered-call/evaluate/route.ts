@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import YahooFinance from "yahoo-finance2";
 import { evaluateCoveredCall, CoveredCallPosition } from "@/lib/covered-call-monitor";
 
-const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
-const BASE_URL = "https://api.polygon.io";
+const yahooFinance = new YahooFinance();
 
 export const dynamic = "force-dynamic";
 
@@ -51,16 +51,8 @@ export async function POST(request: NextRequest) {
     // Fetch current stock price
     let stockPrice = strikePrice; // Fallback
     try {
-      const tickerRes = await fetch(
-        `${BASE_URL}/v2/aggs/ticker/${symbol.toUpperCase()}/prev?adjusted=true&apiKey=${POLYGON_API_KEY}`,
-        { cache: "no-store" }
-      );
-      if (tickerRes.ok) {
-        const tickerData = await tickerRes.json();
-        if (tickerData.results?.[0]?.c) {
-          stockPrice = tickerData.results[0].c;
-        }
-      }
+      const quote = await yahooFinance.quote(symbol.toUpperCase());
+      stockPrice = quote.regularMarketPrice || strikePrice;
     } catch (err) {
       console.error("Failed to fetch stock price:", err);
     }

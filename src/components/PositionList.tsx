@@ -6,22 +6,75 @@ type PositionListProps = {
   positions: Position[];
   onEdit: (position: Position) => void;
   onDelete: (positionId: string) => void;
+  onAddToWatchlist?: (position: Position) => void;
+  accountId?: string;
 };
 
-export function PositionList({ positions, onEdit, onDelete }: PositionListProps) {
+export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, accountId }: PositionListProps) {
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
     }).format(value);
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+  const formatNumber = (value: number, decimals: number = 2) => {
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(value);
+  };
+
+  // Calculate position values
+  const calculatePositionValues = (position: Position) => {
+    if (position.type === "cash") {
+      const amount = position.amount || 0;
+      return {
+        type: "Cash",
+        symbol: position.ticker || "CASH",
+        shares: null,
+        lastPrice: amount,
+        costBasisPerShare: amount,
+        totalCost: amount,
+        marketValue: amount,
+      };
+    }
+
+    if (position.type === "stock") {
+      const shares = position.shares || 0;
+      const purchasePrice = position.purchasePrice || 0;
+      const currentPrice = position.currentPrice || purchasePrice;
+      const totalCost = shares * purchasePrice;
+      const marketValue = shares * currentPrice;
+
+      return {
+        type: "Stock",
+        symbol: position.ticker || "",
+        shares,
+        lastPrice: currentPrice,
+        costBasisPerShare: purchasePrice,
+        totalCost,
+        marketValue,
+      };
+    }
+
+    // Option position
+    const contracts = position.contracts || 0;
+    const premium = position.premium || 0;
+    const currentPremium = position.currentPrice || premium;
+    // Options: 1 contract = 100 shares
+    const shares = contracts * 100;
+    const totalCost = contracts * premium * 100;
+    const marketValue = contracts * currentPremium * 100;
+
+    return {
+      type: "Option",
+      symbol: position.ticker || "",
+      shares,
+      lastPrice: currentPremium,
+      costBasisPerShare: premium,
+      totalCost,
+      marketValue,
+    };
   };
 
   if (positions.length === 0) {
@@ -42,9 +95,9 @@ export function PositionList({ positions, onEdit, onDelete }: PositionListProps)
             />
           </svg>
         </div>
-        <p className="text-gray-500">No positions yet</p>
+        <p className="text-gray-500">No holdings yet</p>
         <p className="text-gray-400 text-sm mt-1">
-          Add a stock or option position to get started
+          Add a stock, option, or cash holding to get started
         </p>
       </div>
     );
@@ -60,13 +113,19 @@ export function PositionList({ positions, onEdit, onDelete }: PositionListProps)
                 Type
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Ticker
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Details
+                Symbol
               </th>
               <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Value
+                Shares
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Last Price
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Total Cost
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Market Value
               </th>
               <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                 Actions
@@ -75,10 +134,10 @@ export function PositionList({ positions, onEdit, onDelete }: PositionListProps)
           </thead>
           <tbody className="divide-y divide-gray-100">
             {positions.map((position) => {
+              const values = calculatePositionValues(position);
               const isStock = position.type === "stock";
-              const value = isStock
-                ? (position.shares || 0) * (position.currentPrice || position.purchasePrice || 0)
-                : (position.contracts || 0) * (position.premium || 0) * 100;
+              const isCash = position.type === "cash";
+              const isOption = position.type === "option";
 
               return (
                 <tr key={position._id} className="hover:bg-gray-50">
@@ -87,57 +146,66 @@ export function PositionList({ positions, onEdit, onDelete }: PositionListProps)
                       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         isStock
                           ? "bg-blue-100 text-blue-800"
-                          : "bg-purple-100 text-purple-800"
+                          : isOption
+                          ? "bg-purple-100 text-purple-800"
+                          : "bg-green-100 text-green-800"
                       }`}
                     >
-                      {isStock ? "Stock" : "Option"}
+                      {values.type}
                     </span>
                   </td>
                   <td className="px-6 py-4">
                     <span className="font-semibold text-gray-900">
-                      {position.ticker}
+                      {values.symbol}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    {isStock ? (
-                      <div className="text-sm">
-                        <p className="text-gray-900">
-                          {position.shares} shares @ {formatCurrency(position.purchasePrice || 0)}
-                        </p>
-                        {position.currentPrice && (
-                          <p className="text-gray-500">
-                            Current: {formatCurrency(position.currentPrice)}
-                          </p>
-                        )}
-                      </div>
+                  <td className="px-6 py-4 text-right">
+                    {values.shares !== null ? (
+                      <span className="text-gray-900">
+                        {formatNumber(values.shares, 3)}
+                      </span>
                     ) : (
-                      <div className="text-sm">
-                        <p className="text-gray-900">
-                          <span
-                            className={`font-medium ${
-                              position.optionType === "call"
-                                ? "text-green-600"
-                                : "text-red-600"
-                            }`}
-                          >
-                            {position.optionType?.toUpperCase()}
-                          </span>
-                          {" "}@ {formatCurrency(position.strike || 0)}
-                        </p>
-                        <p className="text-gray-500">
-                          {position.contracts} contract{(position.contracts || 0) > 1 ? "s" : ""} •
-                          Exp: {position.expiration && formatDate(position.expiration)}
-                        </p>
-                      </div>
+                      <span className="text-gray-400">—</span>
                     )}
                   </td>
                   <td className="px-6 py-4 text-right">
+                    <span className="text-gray-900">
+                      {formatCurrency(values.lastPrice)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <span className="text-gray-900">
+                      {formatCurrency(values.totalCost)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
                     <span className="font-semibold text-gray-900">
-                      {formatCurrency(value)}
+                      {formatCurrency(values.marketValue)}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
+                      {onAddToWatchlist && accountId && position.type !== "cash" && (
+                        <button
+                          onClick={() => onAddToWatchlist(position)}
+                          className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          title="Add to Watchlist / Alert"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                            />
+                          </svg>
+                        </button>
+                      )}
                       <button
                         onClick={() => onEdit(position)}
                         className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"

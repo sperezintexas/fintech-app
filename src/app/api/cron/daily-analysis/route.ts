@@ -3,9 +3,10 @@ import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import type { WatchlistItem, WatchlistAlert, RiskLevel } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "@/lib/watchlist-rules";
+import { getMultipleTickerOHLC } from "@/lib/yahoo";
 
-const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
-const BASE_URL = "https://api.polygon.io";
+// Removed - using Yahoo Finance
+// Removed - using Yahoo Finance
 const CRON_SECRET = process.env.CRON_SECRET;
 
 export const dynamic = "force-dynamic";
@@ -27,45 +28,9 @@ function verifyCronRequest(request: NextRequest): boolean {
 
 // Fetch market data using grouped daily (single API call for all)
 async function fetchGroupedDaily(): Promise<Map<string, { close: number; open: number }>> {
-  const dataMap = new Map<string, { close: number; open: number }>();
-
-  try {
-    const today = new Date();
-    const prevDay = new Date(today);
-    do {
-      prevDay.setDate(prevDay.getDate() - 1);
-    } while (prevDay.getDay() === 0 || prevDay.getDay() === 6);
-
-    const dateStr = prevDay.toISOString().split("T")[0];
-
-    const res = await fetch(
-      `${BASE_URL}/v2/aggs/grouped/locale/us/market/stocks/${dateStr}?adjusted=true&apiKey=${POLYGON_API_KEY}`
-    );
-
-    if (!res.ok) {
-      console.error("Failed to fetch grouped daily:", res.status);
-      return dataMap;
-    }
-
-    const data = await res.json();
-
-    if (data.results && Array.isArray(data.results)) {
-      for (const result of data.results) {
-        if (result.T && result.c && result.o) {
-          dataMap.set(result.T, {
-            close: result.c,
-            open: result.o,
-          });
-        }
-      }
-    }
-
-    console.log(`Fetched ${dataMap.size} tickers from grouped daily`);
-  } catch (error) {
-    console.error("Error fetching grouped daily:", error);
-  }
-
-  return dataMap;
+  // This function is kept for compatibility but now uses Yahoo Finance
+  // The actual implementation uses getMultipleTickerOHLC which is called directly
+  return new Map();
 }
 
 // Estimate option price
@@ -126,8 +91,24 @@ export async function GET(request: NextRequest) {
 
     console.log(`Found ${items.length} watchlist items to analyze`);
 
-    // Fetch market data in ONE call
-    const groupedData = await fetchGroupedDaily();
+    // Fetch market data using Yahoo Finance (batch call)
+    const symbols = items.map((item) => {
+      const underlying = item.underlyingSymbol || item.symbol.replace(/\d+[CP]\d+$/, "");
+      return underlying.toUpperCase();
+    });
+    const uniqueSymbols = Array.from(new Set(symbols));
+    const marketDataOHLC = await getMultipleTickerOHLC(uniqueSymbols);
+
+    // Convert to format expected by existing code
+    const groupedData = new Map<string, { close: number; open: number }>();
+    marketDataOHLC.forEach((ohlc, ticker) => {
+      groupedData.set(ticker, {
+        close: ohlc.close,
+        open: ohlc.open,
+      });
+    });
+
+    console.log(`Fetched ${groupedData.size} tickers from Yahoo Finance`);
 
     // Get account risk levels
     const accountIds = [...new Set(items.map((i) => i.accountId))];

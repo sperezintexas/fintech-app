@@ -1,18 +1,22 @@
 # myInvestments
 
 ## Overview
-This application manages investment portfolios, tracking accounts, positions (stocks, options, cash), watch lists, and generating recommendations. It aggregates portfolio values, supports risk profiles and strategies per account, and integrates real-time data from Polygon.io. Built with Next.js, React, TypeScript, and MongoDB.
+This application manages investment portfolios, accounts and cash, an account may have one or more positions (stocks, options)
+
+It aggregates portfolio values, supports risk profiles and strategies per account, and integrates real-time data from YahooQuery Built with Next.js, React, TypeScript, and MongoDB.
 
 ## Tech Stack
 - **Frontend**: Next.js 16 (App Router), React 19, TypeScript
 - **Styling**: Tailwind CSS v4
 - **Database**: MongoDB
-- **Market Data**: Polygon.io API
+- **Market Data**: Yahoo Finance API
 
 ## Requirements
 
 ### Functional Requirements
-- **Portfolio Management**: Define a portfolio that aggregates values from one or more accounts. Portfolio includes total value roll-up, performance metrics (e.g., ROI, unrealized gains/losses).
+- **Dashboard** : Home page with market snapshot and portfolio summary
+- **Portfolio Management**: Define a portfolio that aggregates values from one or more accounts. Portfolio includes total value roll-up, performance metrics (e.g., ROI, unrealized gains/losses)., and today's market snapshot
+
 - **Account Management**: Each account has:
   - Unique ID, name, balance.
   - Risk level (e.g., low, medium, high).
@@ -20,13 +24,13 @@ This application manages investment portfolios, tracking accounts, positions (st
   - Zero or many positions.
   - Recommendations generated based on positions (e.g., buy/sell suggestions using current/mid/future earnings data for stocks like TSLA, NVDA).
 - **Position Management**: Positions can be:
-  - Stocks: Ticker, shares, purchase price, current value (fetched via Polygon).
+  - Stocks: Ticker, shares, purchase price, current value (fetched via Yahoo).
   - Options: Contract details (strike, expiration, type: call/put), quantity, premium.
   - Cash: Amount, currency.
-  - Each position links to a watch list item (optional: alerts for price thresholds).
-- **Watch List**: Per position or account, track symbols with alerts (e.g., price changes, news).
+  - Each position links to a watch list item
+- **Watch List**: Per position and account, track symbols with alerts (e.g., price changes, sentiment, rational, rsi, iv
 - **Recommendations**: Algorithmic suggestions per account, factoring risk/strategy. Moderate: Bull call spreads on TSLA/NVDA. Aggressive: OTM calls on volatile stocks like IONQ.
-- **Real-time Updates**: Fetch stock/option prices via Polygon API for live UI refreshes.
+- **Real-time Updates**: Fetch stock/option prices via Yahoo API for live UI refreshes.
 - **Data Persistence**: Store portfolios, accounts, positions in MongoDB.
 - **UI Features**: Dashboard with views for portfolios, accounts, positions; real-time charts; input forms for adding/editing; recommendation panel.
 
@@ -57,47 +61,25 @@ src/
 
 ### Components
 - **Frontend**: Next.js App Router with React Server Components and Client Components for interactivity.
-- **API Layer**: Next.js API routes (`/api/*`) for backend logic, Polygon integration, and MongoDB operations.
+- **API Layer**: Next.js API routes (`/api/*`) for backend logic, Yahoo integration, and MongoDB operations.
 - **Database**: MongoDB schemas:
   - Portfolio: {_id, name, accounts: [account_ids], total_value}.
   - Account: {_id, name, risk_level, strategy, positions: [position_ids], recommendations: []}.
   - Position: {_id, type (stock/option/cash), details (ticker/strike/etc.), watch_list: {symbol, alerts}}.
-- **Integration**: Polygon API for real-time data (stocks, options chains). WebSocket or polling for updates.
+- **Integration**: Yahoo API for real-time data (stocks, options chains). WebSocket or polling for updates.
 - **Recommendation Engine**: Rule-based logic: For moderate risk, suggest spreads on TSLA; aggressive, OTM calls.
 
 ### Data Flow
 1. User adds portfolio/account/position via UI.
 2. API route saves to MongoDB.
-3. UI requests updates; API fetches from Polygon, computes values/recommendations.
+3. UI requests updates; API fetches from Yahoo, computes values/recommendations.
 4. Display aggregated portfolio value, positions, suggestions.
-
-## Architecture Diagram
-
-```mermaid
-graph TD
-    A[User] -->|Interact| B[Next.js Frontend]
-    B -->|API Routes| C[Next.js Backend]
-    C -->|Store/Retrieve| D[MongoDB]
-    C -->|Fetch Real-time Data| E[Polygon.io API]
-    C -->|Generate| F[Recommendations Engine]
-    F -->|Output| B
-    subgraph Next.js App
-        B
-        C
-        F
-    end
-    subgraph Data
-        D
-        E
-    end
-```
 
 ## Getting Started
 
 ### Prerequisites
 - Node.js 18+
 - MongoDB (local or Atlas)
-- Polygon.io API key
 
 ### Installation
 ```bash
@@ -160,26 +142,10 @@ POST /api/scheduler
 { "action": "cancel", "jobName": "daily-analysis" }
 ```
 
-### Alternative: External Cron
-If you prefer external triggers:
-
-**Vercel Cron** (vercel.json pre-configured):
-```json
-{ "crons": [{ "path": "/api/cron/daily-analysis", "schedule": "0 21 * * 1-5" }] }
-```
-
-**GitHub Actions** (.github/workflows/daily-analysis.yml):
-- Set secrets: `APP_URL`, `CRON_SECRET`
-- Runs at 4 PM EST Mon-Fri
-
-**Any Cron Service:**
-```
-GET https://your-app.com/api/cron/daily-analysis?secret=YOUR_CRON_SECRET
-```
 
 ### Alert Configuration
 In Watchlist → Alert Settings:
-- **Delivery Channels**: Email, SMS, Slack, Push
+- **Delivery Channels**: Slack, Push, twitter
 - **Message Templates**: Concise, Detailed, Actionable, Risk-Aware
 - **Thresholds**: Profit %, Loss %, DTE warnings
 - **Quiet Hours**: Don't alert during specified times

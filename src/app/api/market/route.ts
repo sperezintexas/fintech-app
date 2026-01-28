@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getMarketConditions } from "@/lib/polygon";
+import { getMarketConditions } from "@/lib/yahoo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 30;

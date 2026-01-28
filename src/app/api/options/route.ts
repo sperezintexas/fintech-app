@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import YahooFinance from "yahoo-finance2";
 
-const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
-const BASE_URL = "https://api.polygon.io";
+const yahooFinance = new YahooFinance();
 
 export const dynamic = "force-dynamic";
 
@@ -247,124 +247,11 @@ async function fetchOptionsForType(
   stockPrice: number,
   daysToExp: number
 ): Promise<{ options: OptionContractData[]; synthetic: boolean }> {
-  const strikeTolerance = targetStrike * 0.15;
-  const minStrike = targetStrike - strikeTolerance;
-  const maxStrike = targetStrike + strikeTolerance;
-
-  // Calculate date range (±7 days from target to catch the actual expiration Friday)
-  const targetDate = new Date(targetExpiration);
-  const minDate = new Date(targetDate);
-  minDate.setDate(minDate.getDate() - 7);
-  const maxDate = new Date(targetDate);
-  maxDate.setDate(maxDate.getDate() + 7);
-
-  try {
-    // Fetch options contracts from reference endpoint with date range
-    const refParams = new URLSearchParams({
-      underlying_ticker: underlying,
-      contract_type: contractType,
-      expired: "false",
-      "expiration_date.gte": minDate.toISOString().split("T")[0],
-      "expiration_date.lte": maxDate.toISOString().split("T")[0],
-      limit: "250",
-      sort: "strike_price",
-    });
-
-    const refRes = await fetch(
-      `${BASE_URL}/v3/reference/options/contracts?${refParams.toString()}&apiKey=${POLYGON_API_KEY}`,
-      { cache: "no-store" }
-    );
-
-    if (!refRes.ok) {
-      console.log(`API returned ${refRes.status} for ${contractType}s, using synthetic data`);
-      return {
-        options: generateSyntheticOptions(underlying, targetExpiration, targetStrike, contractType, stockPrice, daysToExp),
-        synthetic: true,
-      };
-    }
-
-    const refData = await refRes.json();
-
-    // Check for rate limit or error
-    if (refData.status === "ERROR" || !refData.results || refData.results.length === 0) {
-      console.log(`No results or error for ${contractType}s, using synthetic data`);
-      return {
-        options: generateSyntheticOptions(underlying, targetExpiration, targetStrike, contractType, stockPrice, daysToExp),
-        synthetic: true,
-      };
-    }
-
-    // Find the closest expiration date to target
-    const expirations = new Set<string>();
-    refData.results.forEach((c: PolygonOptionContract) => expirations.add(c.expiration_date));
-
-    let closestExpiration = targetExpiration;
-    let minDiff = Infinity;
-
-    expirations.forEach((exp) => {
-      const diff = Math.abs(new Date(exp).getTime() - targetDate.getTime());
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestExpiration = exp;
-      }
-    });
-
-    // Filter by strike range and closest expiration
-    const options = refData.results
-      .filter((contract: PolygonOptionContract) => {
-        return (
-          contract.expiration_date === closestExpiration &&
-          contract.strike_price >= minStrike &&
-          contract.strike_price <= maxStrike
-        );
-      })
-      .map((contract: PolygonOptionContract) => {
-        const priceEstimate = estimatePremium(
-          stockPrice,
-          contract.strike_price,
-          daysToExp,
-          contractType === "call"
-        );
-
-        const iv = estimateIV(stockPrice, contract.strike_price, priceEstimate.premium, daysToExp, contractType === "call");
-        const volume = estimateVolume(stockPrice, contract.strike_price, daysToExp);
-        const rationale = generateRationale(stockPrice, contract.strike_price, contractType, iv);
-        const yahooSymbol = toYahooSymbol(underlying, contract.expiration_date, contractType, contract.strike_price);
-
-        return {
-          ticker: contract.ticker,
-          yahoo_symbol: yahooSymbol,
-          strike_price: contract.strike_price,
-          expiration_date: contract.expiration_date,
-          contract_type: contract.contract_type,
-          premium: priceEstimate.premium,
-          totalPremium: priceEstimate.premium * 100,
-          last_quote: {
-            bid: priceEstimate.bid,
-            ask: priceEstimate.ask,
-          },
-          volume,
-          implied_volatility: Math.round(iv * 1000) / 10,
-          rationale,
-          dataSource: "estimated",
-        };
-      });
-
-    if (options.length === 0) {
-      return {
-        options: generateSyntheticOptions(underlying, targetExpiration, targetStrike, contractType, stockPrice, daysToExp),
-        synthetic: true,
-      };
-    }
-
-    return { options, synthetic: false };
-  } catch (error) {
-    console.error(`Error fetching ${contractType}s:`, error);
-    return {
-      options: generateSyntheticOptions(underlying, targetExpiration, targetStrike, contractType, stockPrice, daysToExp),
-      synthetic: true,
-    };
-  }
+  // Using synthetic options (Yahoo doesn't provide free options contract reference data like Polygon)
+  return {
+    options: generateSyntheticOptions(underlying, targetExpiration, targetStrike, contractType, stockPrice, daysToExp),
+    synthetic: true,
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -389,17 +276,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Get current stock price for premium estimation
-    const tickerRes = await fetch(
-      `${BASE_URL}/v2/aggs/ticker/${underlying}/prev?adjusted=true&apiKey=${POLYGON_API_KEY}`,
-      { cache: "no-store" }
-    );
-
     let stockPrice = targetStrike;
-    if (tickerRes.ok) {
-      const tickerData = await tickerRes.json();
-      if (tickerData.results?.[0]?.c) {
-        stockPrice = tickerData.results[0].c;
-      }
+    try {
+      const quote = await yahooFinance.quote(underlying);
+      stockPrice = quote.regularMarketPrice || targetStrike;
+    } catch {
+      // Fallback to strike
     }
 
     // Calculate days to expiration

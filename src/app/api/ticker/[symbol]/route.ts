@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import YahooFinance from "yahoo-finance2";
 
-const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
-const BASE_URL = "https://api.polygon.io";
+const yahooFinance = new YahooFinance();
 
 export const dynamic = "force-dynamic";
 
@@ -65,14 +65,9 @@ export async function GET(
     const isOption = !!optionParsed;
     const polygonSymbol = isOption ? toPolygonOptionSymbol(upperSymbol) : upperSymbol;
 
-    // Fetch previous day aggregates (free tier)
-    const aggRes = await fetch(
-      `${BASE_URL}/v2/aggs/ticker/${polygonSymbol}/prev?adjusted=true&apiKey=${POLYGON_API_KEY}`,
-      { cache: "no-store" }
-    );
+    const quote = await yahooFinance.quote(upperSymbol);
 
-    if (!aggRes.ok) {
-      // Try fetching as regular stock if option fails
+    if (!quote || !quote.regularMarketPrice) {
       if (isOption) {
         return NextResponse.json(
           { error: `Option data not available for ${upperSymbol}. Try the underlying stock symbol.` },
@@ -85,36 +80,13 @@ export async function GET(
       );
     }
 
-    const aggData = await aggRes.json();
-
-    if (!aggData.results || aggData.results.length === 0) {
-      return NextResponse.json(
-        { error: `No data available for ${upperSymbol}` },
-        { status: 404 }
-      );
-    }
-
-    const agg = aggData.results[0];
-    const change = agg.c - agg.o;
-    const changePercent = (change / agg.o) * 100;
+    const change = quote.regularMarketPrice - (quote.regularMarketOpen || quote.regularMarketPrice);
+    const changePercent = quote.regularMarketOpen ? (change / quote.regularMarketOpen) * 100 : 0;
 
     // Fetch ticker details for name (stocks only)
     let tickerName = upperSymbol;
     if (!isOption) {
-      try {
-        const detailsRes = await fetch(
-          `${BASE_URL}/v3/reference/tickers/${upperSymbol}?apiKey=${POLYGON_API_KEY}`,
-          { cache: "no-store" }
-        );
-        if (detailsRes.ok) {
-          const detailsData = await detailsRes.json();
-          if (detailsData.results?.name) {
-            tickerName = detailsData.results.name;
-          }
-        }
-      } catch {
-        // Ignore errors fetching details
-      }
+      tickerName = quote.longName || upperSymbol;
     }
 
     const result: TickerDetails = {

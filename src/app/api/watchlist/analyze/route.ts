@@ -3,10 +3,10 @@ import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import type { WatchlistItem, WatchlistAlert, RiskLevel, TechnicalIndicators } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "@/lib/watchlist-rules";
-import { getGroupedDailyData } from "@/lib/polygon";
+import { getMultipleTickerOHLC } from "@/lib/yahoo";
 
-const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
-const BASE_URL = "https://api.polygon.io";
+// Removed - using Yahoo Finance
+// Removed - using Yahoo Finance
 
 export const dynamic = "force-dynamic";
 
@@ -15,57 +15,29 @@ function getMarketDataFromBatch(
   symbol: string,
   batchData: Map<string, { close: number; open: number; high: number; low: number; volume: number }>
 ): MarketData | null {
-  const data = batchData.get(symbol);
+  // Try both uppercase and original case
+  const data = batchData.get(symbol.toUpperCase()) || batchData.get(symbol);
   if (!data) return null;
 
-  const change = data.close - data.open;
-  const changePercent = data.open > 0 ? (change / data.open) * 100 : 0;
+  const previousClose = data.open; // Use open as previous close for daily change calculation
+  const change = data.close - previousClose;
+  const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0;
 
   return {
     currentPrice: data.close,
-    previousClose: data.open,
+    previousClose,
     change,
     changePercent,
   };
 }
 
-// Fetch technical indicators (RSI) from Polygon
-async function fetchTechnicalIndicators(symbol: string): Promise<Partial<TechnicalIndicators> | null> {
-  try {
-    // Fetch RSI
-    const rsiRes = await fetch(
-      `${BASE_URL}/v1/indicators/rsi/${symbol}?timespan=day&window=14&series_type=close&apiKey=${POLYGON_API_KEY}`
-    );
-
-    let rsi: number | undefined;
-    if (rsiRes.ok) {
-      const rsiData = await rsiRes.json();
-      if (rsiData.results?.values?.[0]) {
-        rsi = rsiData.results.values[0].value;
-      }
-    }
-
-    // Fetch SMA 50
-    const smaRes = await fetch(
-      `${BASE_URL}/v1/indicators/sma/${symbol}?timespan=day&window=50&series_type=close&apiKey=${POLYGON_API_KEY}`
-    );
-
-    let sma50: number | undefined;
-    if (smaRes.ok) {
-      const smaData = await smaRes.json();
-      if (smaData.results?.values?.[0]) {
-        sma50 = smaData.results.values[0].value;
-      }
-    }
-
-    return {
-      rsi,
-      sma50,
-    };
-  } catch (error) {
-    console.error(`Error fetching technical indicators for ${symbol}:`, error);
-    return null;
-  }
+// Fetch technical indicators (simplified - Yahoo Finance doesn't provide RSI/SMA directly)
+// For now, return null - can be enhanced later with calculation or alternative data source
+async function fetchTechnicalIndicators(_symbol: string): Promise<Partial<TechnicalIndicators> | null> {
+  // Yahoo Finance doesn't provide RSI/SMA directly via their free API
+  // These would need to be calculated from historical data or use a different service
+  // For now, return null to avoid errors
+  return null;
 }
 
 // Estimate option price based on underlying
@@ -126,22 +98,30 @@ export async function POST(request: NextRequest) {
     });
 
     // Get ALL market data in ONE batch API call
-    const batchMarketData = await getGroupedDailyData();
+    // Get ALL market data in ONE batch API call using Yahoo Finance
+    const symbols = items.map((item) => {
+      const underlying = item.underlyingSymbol || item.symbol.replace(/\d+[CP]\d+$/, "");
+      return underlying.toUpperCase();
+    });
+    const uniqueSymbols = Array.from(new Set(symbols));
+    const marketDataOHLC = await getMultipleTickerOHLC(uniqueSymbols);
 
-    // Analyze each item
-    const alerts: WatchlistAlert[] = [];
-    const processedTechnicals = new Map<string, Partial<TechnicalIndicators>>();
-
-    for (const item of items) {
-      const watchlistItem = {
-        ...item,
-        _id: item._id.toString(),
-      } as WatchlistItem;
-
+    // Convert to format expected by existing code
+    const batchMarketData = new Map<string, { close: number; open: number; high: number; low: number; volume: number }>();
+    marketDataOHLC.forEach((ohlc, ticker) => {
+      batchMarketData.set(ticker, {
+        close: ohlc.close,
+        open: ohlc.open,
+        high: ohlc.high,
+        low: ohlc.low,
+        volume: ohlc.volume,
+      });
+    });
       const riskLevel = accountRiskMap.get(item.accountId) || "medium";
 
       // Get market data from batch (no API call)
-      const marketData = getMarketDataFromBatch(watchlistItem.underlyingSymbol, batchMarketData);
+      const underlying = watchlistItem.underlyingSymbol || watchlistItem.symbol.replace(/\d+[CP]\d+$/, "");
+      let marketData = getMarketDataFromBatch(underlying, batchMarketData);
 
       if (!marketData) {
         console.log(`Skipping ${watchlistItem.symbol} - no market data for ${watchlistItem.underlyingSymbol}`);

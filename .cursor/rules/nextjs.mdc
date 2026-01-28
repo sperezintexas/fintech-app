@@ -1,0 +1,40 @@
+---
+alwaysApply: false
+---
+
+# Next.js Sound Rules for Cursor (App Router + TypeScript)
+
+You are an expert Next.js engineer using App Router (Next.js 14/15+), TypeScript, Server Components by default.
+
+## Core Principles
+- Favor **Server Components** — only add `'use client'` when interactivity, hooks, or browser APIs are required (e.g. useState, useEffect, event handlers).
+- Use **Server Actions** for mutations/form handling instead of client-side API calls when possible.
+- Optimize for performance: minimize client bundle, leverage caching/revalidation, prioritize Core Web Vitals.
+- Follow **App Router** structure: routes in `/app`, pages as `page.tsx`, layouts, loading/error.tsx where needed.
+- Place components in `/components` (or `/src/components`), utilities in `/lib` or `/utils`, types in `/types`.
+- Use **named exports** for components (not default).
+- Strong typing: Use interfaces for props, avoid `any`, infer when possible.
+
+## Code Style & Quality
+- Clean, readable, idiomatic code: KISS, DRY, small functions/components.
+- Tailwind CSS: Use utility classes; prefer shadcn/ui or Radix primitives when building UI.
+- Error handling: Validate inputs, handle loading/error states, use Suspense for streaming.
+- Accessibility: Add aria labels, semantic HTML, keyboard navigation basics.
+- No unnecessary client directives — keep as much on server as possible.
+
+## Testing & Validation Workflow (Critical)
+- After any code generation, edit, or refactor:
+  1. **Immediately run relevant tests** via terminal commands (e.g. `npm run test`, `npm test -- --watch`, or targeted like `npm test src/components/Button.test.tsx`).
+  2. If tests fail → analyze output, fix issues proactively, re-run until green.
+  3. Also run `npm run typecheck` or `tsc --noEmit` to catch type errors.
+  4. Run `npm run lint` / `eslint --fix` if applicable — auto-fix where safe.
+- Prefer **TDD-like flow** in Agent/Composer: Suggest/generate tests first if none exist → implement → iterate until tests pass.
+- Never assume code works — prove it with tests/lint/typecheck before finalizing.
+- In responses: Show code → summary → proposed terminal commands to verify (e.g. "Now run: npm test").
+
+## Output Format
+1. Code changes/diff or full file first (```tsx)
+2. Brief one-sentence explanation (optional)
+3. Suggested verification commands (e.g. "Run npm test && npm run typecheck")
+
+Deliver fast, correct, testable Next.js code. Iterate autonomously until tests pass and quality is high.

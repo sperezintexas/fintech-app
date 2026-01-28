@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type {
   Account,
@@ -38,7 +39,8 @@ const ITEM_TYPES: { value: WatchlistItemType; label: string }[] = [
   { value: "covered-call", label: "Covered Call" },
 ];
 
-export default function WatchlistPage() {
+export default function AutomationPage() {
+  const searchParams = useSearchParams();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [watchlistItems, setWatchlistItems] = useState<WatchlistItem[]>([]);
@@ -64,7 +66,7 @@ export default function WatchlistPage() {
   const [formError, setFormError] = useState("");
 
   // Alert preferences state
-  const [activeTab, setActiveTab] = useState<"watchlist" | "alerts" | "settings">("watchlist");
+  const [activeTab, setActiveTab] = useState<"automation" | "alerts" | "settings">("automation");
   const [prefsLoading, setPrefsLoading] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsMessage, setPrefsMessage] = useState("");
@@ -180,8 +182,9 @@ export default function WatchlistPage() {
         if (res.ok) {
           const data = await res.json();
           setAccounts(data);
+          const urlAccountId = searchParams.get("accountId");
           if (data.length > 0) {
-            setSelectedAccountId(data[0]._id);
+            setSelectedAccountId(urlAccountId && data.some((a: Account) => a._id === urlAccountId) ? urlAccountId : data[0]._id);
           }
         }
       } catch (err) {
@@ -191,19 +194,48 @@ export default function WatchlistPage() {
     fetchAccounts();
   }, []);
 
-  // Fetch watchlist items
+  // Pre-fill add form when navigating from Holdings (addFromHolding=1)
+  useEffect(() => {
+    if (searchParams.get("addFromHolding") !== "1" || !accounts.length) return;
+    const accountId = searchParams.get("accountId");
+    const symbol = searchParams.get("symbol") ?? "";
+    const type = (searchParams.get("type") ?? "stock") as WatchlistItemType;
+    const strategy = (searchParams.get("strategy") ?? "long-stock") as WatchlistStrategy;
+    const quantity = Number(searchParams.get("quantity")) || 100;
+    const entryPrice = Number(searchParams.get("entryPrice")) || 0;
+    const strikePrice = searchParams.get("strikePrice") ? Number(searchParams.get("strikePrice")) : undefined;
+    const expirationDate = searchParams.get("expirationDate") ?? "";
+    const entryPremium = searchParams.get("entryPremium") ? Number(searchParams.get("entryPremium")) : undefined;
+    if (accountId && accounts.some((a) => a._id === accountId)) setSelectedAccountId(accountId);
+    setFormData((prev) => ({
+      ...prev,
+      symbol,
+      underlyingSymbol: symbol,
+      type,
+      strategy,
+      quantity,
+      entryPrice,
+      strikePrice,
+      expirationDate,
+      entryPremium,
+    }));
+    setShowAddForm(true);
+    window.history.replaceState({}, "", "/automation");
+  }, [searchParams, accounts.length]);
+
+  // Fetch automation items
   const fetchWatchlist = useCallback(async () => {
     if (!selectedAccountId) return;
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/watchlist?accountId=${selectedAccountId}`);
+      const res = await fetch(`/api/automation?accountId=${selectedAccountId}`);
       if (res.ok) {
         const data = await res.json();
         setWatchlistItems(data);
       }
     } catch (err) {
-      console.error("Failed to fetch watchlist:", err);
+      console.error("Failed to fetch automation:", err);
     } finally {
       setLoading(false);
     }
@@ -273,13 +305,13 @@ export default function WatchlistPage() {
     }
   };
 
-  // Add item to watchlist
+  // Add item to automation
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError("");
 
     try {
-      const res = await fetch("/api/watchlist", {
+      const res = await fetch("/api/automation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -315,12 +347,12 @@ export default function WatchlistPage() {
     }
   };
 
-  // Remove item from watchlist
+  // Remove item from automation
   const handleRemoveItem = async (id: string) => {
-    if (!confirm("Remove this item from watchlist?")) return;
+    if (!confirm("Remove this item from automation?")) return;
 
     try {
-      await fetch(`/api/watchlist/${id}`, { method: "DELETE" });
+      await fetch(`/api/automation/${id}`, { method: "DELETE" });
       await fetchWatchlist();
       await fetchAlerts();
     } catch (err) {
@@ -503,11 +535,11 @@ export default function WatchlistPage() {
     setPreviewTemplateId(templateId || previewTemplateId);
 
     try {
-      const res = await fetch("/api/watchlist/preview-alert", {
+      const res = await fetch("/api/automation/preview-alert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          watchlistItemId: itemId,
+          automationItemId: itemId,
           templateId: templateId || previewTemplateId,
         }),
       });
@@ -583,7 +615,7 @@ export default function WatchlistPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          watchlistItemId: previewItemId,
+          automationItemId: previewItemId,
           alert: previewData.alert,
           channels: scheduleChannels,
           templateId: previewTemplateId,
@@ -604,7 +636,7 @@ export default function WatchlistPage() {
             {
               symbol: previewData.alert.symbol,
               recommendation: previewData.alert.recommendation,
-              url: "/watchlist",
+              url: "/automation",
             }
           );
         }
@@ -691,9 +723,9 @@ export default function WatchlistPage() {
             <nav className="hidden md:flex items-center gap-6">
               <Link href="/" className="text-gray-500 hover:text-blue-600">Dashboard</Link>
               <Link href="/accounts" className="text-gray-500 hover:text-blue-600">Accounts</Link>
-              <Link href="/positions" className="text-gray-500 hover:text-blue-600">Positions</Link>
+              <Link href="/holdings" className="text-gray-500 hover:text-blue-600">Holdings</Link>
               <Link href="/find-profits" className="text-gray-500 hover:text-blue-600">Find Profits</Link>
-              <Link href="/watchlist" className="text-gray-800 font-medium hover:text-blue-600">Watchlist</Link>
+              <Link href="/automation" className="text-gray-800 font-medium hover:text-blue-600">Watchlist</Link>
             </nav>
           </div>
         </div>
@@ -718,7 +750,7 @@ export default function WatchlistPage() {
                 </option>
               ))}
             </select>
-            {activeTab === "watchlist" && (
+            {activeTab === "automation" && (
             <button
               onClick={handleRunAnalysis}
               disabled={analyzing}
@@ -746,9 +778,9 @@ export default function WatchlistPage() {
         <div className="border-b border-gray-200 mb-6">
           <nav className="flex gap-4">
             <button
-              onClick={() => setActiveTab("watchlist")}
+              onClick={() => setActiveTab("automation")}
               className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "watchlist"
+                activeTab === "automation"
                   ? "border-blue-500 text-blue-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
@@ -783,18 +815,18 @@ export default function WatchlistPage() {
           </nav>
         </div>
 
-        {/* Alerts Section (shown on both watchlist and alerts tabs) */}
+        {/* Alerts Section (shown on both automation and alerts tabs) */}
         {activeTab === "alerts" && alerts.length === 0 && (
           <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
             <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
             </svg>
             <h3 className="text-lg font-medium text-gray-900 mb-2">No Active Alerts</h3>
-            <p className="text-gray-500">Run analysis to generate alerts for your watchlist positions</p>
+            <p className="text-gray-500">Run analysis to generate alerts for your automation positions</p>
           </div>
         )}
 
-        {(activeTab === "watchlist" || activeTab === "alerts") && alerts.length > 0 && (
+        {(activeTab === "automation" || activeTab === "alerts") && alerts.length > 0 && (
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
@@ -958,7 +990,7 @@ export default function WatchlistPage() {
         )}
 
         {/* Watchlist Section */}
-        {activeTab === "watchlist" && (
+        {activeTab === "automation" && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold text-gray-900">
@@ -1148,7 +1180,7 @@ export default function WatchlistPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
               </svg>
-              <h4 className="text-lg font-medium text-gray-600 mb-1">No positions in watchlist</h4>
+              <h4 className="text-lg font-medium text-gray-600 mb-1">No positions in automation</h4>
               <p className="text-gray-500 text-sm">Add positions to track and receive daily alerts</p>
             </div>
           ) : (
@@ -1169,7 +1201,7 @@ export default function WatchlistPage() {
                 </thead>
                 <tbody>
                   {watchlistItems.map((item) => {
-                    const hasAlert = alerts.some((a) => a.watchlistItemId === item._id);
+                    const hasAlert = alerts.some((a) => a.automationItemId === item._id);
                     return (
                       <tr key={item._id} className={`border-b border-gray-100 hover:bg-gray-50 ${hasAlert ? "bg-yellow-50" : ""}`}>
                         <td className="py-3 px-2">
@@ -1618,7 +1650,7 @@ export default function WatchlistPage() {
                   </>
                 ) : (
                   <div className="text-center py-12 text-gray-500">
-                    Click a watchlist item to preview its alert
+                    Click a automation item to preview its alert
                   </div>
                 )}
               </div>
@@ -1639,7 +1671,7 @@ export default function WatchlistPage() {
             {/* Alert Delivery Channels */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Alert Delivery Channels</h3>
-              <p className="text-sm text-gray-600 mb-6">Choose how you want to receive alerts for your watchlist positions.</p>
+              <p className="text-sm text-gray-600 mb-6">Choose how you want to receive alerts for your automation positions.</p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Email */}
@@ -1788,7 +1820,7 @@ export default function WatchlistPage() {
                               showDirectNotification(
                                 "Test Alert",
                                 "This is a test notification from myInvestments",
-                                { url: "/watchlist" }
+                                { url: "/automation" }
                               );
                             }}
                             className="w-full px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs text-gray-700"

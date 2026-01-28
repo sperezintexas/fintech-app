@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import { Position } from "@/types/portfolio";
+import { getMultipleTickerPrices } from "@/lib/yahoo";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,37 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
 
-    return NextResponse.json(account.positions || []);
+    const positions: Position[] = account.positions || [];
+
+    // Fetch current prices for stock positions
+    const stockTickers = positions
+      .filter((p) => p.type === "stock" && p.ticker)
+      .map((p) => p.ticker!);
+
+    if (stockTickers.length > 0) {
+      try {
+        const prices = await getMultipleTickerPrices(stockTickers);
+
+        // Update positions with current prices
+        const updatedPositions = positions.map((position) => {
+          if (position.type === "stock" && position.ticker) {
+            const priceData = prices.get(position.ticker.toUpperCase());
+            if (priceData) {
+              return { ...position, currentPrice: priceData.price };
+            }
+          }
+          return position;
+        });
+
+        return NextResponse.json(updatedPositions);
+      } catch (priceError) {
+        console.error("Error fetching prices:", priceError);
+        // Return positions without updated prices if price fetch fails
+        return NextResponse.json(positions);
+      }
+    }
+
+    return NextResponse.json(positions);
   } catch (error) {
     console.error("Error fetching positions:", error);
     return NextResponse.json(

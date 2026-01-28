@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
-import { getMultipleTickerPrices } from "@/lib/polygon";
+import { getMultipleTickerPrices } from "@/lib/yahoo";
 import type { Account, Portfolio } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
@@ -28,16 +28,20 @@ export async function GET() {
     // Update positions with live prices and calculate values
     let totalValue = 0;
     let totalDailyChange = 0;
+    let totalCostBasis = 0;
 
     const accountsWithLivePrices: Account[] = accounts.map((account) => {
       let accountValue = 0;
       let accountDailyChange = 0;
+      let accountCostBasis = 0;
 
       // If account has positions, calculate value from positions
       if (account.positions && account.positions.length > 0) {
         const updatedPositions = account.positions.map((position) => {
           if (position.type === "cash") {
-            accountValue += position.amount || 0;
+            const amount = position.amount || 0;
+            accountValue += amount;
+            accountCostBasis += amount;
             return position;
           }
 
@@ -45,11 +49,14 @@ export async function GET() {
             const livePrice = prices.get(position.ticker);
             const currentPrice = livePrice?.price || position.currentPrice || 0;
             const shares = position.shares || 0;
+            const purchasePrice = position.purchasePrice || 0;
             const positionValue = shares * currentPrice;
+            const positionCostBasis = shares * purchasePrice;
             const dailyChange = shares * (livePrice?.change || 0);
 
             accountValue += positionValue;
             accountDailyChange += dailyChange;
+            accountCostBasis += positionCostBasis;
 
             return {
               ...position,
@@ -58,12 +65,13 @@ export async function GET() {
           }
 
           if (position.type === "option" && position.ticker) {
-            // Options use contract multiplier of 100
             const contracts = position.contracts || 0;
             const premium = position.currentPrice || position.premium || 0;
+            const entryPremium = position.premium || 0;
             const positionValue = contracts * premium * 100;
+            const positionCostBasis = contracts * (entryPremium || premium) * 100;
             accountValue += positionValue;
-
+            accountCostBasis += positionCostBasis;
             return position;
           }
 
@@ -72,6 +80,7 @@ export async function GET() {
 
         totalValue += accountValue;
         totalDailyChange += accountDailyChange;
+        totalCostBasis += accountCostBasis;
 
         return {
           ...account,
@@ -83,12 +92,17 @@ export async function GET() {
       // No positions - use stored account balance
       accountValue = account.balance || 0;
       totalValue += accountValue;
+      totalCostBasis += accountValue;
 
       return {
         ...account,
         balance: accountValue,
       };
     });
+
+    const unrealizedPnL = totalValue - totalCostBasis;
+    const roiPercent =
+      totalCostBasis > 0 ? (unrealizedPnL / totalCostBasis) * 100 : 0;
 
     // Calculate totals
     const totalPositions = accounts.reduce(
@@ -118,6 +132,9 @@ export async function GET() {
         dailyChange: totalDailyChange,
         dailyChangePercent:
           totalValue > 0 ? (totalDailyChange / totalValue) * 100 : 0,
+        totalCostBasis,
+        unrealizedPnL,
+        roiPercent,
         accountCount: accounts.length,
         positionCount: totalPositions,
         recommendationCount: totalRecommendations,

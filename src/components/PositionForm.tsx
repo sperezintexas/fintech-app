@@ -63,6 +63,8 @@ export function PositionForm({
     position?.contracts?.toString() || ""
   );
   const [premium, setPremium] = useState(position?.premium?.toString() || "");
+  // Cash fields
+  const [amount, setAmount] = useState(position?.amount?.toString() || "");
   // Yahoo symbol input
   const [yahooSymbol, setYahooSymbol] = useState("");
   const [parseError, setParseError] = useState("");
@@ -92,6 +94,7 @@ export function PositionForm({
       setExpiration(position.expiration || "");
       setContracts(position.contracts?.toString() || "");
       setPremium(position.premium?.toString() || "");
+      setAmount(position.amount?.toString() || "");
     }
   }, [position]);
 
@@ -118,6 +121,13 @@ export function PositionForm({
         expiration,
         contracts: parseInt(contracts),
         premium: parseFloat(premium),
+      });
+    } else if (type === "cash") {
+      onSubmit({
+        ...basePosition,
+        ticker: "CASH",
+        amount: parseFloat(amount),
+        currency: "USD",
       });
     }
   };
@@ -159,29 +169,64 @@ export function PositionForm({
           >
             Option
           </button>
+          <button
+            type="button"
+            onClick={() => setType("cash")}
+            className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+              type === "cash"
+                ? "bg-green-600 text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            Cash
+          </button>
         </div>
       </div>
 
-      {/* Ticker Symbol */}
-      <div className="mb-4">
-        <label
-          htmlFor="ticker"
-          className="block text-sm font-medium text-gray-700 mb-1"
-        >
-          Ticker Symbol
-        </label>
-        <input
-          type="text"
-          id="ticker"
-          value={ticker}
-          onChange={(e) => setTicker(e.target.value)}
-          className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          placeholder="e.g., AAPL"
-          required
-        />
-      </div>
+      {/* Ticker Symbol (not for cash) */}
+      {type !== "cash" && (
+        <div className="mb-4">
+          <label
+            htmlFor="ticker"
+            className="block text-sm font-medium text-gray-700 mb-1"
+          >
+            Ticker Symbol
+          </label>
+          <input
+            type="text"
+            id="ticker"
+            value={ticker}
+            onChange={(e) => setTicker(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="e.g., AAPL"
+            required
+          />
+        </div>
+      )}
 
-      {type === "stock" ? (
+      {type === "cash" ? (
+        <>
+          {/* Cash Amount */}
+          <div className="mb-4">
+            <label
+              htmlFor="amount"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Cash Amount
+            </label>
+            <input
+              type="number"
+              id="amount"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              placeholder="e.g., 10000.00"
+              step="0.01"
+              required
+            />
+          </div>
+        </>
+      ) : type === "stock" ? (
         <>
           {/* Shares */}
           <div className="mb-4">

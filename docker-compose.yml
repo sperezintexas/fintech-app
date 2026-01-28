@@ -4,25 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        - MONGODB_URI=mongodb://mongo:27017
-        - MONGODB_DB=myinvestments
+        - MONGODB_URI=${MONGODB_URI:-mongodb://localhost:27017}
+        - MONGODB_DB=${MONGODB_DB:-SmartTrader}
     ports:
       - "3000:3000"
     environment:
-      - MONGODB_URI=mongodb://mongo:27017
-      - MONGODB_DB=myinvestments
-      - POLYGON_API_KEY=${POLYGON_API_KEY:-}
-    depends_on:
-      - mongo
+      - MONGODB_URI=${MONGODB_URI:-mongodb://localhost:27017}
+      - MONGODB_DB=${MONGODB_DB:-SmartTrader}
     restart: unless-stopped
-
-  mongo:
-    image: mongo:7
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    restart: unless-stopped
-
-volumes:
-  mongo_data:

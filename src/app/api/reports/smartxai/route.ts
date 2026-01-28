@@ -11,7 +11,7 @@ import type {
   RiskLevel,
 } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "@/lib/watchlist-rules";
-import { getGroupedDailyData } from "@/lib/polygon";
+import { getMultipleTickerOHLC, getMarketConditions } from "@/lib/yahoo";
 import type { MarketIndex } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
@@ -178,10 +178,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get market data for all symbols (batch call - ONE API call for everything)
-    // This uses Polygon's grouped daily endpoint which returns ALL stocks in a single call
-    // Cached for 5 minutes to avoid hitting rate limits
-    const marketDataMap = await getGroupedDailyData();
+    // Define index tickers
+    const INDEX_TICKERS = [
+      { symbol: "SPY", name: "S&P 500" },
+      { symbol: "QQQ", name: "Nasdaq 100" },
+      { symbol: "DIA", name: "Dow Jones" },
+      { symbol: "IWM", name: "Russell 2000" },
+    ];
+
+    // Get market data for all symbols (batch call using Yahoo Finance)
+    // Fetch market data using Yahoo Finance
+    const allTickers = [
+      ...INDEX_TICKERS.map(idx => idx.symbol),
+      ...watchlistItems.map(item => {
+        const underlying = item.underlyingSymbol || item.symbol.replace(/\d+[CP]\d+$/, "");
+        return underlying.toUpperCase();
+      })
+    ];
+    const uniqueTickers = Array.from(new Set(allTickers));
+    const marketDataOHLC = await getMultipleTickerOHLC(uniqueTickers);
+
+    // Convert to format expected by existing code
+    const marketDataMap = new Map();
+    marketDataOHLC.forEach((ohlc, ticker) => {
+      marketDataMap.set(ticker, {
+        close: ohlc.close,
+        open: ohlc.open,
+        high: ohlc.high,
+        low: ohlc.low,
+        volume: ohlc.volume,
+      });
+    });
 
     if (marketDataMap.size === 0) {
       return NextResponse.json(
@@ -191,14 +218,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Build market conditions from the batch data (no additional API calls)
-    const INDEX_TICKERS = [
-      { symbol: "SPY", name: "S&P 500" },
-      { symbol: "QQQ", name: "Nasdaq 100" },
-      { symbol: "DIA", name: "Dow Jones" },
-      { symbol: "IWM", name: "Russell 2000" },
-    ];
-
-    const indices: MarketIndex[] = INDEX_TICKERS.map((indexInfo) => {
+        const indices: MarketIndex[] = INDEX_TICKERS.map((indexInfo) => {
       const data = marketDataMap.get(indexInfo.symbol);
 
       if (data) {
@@ -224,19 +244,11 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    // Get market status (lightweight call, separate from price data)
+    // Get market status using Yahoo Finance
     let marketStatus: "open" | "closed" | "pre-market" | "after-hours" = "closed";
     try {
-      const statusRes = await fetch(
-        `https://api.polygon.io/v1/marketstatus/now?apiKey=${process.env.POLYGON_API_KEY}`,
-        { next: { revalidate: 60 } }
-      );
-      if (statusRes.ok) {
-        const statusData = await statusRes.json();
-        if (statusData.market === "open") marketStatus = "open";
-        else if (statusData.earlyHours) marketStatus = "pre-market";
-        else if (statusData.afterHours) marketStatus = "after-hours";
-      }
+      const marketConditions = await getMarketConditions();
+      marketStatus = marketConditions.status;
     } catch (err) {
       console.error("Failed to fetch market status:", err);
     }

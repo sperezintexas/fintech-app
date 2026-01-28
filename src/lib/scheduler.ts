@@ -3,9 +3,10 @@ import { ObjectId } from "mongodb";
 import { getDb } from "./mongodb";
 import type { WatchlistItem, WatchlistAlert, RiskLevel } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
+import { getMultipleTickerOHLC } from "./yahoo";
 
-const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
-const BASE_URL = "https://api.polygon.io";
+// Removed - using Yahoo Finance
+// Removed - using Yahoo Finance
 
 // Singleton agenda instance
 let agenda: Agenda | null = null;
@@ -86,43 +87,9 @@ function defineJobs(agenda: Agenda) {
 
 // Fetch market data using grouped daily (single API call)
 async function fetchGroupedDaily(): Promise<Map<string, { close: number; open: number }>> {
-  const dataMap = new Map<string, { close: number; open: number }>();
-
-  try {
-    const today = new Date();
-    const prevDay = new Date(today);
-    do {
-      prevDay.setDate(prevDay.getDate() - 1);
-    } while (prevDay.getDay() === 0 || prevDay.getDay() === 6);
-
-    const dateStr = prevDay.toISOString().split("T")[0];
-
-    const res = await fetch(
-      `${BASE_URL}/v2/aggs/grouped/locale/us/market/stocks/${dateStr}?adjusted=true&apiKey=${POLYGON_API_KEY}`
-    );
-
-    if (!res.ok) {
-      console.error("Failed to fetch grouped daily:", res.status);
-      return dataMap;
-    }
-
-    const data = await res.json();
-
-    if (data.results && Array.isArray(data.results)) {
-      for (const result of data.results) {
-        if (result.T && result.c && result.o) {
-          dataMap.set(result.T, {
-            close: result.c,
-            open: result.o,
-          });
-        }
-      }
-    }
-  } catch (error) {
-    console.error("Error fetching grouped daily:", error);
-  }
-
-  return dataMap;
+  // This function is kept for compatibility but is no longer used
+  // The actual implementation now uses getMultipleTickerOHLC from yahoo.ts
+  return new Map();
 }
 
 // Estimate option price based on underlying movement
@@ -163,8 +130,22 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
     return { analyzed: 0, alertsCreated: 0, errors: 0 };
   }
 
-  // Fetch market data in single API call
-  const marketData = await fetchGroupedDaily();
+  // Fetch market data using Yahoo Finance (batch call)
+  const symbols = watchlistItems.map((item) => {
+    const underlying = item.underlyingSymbol || item.symbol.replace(/\d+[CP]\d+$/, "");
+    return underlying.toUpperCase();
+  });
+  const uniqueSymbols = Array.from(new Set(symbols));
+  const marketDataOHLC = await getMultipleTickerOHLC(uniqueSymbols);
+
+  // Convert to format expected by existing code
+  const marketData = new Map<string, { close: number; open: number }>();
+  marketDataOHLC.forEach((ohlc, ticker) => {
+    marketData.set(ticker, {
+      close: ohlc.close,
+      open: ohlc.open,
+    });
+  });
 
   // Get account risk levels
   const accountIds = [...new Set(watchlistItems.map((item) => item.accountId))];
@@ -186,7 +167,7 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
     try {
       // Get market data for underlying
       const underlying = item.underlyingSymbol || item.symbol.replace(/\d+[CP]\d+$/, "");
-      const priceData = marketData.get(underlying);
+      const priceData = marketData.get(underlying.toUpperCase());
 
       if (!priceData) {
         console.log(`No market data for ${underlying}, skipping ${item.symbol}`);

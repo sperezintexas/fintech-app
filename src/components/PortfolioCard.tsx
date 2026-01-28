@@ -67,7 +67,7 @@ export function PortfolioCard({ portfolio }: PortfolioCardProps) {
             return (
               <Link
                 key={account._id}
-                href={`/positions?accountId=${account._id}`}
+                href={`/holdings?accountId=${account._id}`}
                 className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-colors cursor-pointer group"
               >
                 <div className="flex items-center gap-3">

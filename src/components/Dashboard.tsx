@@ -2,15 +2,18 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { usePathname } from "next/navigation";
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 import { PortfolioCard } from "./PortfolioCard";
 import { MarketConditions } from "./MarketConditions";
-import { canMakeApiCall, recordApiCall, getRateLimitStatus } from "@/lib/rate-limiter";
 import type { Portfolio, MarketConditions as MarketConditionsType } from "@/types/portfolio";
 
 type DashboardStats = {
   totalValue: number;
   dailyChange: number;
   dailyChangePercent: number;
+  totalCostBasis?: number;
+  unrealizedPnL?: number;
+  roiPercent?: number;
   accountCount: number;
   positionCount: number;
   recommendationCount: number;
@@ -37,13 +40,8 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [rateLimitInfo, setRateLimitInfo] = useState({ remaining: 5, total: 5, resetIn: 0 });
   const pathname = usePathname();
 
-  // Update rate limit display
-  const updateRateLimitDisplay = useCallback(() => {
-    setRateLimitInfo(getRateLimitStatus());
-  }, []);
 
   // Fetch dashboard data (no cache to always get fresh data)
   const fetchDashboard = useCallback(async () => {
@@ -61,15 +59,7 @@ export function Dashboard() {
 
   // Fetch market data (rate limited - calls Polygon API)
   const fetchMarket = useCallback(async () => {
-    // Check rate limit before calling Polygon API
-    if (!canMakeApiCall()) {
-      console.log("Rate limit reached, skipping market data fetch");
-      updateRateLimitDisplay();
-      return;
-    }
-
     try {
-      recordApiCall("/api/market");
       const res = await fetch("/api/market", { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to fetch market data");
       const data = await res.json();
@@ -77,10 +67,8 @@ export function Dashboard() {
     } catch (err) {
       console.error("Market fetch error:", err);
       // Don't set error for market - dashboard can work without it
-    } finally {
-      updateRateLimitDisplay();
     }
-  }, [updateRateLimitDisplay]);
+  }, []);
 
   // Manual refresh
   const handleRefresh = async () => {
@@ -143,11 +131,6 @@ export function Dashboard() {
     return () => clearInterval(interval);
   }, [autoRefresh, fetchDashboard, fetchMarket]);
 
-  // Update rate limit display periodically
-  useEffect(() => {
-    const interval = setInterval(updateRateLimitDisplay, 5000);
-    return () => clearInterval(interval);
-  }, [updateRateLimitDisplay]);
 
   if (isLoading) {
     return (
@@ -190,23 +173,10 @@ export function Dashboard() {
               Last updated: {lastUpdated.toLocaleTimeString()}
             </span>
           )}
-          {/* Rate Limit Indicator */}
-          <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-            rateLimitInfo.remaining > 2 
-              ? "bg-green-100 text-green-700" 
-              : rateLimitInfo.remaining > 0 
-              ? "bg-yellow-100 text-yellow-700"
-              : "bg-red-100 text-red-700"
-          }`}>
-            <span>API: {rateLimitInfo.remaining}/{rateLimitInfo.total}</span>
-            {rateLimitInfo.resetIn > 0 && (
-              <span className="text-gray-500">({rateLimitInfo.resetIn}s)</span>
-            )}
-          </div>
         </div>
         <button
           onClick={handleRefresh}
-          disabled={isRefreshing || rateLimitInfo.remaining === 0}
+          disabled={isRefreshing}
           className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <svg
@@ -222,12 +192,12 @@ export function Dashboard() {
               d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
             />
           </svg>
-          {isRefreshing ? "Refreshing..." : rateLimitInfo.remaining === 0 ? "Rate Limited" : "Refresh"}
+          {isRefreshing ? "Refreshing..." : "Refresh"}
         </button>
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white">
           <p className="text-blue-100 text-sm">Total Portfolio Value</p>
           <p className="text-2xl font-bold mt-1">
@@ -236,6 +206,18 @@ export function Dashboard() {
           <p className={`text-sm mt-2 ${(stats?.dailyChange || 0) >= 0 ? "text-blue-200" : "text-red-200"}`}>
             {(stats?.dailyChange || 0) >= 0 ? "+" : ""}
             {formatCurrency(stats?.dailyChange || 0)} today
+          </p>
+        </div>
+        <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+          <p className="text-gray-500 text-sm">Unrealized P&L</p>
+          <p className={`text-2xl font-bold mt-1 ${(stats?.unrealizedPnL ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+            {(stats?.unrealizedPnL ?? 0) >= 0 ? "+" : ""}
+            {formatCurrency(stats?.unrealizedPnL ?? 0)}
+          </p>
+          <p className="text-gray-400 text-sm mt-2">
+            {stats?.totalCostBasis != null && stats.totalCostBasis > 0
+              ? `ROI ${(stats?.roiPercent ?? 0) >= 0 ? "+" : ""}${(stats?.roiPercent ?? 0).toFixed(1)}%`
+              : "—"}
           </p>
         </div>
         <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
@@ -248,12 +230,12 @@ export function Dashboard() {
           </p>
         </div>
         <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
-          <p className="text-gray-500 text-sm">Open Positions</p>
+          <p className="text-gray-500 text-sm">Open Holdings</p>
           <p className="text-2xl font-bold text-gray-900 mt-1">
             {stats?.positionCount || 0}
           </p>
           <p className="text-emerald-600 text-sm mt-2">
-            {stats?.positionCount === 0 ? "No positions" : "Active"}
+            {stats?.positionCount === 0 ? "No holdings" : "Active"}
           </p>
         </div>
         <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
@@ -263,6 +245,16 @@ export function Dashboard() {
           </p>
           <p className="text-blue-600 text-sm mt-2">
             {stats?.recommendationCount === 0 ? "None pending" : "Review pending"}
+          </p>
+        </div>
+        <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+          <p className="text-gray-500 text-sm">ROI</p>
+          <p className={`text-2xl font-bold mt-1 ${(stats?.roiPercent ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+            {(stats?.roiPercent ?? 0) >= 0 ? "+" : ""}
+            {(stats?.roiPercent ?? 0).toFixed(1)}%
+          </p>
+          <p className="text-gray-400 text-sm mt-2">
+            {stats?.totalCostBasis != null && stats.totalCostBasis > 0 ? "Since cost basis" : "—"}
           </p>
         </div>
       </div>
@@ -285,8 +277,8 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Market Conditions - Takes 1 column */}
-        <div className="lg:col-span-1">
+        {/* Right column: Market + Allocation chart */}
+        <div className="lg:col-span-1 space-y-8">
           {marketData ? (
             <MarketConditions market={marketData} />
           ) : (
@@ -297,6 +289,45 @@ export function Dashboard() {
               <p className="text-gray-500">Loading market data...</p>
             </div>
           )}
+
+          {/* Allocation chart (Recharts) */}
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+              Allocation by Account
+            </h2>
+            {portfolio && portfolio.accounts.length > 0 && portfolio.accounts.some((a) => (a.balance ?? 0) > 0) ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={portfolio.accounts.map((a) => ({
+                      name: a.name,
+                      value: a.balance ?? 0,
+                    }))}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    paddingAngle={2}
+                    dataKey="value"
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {portfolio.accounts.map((_, i) => (
+                      <Cell
+                        key={i}
+                        fill={["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"][i % 5]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-500 text-sm py-8 text-center">
+                Add accounts and positions to see allocation.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 

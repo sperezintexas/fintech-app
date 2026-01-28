@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Account, RiskLevel } from "@/types/portfolio";
-import { canMakeApiCall, recordApiCall, getRateLimitStatus } from "@/lib/rate-limiter";
 
 type Strategy = {
   id: string;
@@ -459,9 +458,6 @@ export default function FindProfitsPage() {
   const [selectedOption, setSelectedOption] = useState<OptionContract | null>(null);
   const [numContracts, setNumContracts] = useState<number>(1);
 
-  // Rate limit state
-  const [rateLimitInfo, setRateLimitInfo] = useState({ remaining: 5, total: 5, resetIn: 0 });
-
   // Covered Call Monitor state
   const [showMonitor, setShowMonitor] = useState(false);
   const [entryPremium, setEntryPremium] = useState<string>("");
@@ -474,17 +470,6 @@ export default function FindProfitsPage() {
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [watchlistSuccess, setWatchlistSuccess] = useState<string | null>(null);
   const [watchlistError, setWatchlistError] = useState("");
-
-  const updateRateLimitDisplay = useCallback(() => {
-    setRateLimitInfo(getRateLimitStatus());
-  }, []);
-
-  // Update rate limit display periodically
-  useEffect(() => {
-    updateRateLimitDisplay();
-    const interval = setInterval(updateRateLimitDisplay, 5000);
-    return () => clearInterval(interval);
-  }, [updateRateLimitDisplay]);
 
   // Fetch accounts on mount
   useEffect(() => {
@@ -521,13 +506,6 @@ export default function FindProfitsPage() {
     e.preventDefault();
     if (!symbol.trim()) return;
 
-    // Check rate limit (need 2 calls: ticker + SMA)
-    if (!canMakeApiCall()) {
-      setError(`Rate limit reached. Please wait ${getRateLimitStatus().resetIn}s before searching.`);
-      updateRateLimitDisplay();
-      return;
-    }
-
     setLoading(true);
     setError("");
     setTickerData(null);
@@ -540,10 +518,8 @@ export default function FindProfitsPage() {
     setOptionsError("");
 
     try {
-      recordApiCall("/api/ticker");
       const res = await fetch(`/api/ticker/${symbol.trim().toUpperCase()}`);
       const data = await res.json();
-      updateRateLimitDisplay();
 
       if (!res.ok) {
         setError(data.error || "Failed to fetch ticker data");
@@ -575,22 +551,15 @@ export default function FindProfitsPage() {
         }
       }
 
-      // Fetch SMA data (check rate limit again)
+      // Fetch SMA data
       setSmaLoading(true);
       try {
-        if (canMakeApiCall()) {
-          recordApiCall("/api/ticker/sma");
-          const smaRes = await fetch(`/api/ticker/${symbol.trim().toUpperCase()}/sma`);
-          updateRateLimitDisplay();
-          if (smaRes.ok) {
-            const smaResult = await smaRes.json();
-            setSmaData(smaResult);
-            // Default strike to suggested strike from analysis or near current price
-            const suggestedStrike = Math.round(data.price * 1.03);
-            setSelectedStrike(suggestedStrike);
-          }
-        } else {
-          console.log("Rate limit reached, skipping SMA fetch");
+        const smaRes = await fetch(`/api/ticker/${symbol.trim().toUpperCase()}/sma`);
+        if (smaRes.ok) {
+          const smaResult = await smaRes.json();
+          setSmaData(smaResult);
+          const suggestedStrike = Math.round(data.price * 1.03);
+          setSelectedStrike(suggestedStrike);
         }
       } catch (smaErr) {
         console.error("Failed to fetch SMA data:", smaErr);
@@ -608,7 +577,6 @@ export default function FindProfitsPage() {
       console.error(err);
     } finally {
       setLoading(false);
-      updateRateLimitDisplay();
     }
   };
 
@@ -630,19 +598,11 @@ export default function FindProfitsPage() {
   const handleEvaluatePosition = async () => {
     if (!selectedOption || !tickerData || !entryPremium) return;
 
-    // Check rate limit
-    if (!canMakeApiCall()) {
-      setMonitorError(`Rate limit reached. Please wait ${getRateLimitStatus().resetIn}s.`);
-      updateRateLimitDisplay();
-      return;
-    }
-
     setMonitorLoading(true);
     setMonitorError("");
     setMonitorResult(null);
 
     try {
-      recordApiCall("/api/covered-call/evaluate");
       const res = await fetch("/api/covered-call/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -657,7 +617,6 @@ export default function FindProfitsPage() {
       });
 
       const data = await res.json();
-      updateRateLimitDisplay();
 
       if (!res.ok) {
         setMonitorError(data.error || "Failed to evaluate position");
@@ -670,7 +629,6 @@ export default function FindProfitsPage() {
       console.error(err);
     } finally {
       setMonitorLoading(false);
-      updateRateLimitDisplay();
     }
   };
 
@@ -729,13 +687,6 @@ export default function FindProfitsPage() {
     const expOption = getSelectedExpiration();
     if (!expOption) return;
 
-    // Check rate limit
-    if (!canMakeApiCall()) {
-      setOptionsError(`Rate limit reached. Please wait ${getRateLimitStatus().resetIn}s.`);
-      updateRateLimitDisplay();
-      return;
-    }
-
     setOptionsLoading(true);
     setOptionsError("");
     setOptionsResult(null);
@@ -748,10 +699,8 @@ export default function FindProfitsPage() {
         expiration: expOption.date,
       });
 
-      recordApiCall("/api/options");
       const res = await fetch(`/api/options?${params.toString()}`);
       const data = await res.json();
-      updateRateLimitDisplay();
 
       if (!res.ok) {
         setOptionsError(data.error || "Failed to fetch options");
@@ -764,7 +713,6 @@ export default function FindProfitsPage() {
       console.error(err);
     } finally {
       setOptionsLoading(false);
-      updateRateLimitDisplay();
     }
   };
 
@@ -789,9 +737,9 @@ export default function FindProfitsPage() {
             <nav className="hidden md:flex items-center gap-6">
               <Link href="/" className="text-gray-500 hover:text-blue-600">Dashboard</Link>
               <Link href="/accounts" className="text-gray-500 hover:text-blue-600">Accounts</Link>
-              <Link href="/positions" className="text-gray-500 hover:text-blue-600">Positions</Link>
+              <Link href="/holdings" className="text-gray-500 hover:text-blue-600">Holdings</Link>
               <Link href="/find-profits" className="text-gray-800 font-medium hover:text-blue-600">Find Profits</Link>
-              <Link href="/watchlist" className="text-gray-500 hover:text-blue-600">Watchlist</Link>
+              <Link href="/automation" className="text-gray-500 hover:text-blue-600">Watchlist</Link>
             </nav>
           </div>
         </div>
@@ -799,25 +747,9 @@ export default function FindProfitsPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8 flex items-start justify-between">
-          <div>
-            <h2 className="text-3xl font-bold text-gray-900">Find Profits</h2>
-            <p className="text-gray-600 mt-1">Select a strategy and analyze opportunities based on your risk profile</p>
-          </div>
-          {/* Rate Limit Indicator */}
-          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-            rateLimitInfo.remaining > 2
-              ? "bg-green-100 text-green-700"
-              : rateLimitInfo.remaining > 0
-              ? "bg-yellow-100 text-yellow-700"
-              : "bg-red-100 text-red-700"
-          }`}>
-            <span className="font-medium">API Calls:</span>
-            <span>{rateLimitInfo.remaining}/{rateLimitInfo.total}</span>
-            {rateLimitInfo.resetIn > 0 && (
-              <span className="text-xs">({rateLimitInfo.resetIn}s reset)</span>
-            )}
-          </div>
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-gray-900">Find Profits</h2>
+          <p className="text-gray-600 mt-1">Select a strategy and analyze opportunities based on your risk profile</p>
         </div>
 
         {/* Step 1: Account Selection */}
