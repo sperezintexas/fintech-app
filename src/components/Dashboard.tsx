@@ -309,7 +309,9 @@ export function Dashboard() {
                     outerRadius={80}
                     paddingAngle={2}
                     dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) =>
+                      `${String(name)} ${(((percent ?? 0) as number) * 100).toFixed(0)}%`
+                    }
                   >
                     {portfolio.accounts.map((_, i) => (
                       <Cell
@@ -318,7 +320,7 @@ export function Dashboard() {
                       />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>

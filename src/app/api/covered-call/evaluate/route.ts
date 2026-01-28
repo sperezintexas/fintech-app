@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import YahooFinance from "yahoo-finance2";
 import { evaluateCoveredCall, CoveredCallPosition } from "@/lib/covered-call-monitor";
-
-const yahooFinance = new YahooFinance();
+import { getTickerPrice } from "@/lib/yahoo";
 
 export const dynamic = "force-dynamic";
 
@@ -51,8 +49,8 @@ export async function POST(request: NextRequest) {
     // Fetch current stock price
     let stockPrice = strikePrice; // Fallback
     try {
-      const quote = await yahooFinance.quote(symbol.toUpperCase());
-      stockPrice = quote.regularMarketPrice || strikePrice;
+      const quote = await getTickerPrice(symbol.toUpperCase());
+      stockPrice = quote?.price ?? strikePrice;
     } catch (err) {
       console.error("Failed to fetch stock price:", err);
     }

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
-import { getMultipleTickerPrices, getMarketConditions } from "@/lib/yahoo";
-import type { Account, Position, MarketConditions } from "@/types/portfolio";
+import { getMultipleTickerPrices } from "@/lib/yahoo";
+import type { Account, Position } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +69,8 @@ export async function POST(request: NextRequest) {
 
     // Fetch accounts (single or all)
     const query = accountId ? { _id: new ObjectId(accountId) } : {};
-    const accounts = (await db.collection("accounts").find(query).toArray()) as Account[];
+    type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
+    const accounts = await db.collection<AccountDoc>("accounts").find(query).toArray();
 
     if (accounts.length === 0) {
       return NextResponse.json({ error: "No accounts found" }, { status: 404 });
@@ -79,7 +80,11 @@ export async function POST(request: NextRequest) {
     const allPositions: Array<Position & { accountName: string; accountId: string }> = [];
     for (const account of accounts) {
       for (const pos of account.positions || []) {
-        allPositions.push({ ...pos, accountName: account.name, accountId: account._id });
+        allPositions.push({
+          ...pos,
+          accountName: account.name,
+          accountId: account._id.toString(),
+        });
       }
     }
 
@@ -95,11 +100,12 @@ export async function POST(request: NextRequest) {
 
     // Fetch live prices
     const prices = await getMultipleTickerPrices(Array.from(tickers));
-    const market = await getMarketConditions();
 
     // Calculate account summaries
     const accountSummaries = accounts.map((account) => {
-      const accountPositions = allPositions.filter((p) => p.accountId === account._id);
+      const accountPositions = allPositions.filter(
+        (p) => p.accountId === account._id.toString()
+      );
       let accountValue = 0;
       let accountDailyChange = 0;
       let accountWeekChange = 0; // Placeholder - would need historical data
@@ -160,7 +166,7 @@ export async function POST(request: NextRequest) {
 
       return {
         name: account.name,
-        accountId: account._id, // Store for matching
+        accountId: account._id.toString(), // Store for matching
         broker: account.name.includes("Merrill") ? "Merrill" : account.name.includes("Fidelity") ? "Fidelity" : undefined,
         riskLevel: account.riskLevel || "medium",
         strategy: account.strategy || "Core",
@@ -176,8 +182,11 @@ export async function POST(request: NextRequest) {
     });
 
     // Generate options activity and recommendations per account
+    const accountById = new Map(accounts.map((a) => [a._id.toString(), a]));
     for (const summary of accountSummaries) {
-      const account = accounts.find((a) => a._id === summary.accountId || a.name === summary.name);
+      const account = summary.accountId
+        ? accountById.get(summary.accountId)
+        : accounts.find((a) => a.name === summary.name);
       if (!account) continue;
 
       const tslaPos = summary.positions.find((p) => p.symbol === "TSLA");
@@ -186,12 +195,16 @@ export async function POST(request: NextRequest) {
       // Build options activity string
       if (tslaPos && tslaPos.shares >= 475) {
         // Covered call example - check if there are actual CC positions
-        const ccOptions = options.filter((opt) => opt.ticker?.includes("TSLA") && opt.strategy === "covered-call");
+        const ccOptions = options.filter(
+          (opt) =>
+            (opt.ticker || "").toUpperCase().includes("TSLA") &&
+            opt.optionType === "call"
+        );
         if (ccOptions.length > 0) {
           const cc = ccOptions[0];
-          const strike = cc.strikePrice || 0;
-          const exp = cc.expirationDate || "";
-          const premium = cc.premium || 0;
+          const strike = cc.strike ?? 0;
+          const exp = cc.expiration ?? "";
+          const premium = cc.premium ?? 0;
           summary.optionsActivity = `${tslaPos.shares} TSLA shares | ${cc.contracts || 0} ${strike} ${exp} CC collecting $${(premium * (cc.contracts || 0) * 100).toFixed(0)} premium`;
         } else {
           summary.optionsActivity = `${tslaPos.shares} TSLA shares | No active covered calls`;
@@ -257,8 +270,7 @@ export async function POST(request: NextRequest) {
     const reportDateTime = now.toISOString();
     const dateFormatted = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
-    const report: PortfolioSummaryReport = {
-      _id: new ObjectId().toString(),
+    const report: Omit<PortfolioSummaryReport, "_id"> = {
       accountId: accountId || undefined,
       reportDate,
       reportDateTime,
@@ -303,7 +315,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Save report
-    const result = await db.collection("portfolioSummaryReports").insertOne(report);
+    const result = await db.collection("portfolioSummaryReports").insertOne(report as any);
 
     return NextResponse.json({
       success: true,
@@ -334,7 +346,7 @@ export async function GET(request: NextRequest) {
     // If ID provided, fetch single report
     if (id) {
       const report = await db
-        .collection<PortfolioSummaryReport>("portfolioSummaryReports")
+        .collection("portfolioSummaryReports")
         .findOne({ _id: new ObjectId(id) });
 
       if (!report) {
@@ -343,7 +355,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         ...report,
-        _id: report._id.toString(),
+        _id: (report as any)._id.toString(),
       });
     }
 
@@ -352,7 +364,7 @@ export async function GET(request: NextRequest) {
     if (accountId) query.accountId = accountId;
 
     const reports = await db
-      .collection<PortfolioSummaryReport>("portfolioSummaryReports")
+      .collection("portfolioSummaryReports")
       .find(query)
       .sort({ reportDateTime: -1 })
       .limit(limit)
@@ -361,7 +373,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       reports.map((r) => ({
         ...r,
-        _id: r._id.toString(),
+        _id: (r as any)._id.toString(),
       }))
     );
   } catch (error) {

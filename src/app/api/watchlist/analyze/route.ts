@@ -117,14 +117,29 @@ export async function POST(request: NextRequest) {
         volume: ohlc.volume,
       });
     });
+    // Analyze each item
+    const alerts: WatchlistAlert[] = [];
+    const processedTechnicals = new Map<string, Partial<TechnicalIndicators>>();
+
+    for (const item of items) {
+      const watchlistItem = {
+        ...item,
+        _id: item._id.toString(),
+      } as WatchlistItem;
+
       const riskLevel = accountRiskMap.get(item.accountId) || "medium";
 
       // Get market data from batch (no API call)
-      const underlying = watchlistItem.underlyingSymbol || watchlistItem.symbol.replace(/\d+[CP]\d+$/, "");
-      let marketData = getMarketDataFromBatch(underlying, batchMarketData);
+      const underlyingSymbol =
+        (watchlistItem.underlyingSymbol ||
+          watchlistItem.symbol.replace(/\d+[CP]\d+$/, "")).toUpperCase();
+
+      let marketData = getMarketDataFromBatch(underlyingSymbol, batchMarketData);
 
       if (!marketData) {
-        console.log(`Skipping ${watchlistItem.symbol} - no market data for ${watchlistItem.underlyingSymbol}`);
+        console.log(
+          `Skipping ${watchlistItem.symbol} - no market data for ${underlyingSymbol}`
+        );
         continue;
       }
 
@@ -137,7 +152,8 @@ export async function POST(request: NextRequest) {
           Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
         );
 
-        const isCall = watchlistItem.type === "call" || watchlistItem.type === "covered-call";
+        const isCall =
+          watchlistItem.type === "call" || watchlistItem.type === "covered-call";
         const optionPrice = estimateOptionPrice(
           marketData.currentPrice,
           watchlistItem.strikePrice,
@@ -153,12 +169,12 @@ export async function POST(request: NextRequest) {
         };
       }
 
-      // Get technical indicators (cache by symbol)
-      let technicals = processedTechnicals.get(watchlistItem.underlyingSymbol);
+      // Get technical indicators (cache by underlying symbol)
+      let technicals = processedTechnicals.get(underlyingSymbol);
       if (!technicals) {
-        technicals = await fetchTechnicalIndicators(watchlistItem.underlyingSymbol) || undefined;
+        technicals = (await fetchTechnicalIndicators(underlyingSymbol)) || undefined;
         if (technicals) {
-          processedTechnicals.set(watchlistItem.underlyingSymbol, technicals);
+          processedTechnicals.set(underlyingSymbol, technicals);
         }
       }
 
@@ -177,7 +193,10 @@ export async function POST(request: NextRequest) {
           $set: {
             currentPrice: marketData.currentPrice,
             currentPremium: marketData.optionMid,
-            profitLoss: analysis.details.priceChange * watchlistItem.quantity * (watchlistItem.type === "stock" ? 1 : 100),
+            profitLoss:
+              analysis.details.priceChange *
+              (watchlistItem.quantity || 0) *
+              (watchlistItem.type === "stock" ? 1 : 100),
             profitLossPercent: analysis.details.priceChangePercent,
             updatedAt: new Date().toISOString(),
           },
@@ -185,10 +204,7 @@ export async function POST(request: NextRequest) {
       );
 
       // Create alert if significant
-      if (
-        analysis.severity !== "info" ||
-        analysis.recommendation !== "HOLD"
-      ) {
+      if (analysis.severity !== "info" || analysis.recommendation !== "HOLD") {
         const newAlert: Omit<WatchlistAlert, "_id"> = {
           watchlistItemId: watchlistItem._id,
           accountId: watchlistItem.accountId,

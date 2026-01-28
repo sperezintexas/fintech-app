@@ -2009,7 +2009,9 @@ export default function FindProfitsPage() {
                               setSymbol(ticker.symbol);
                               setTickerData(ticker);
                               if (selectedAccount) {
-                                setAnalysis(analyzeCoveredCall(ticker, selectedAccount.riskLevel));
+                                if (userOutlook) {
+                                  setAnalysis(analyzeCoveredCall(ticker, selectedAccount.riskLevel, userOutlook));
+                                }
                               }
                             }}
                             className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left"

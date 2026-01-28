@@ -264,11 +264,11 @@ export default function ReportPage() {
         </div>
 
         {/* Market Overview */}
-        {report.marketOverview.indices.length > 0 && (
+            {report.marketOverview.indices.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Market Overview</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {report.marketOverview.indices.map((index) => (
+              {report.marketOverview.indices.map((index: any) => (
                 <div key={index.symbol} className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-600 mb-1">{index.name}</p>
                   <p className="font-bold text-gray-900">{formatCurrency(index.price)}</p>
@@ -287,7 +287,7 @@ export default function ReportPage() {
             Position Analysis ({report.positions.length})
           </h3>
 
-          {report.positions.map((position) => (
+          {report.positions.map((position: any) => (
             <div
               key={position.watchlistItemId}
               className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"

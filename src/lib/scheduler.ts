@@ -433,7 +433,7 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
 
       // Update watchlist item with current data
       await db.collection("watchlist").updateOne(
-        { _id: item._id },
+        { _id: item._id as any },
         {
           $set: {
             currentPrice,
@@ -556,7 +556,7 @@ export async function cancelJob(jobName: string): Promise<number> {
   const ag = await getAgenda();
   const result = await ag.cancel({ name: jobName });
   console.log(`Cancelled ${result} job(s) with name "${jobName}"`);
-  return result;
+  return result ?? 0;
 }
 
 // Graceful shutdown

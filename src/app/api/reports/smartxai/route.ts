@@ -425,7 +425,7 @@ export async function GET(request: NextRequest) {
 
     // If ID provided, fetch single report
     if (reportId) {
-      const report = await db.collection<SmartXAIReport>("smartXAIReports").findOne({
+      const report = await db.collection("smartXAIReports").findOne({
         _id: new ObjectId(reportId),
         expiresAt: { $gte: new Date().toISOString() },
       });
@@ -436,7 +436,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         ...report,
-        _id: report._id.toString(),
+        _id: (report as any)._id.toString(),
       });
     }
 
@@ -451,7 +451,7 @@ export async function GET(request: NextRequest) {
     query.expiresAt = { $gte: new Date().toISOString() };
 
     const reports = await db
-      .collection<SmartXAIReport>("smartXAIReports")
+      .collection("smartXAIReports")
       .find(query)
       .sort({ reportDateTime: -1 })
       .limit(limit)

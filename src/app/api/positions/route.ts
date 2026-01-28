@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
-import { Position } from "@/types/portfolio";
+import type { Account, Position } from "@/types/portfolio";
 import { getMultipleTickerPrices } from "@/lib/yahoo";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +20,9 @@ export async function GET(request: NextRequest) {
     }
 
     const db = await getDb();
+    type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
     const account = await db
-      .collection("accounts")
+      .collection<AccountDoc>("accounts")
       .findOne({ _id: new ObjectId(accountId) });
 
     if (!account) {
@@ -82,15 +83,16 @@ export async function POST(request: NextRequest) {
     }
 
     const db = await getDb();
+    type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
 
     const newPosition: Position = {
       _id: new ObjectId().toString(),
       ...positionData,
     };
 
-    const result = await db.collection("accounts").updateOne(
+    const result = await db.collection<AccountDoc>("accounts").updateOne(
       { _id: new ObjectId(accountId) },
-      { $push: { positions: newPosition } }
+      { $push: { positions: newPosition } } as any
     );
 
     if (result.matchedCount === 0) {

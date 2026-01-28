@@ -3,7 +3,7 @@
 // Request notification permission and subscribe to push
 export async function requestPushPermission(): Promise<{
   success: boolean;
-  subscription: PushSubscription | null;
+  subscription: PushSubscriptionJSON | null;
   error?: string;
 }> {
   if (!("Notification" in window)) {
@@ -44,7 +44,7 @@ export async function requestPushPermission(): Promise<{
 // Subscribe to push notifications
 async function subscribeToPush(): Promise<{
   success: boolean;
-  subscription: PushSubscription | null;
+  subscription: PushSubscriptionJSON | null;
   error?: string;
 }> {
   try {
@@ -103,12 +103,12 @@ type PushSubscriptionJSON = {
 };
 
 // Convert VAPID key from URL-safe base64 to Uint8Array
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
 
   const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
+  const outputArray = new Uint8Array(new ArrayBuffer(rawData.length));
 
   for (let i = 0; i < rawData.length; ++i) {
     outputArray[i] = rawData.charCodeAt(i);
@@ -147,7 +147,7 @@ export function showDirectNotification(
 
 // Register push subscription with server
 export async function registerPushSubscription(
-  subscription: PushSubscription,
+  subscription: PushSubscriptionJSON,
   accountId: string
 ): Promise<boolean> {
   try {

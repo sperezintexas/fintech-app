@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { getMultipleTickerPrices } from "@/lib/yahoo";
 import type { Account, Portfolio } from "@/types/portfolio";
+import { ObjectId } from "mongodb";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,8 @@ export async function GET() {
   try {
     // Get all accounts from MongoDB
     const db = await getDb();
-    const accounts = (await db.collection("accounts").find({}).toArray()) as Account[];
+    type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
+    const accounts = await db.collection<AccountDoc>("accounts").find({}).toArray();
 
     // Collect all unique tickers from positions
     const tickers = new Set<string>();
@@ -84,6 +86,7 @@ export async function GET() {
 
         return {
           ...account,
+          _id: account._id.toString(),
           positions: updatedPositions,
           balance: accountValue,
         };
@@ -96,6 +99,7 @@ export async function GET() {
 
       return {
         ...account,
+        _id: account._id.toString(),
         balance: accountValue,
       };
     });

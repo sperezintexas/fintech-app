@@ -47,11 +47,6 @@ function parseOptionSymbol(symbol: string): {
   };
 }
 
-// Convert Yahoo symbol to Polygon options format: O:TSLA260320C00005000
-function toPolygonOptionSymbol(yahooSymbol: string): string {
-  return `O:${yahooSymbol.toUpperCase()}`;
-}
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ symbol: string }> }
@@ -63,7 +58,6 @@ export async function GET(
     // Check if it's an option symbol
     const optionParsed = parseOptionSymbol(upperSymbol);
     const isOption = !!optionParsed;
-    const polygonSymbol = isOption ? toPolygonOptionSymbol(upperSymbol) : upperSymbol;
 
     const quote = await yahooFinance.quote(upperSymbol);
 
@@ -95,12 +89,12 @@ export async function GET(
         ? `${optionParsed!.underlying} ${optionParsed!.strike} ${optionParsed!.optionType.toUpperCase()} ${optionParsed!.expiration}`
         : tickerName,
       type: isOption ? "option" : "stock",
-      price: agg.c,
-      open: agg.o,
-      high: agg.h,
-      low: agg.l,
-      close: agg.c,
-      volume: agg.v,
+      price: quote.regularMarketPrice,
+      open: quote.regularMarketOpen || quote.regularMarketPrice,
+      high: quote.regularMarketDayHigh || quote.regularMarketPrice,
+      low: quote.regularMarketDayLow || quote.regularMarketPrice,
+      close: quote.regularMarketPrice,
+      volume: quote.regularMarketVolume || 0,
       change,
       changePercent,
     };

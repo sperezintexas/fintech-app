@@ -12,14 +12,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const db = await getDb();
 
-    let query: { _id: ObjectId | string };
+    let accountId: ObjectId;
     try {
-      query = { _id: new ObjectId(id) };
+      accountId = new ObjectId(id);
     } catch {
-      query = { _id: id };
+      return NextResponse.json({ error: "Invalid account id" }, { status: 400 });
     }
 
-    const account = await db.collection("accounts").findOne(query);
+    const account = await db.collection("accounts").findOne({ _id: accountId });
 
     if (!account) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
@@ -42,11 +42,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const db = await getDb();
 
-    let query: { _id: ObjectId | string };
+    let accountId: ObjectId;
     try {
-      query = { _id: new ObjectId(id) };
+      accountId = new ObjectId(id);
     } catch {
-      query = { _id: id };
+      return NextResponse.json({ error: "Invalid account id" }, { status: 400 });
     }
 
     const updateData = {
@@ -58,13 +58,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const result = await db
       .collection("accounts")
-      .updateOne(query, { $set: updateData });
+      .updateOne({ _id: accountId }, { $set: updateData });
 
     if (result.matchedCount === 0) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
 
-    const updated = await db.collection("accounts").findOne(query);
+    const updated = await db.collection("accounts").findOne({ _id: accountId });
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Failed to update account:", error);
@@ -81,14 +81,14 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const db = await getDb();
 
-    let query: { _id: ObjectId | string };
+    let accountId: ObjectId;
     try {
-      query = { _id: new ObjectId(id) };
+      accountId = new ObjectId(id);
     } catch {
-      query = { _id: id };
+      return NextResponse.json({ error: "Invalid account id" }, { status: 400 });
     }
 
-    const result = await db.collection("accounts").deleteOne(query);
+    const result = await db.collection("accounts").deleteOne({ _id: accountId });
 
     if (result.deletedCount === 0) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });

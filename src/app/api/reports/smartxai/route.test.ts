@@ -105,7 +105,10 @@ describe("POST /api/reports/smartxai", () => {
       recommendation: "HOLD",
       severity: "info",
       reason: "Test reason",
+      confidence: 0.8,
       details: {
+        currentPrice: 205,
+        entryPrice: 200,
         priceChange: 5,
         priceChangePercent: 2.5,
       },
@@ -117,7 +120,10 @@ describe("POST /api/reports/smartxai", () => {
       recommendation: "HOLD",
       severity: "info",
       reason: "Test reason",
+      confidence: 0.8,
       details: {
+        currentPrice: 205,
+        entryPrice: 200,
         priceChange: 5,
         priceChangePercent: 2.5,
       },

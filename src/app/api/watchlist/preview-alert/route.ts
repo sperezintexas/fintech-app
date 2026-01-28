@@ -23,13 +23,18 @@ export async function POST(request: NextRequest) {
     const db = await getDb();
 
     // Fetch watchlist item
-    const item = await db.collection<WatchlistItem>("watchlist").findOne({
+    const itemDoc = await db.collection("watchlist").findOne({
       _id: new ObjectId(watchlistItemId),
     });
 
-    if (!item) {
+    if (!itemDoc) {
       return NextResponse.json({ error: "Watchlist item not found" }, { status: 404 });
     }
+
+    const item = {
+      ...(itemDoc as any),
+      _id: (itemDoc as any)._id.toString(),
+    } as WatchlistItem;
 
     // Fetch account for risk level
     const account = await db.collection("accounts").findOne({

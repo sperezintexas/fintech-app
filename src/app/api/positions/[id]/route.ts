@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import type { Account } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,9 @@ export async function GET(
     }
 
     const db = await getDb();
+    type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
     const account = await db
-      .collection("accounts")
+      .collection<AccountDoc>("accounts")
       .findOne({ _id: new ObjectId(accountId) });
 
     if (!account) {
@@ -67,9 +69,10 @@ export async function PUT(
     }
 
     const db = await getDb();
+    type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
 
     // Update the position within the account's positions array
-    const result = await db.collection("accounts").updateOne(
+    const result = await db.collection<AccountDoc>("accounts").updateOne(
       { _id: new ObjectId(accountId), "positions._id": id },
       {
         $set: {
@@ -84,7 +87,7 @@ export async function PUT(
           "positions.$.contracts": positionData.contracts,
           "positions.$.premium": positionData.premium,
         },
-      }
+      } as any
     );
 
     if (result.matchedCount === 0) {
@@ -122,10 +125,11 @@ export async function DELETE(
     }
 
     const db = await getDb();
+    type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
 
-    const result = await db.collection("accounts").updateOne(
+    const result = await db.collection<AccountDoc>("accounts").updateOne(
       { _id: new ObjectId(accountId) },
-      { $pull: { positions: { _id: id } } }
+      { $pull: { positions: { _id: id } } } as any
     );
 
     if (result.matchedCount === 0) {
