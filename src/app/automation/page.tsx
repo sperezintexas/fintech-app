@@ -17,6 +17,7 @@ import type {
   ScheduledAlert,
   ReportDefinition,
   ReportJob,
+  StrategySettings,
 } from "@/types/portfolio";
 import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS } from "@/types/portfolio";
 import {
@@ -71,7 +72,7 @@ export default function AutomationPage() {
   const [formError, setFormError] = useState("");
 
   // Alert preferences state
-  const [activeTab, setActiveTab] = useState<"automation" | "alerts" | "settings" | "reports" | "jobs">("automation");
+  const [activeTab, setActiveTab] = useState<"automation" | "alerts" | "settings" | "strategy" | "reports" | "jobs">("automation");
   const [prefsLoading, setPrefsLoading] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsMessage, setPrefsMessage] = useState("");
@@ -98,6 +99,17 @@ export default function AutomationPage() {
   const [showJobForm, setShowJobForm] = useState(false);
   const [jobFormError, setJobFormError] = useState<string>("");
   const [jobFormSaving, setJobFormSaving] = useState(false);
+
+  // Strategy settings (min OI filters for Find Profits option chains)
+  const [strategySettingsLoading, setStrategySettingsLoading] = useState(false);
+  const [strategySettingsSaving, setStrategySettingsSaving] = useState(false);
+  const [strategySettingsMessage, setStrategySettingsMessage] = useState<string>("");
+  const [strategySettingsError, setStrategySettingsError] = useState<string>("");
+  const [strategySettings, setStrategySettings] = useState<StrategySettings | null>(null);
+  const [strategyThresholdsForm, setStrategyThresholdsForm] = useState({
+    coveredCallMinOI: 500,
+    cashSecuredPutMinOI: 500,
+  });
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [jobForm, setJobForm] = useState<{
     name: string;
@@ -532,6 +544,74 @@ export default function AutomationPage() {
       console.error("Failed to fetch report jobs:", err);
     }
   }, [selectedAccountId]);
+
+  const fetchStrategySettings = useCallback(async () => {
+    if (!selectedAccountId) return;
+    setStrategySettingsLoading(true);
+    setStrategySettingsError("");
+    setStrategySettingsMessage("");
+    try {
+      const res = await fetch(`/api/strategy-settings?accountId=${encodeURIComponent(selectedAccountId)}`, {
+        cache: "no-store",
+      });
+      const data = (await res.json()) as StrategySettings | { error?: string };
+      if (!res.ok) {
+        setStrategySettingsError((data as any).error || "Failed to load strategy settings");
+        return;
+      }
+
+      const settings = data as StrategySettings;
+      setStrategySettings(settings);
+      setStrategyThresholdsForm({
+        coveredCallMinOI: settings.thresholds?.["covered-call"]?.minOpenInterest ?? 500,
+        cashSecuredPutMinOI: settings.thresholds?.["cash-secured-put"]?.minOpenInterest ?? 500,
+      });
+    } catch (e) {
+      console.error("Failed to fetch strategy settings:", e);
+      setStrategySettingsError("Failed to load strategy settings");
+    } finally {
+      setStrategySettingsLoading(false);
+    }
+  }, [selectedAccountId]);
+
+  useEffect(() => {
+    if (activeTab === "strategy") {
+      fetchStrategySettings();
+    }
+  }, [activeTab, fetchStrategySettings]);
+
+  const saveStrategySettings = useCallback(async () => {
+    if (!selectedAccountId) return;
+    setStrategySettingsSaving(true);
+    setStrategySettingsError("");
+    setStrategySettingsMessage("");
+    try {
+      const res = await fetch("/api/strategy-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: selectedAccountId,
+          thresholds: {
+            "covered-call": { minOpenInterest: Number(strategyThresholdsForm.coveredCallMinOI) },
+            "cash-secured-put": { minOpenInterest: Number(strategyThresholdsForm.cashSecuredPutMinOI) },
+          },
+        }),
+      });
+      const data = (await res.json()) as StrategySettings | { error?: string };
+      if (!res.ok) {
+        setStrategySettingsError((data as any).error || "Failed to save strategy settings");
+        return;
+      }
+      setStrategySettings(data as StrategySettings);
+      setStrategySettingsMessage("Saved strategy settings.");
+      setTimeout(() => setStrategySettingsMessage(""), 2500);
+    } catch (e) {
+      console.error("Failed to save strategy settings:", e);
+      setStrategySettingsError("Failed to save strategy settings");
+    } finally {
+      setStrategySettingsSaving(false);
+    }
+  }, [selectedAccountId, strategyThresholdsForm]);
 
   useEffect(() => {
     if (activeTab === "reports") fetchReportDefinitions();
@@ -1051,6 +1131,16 @@ export default function AutomationPage() {
               }`}
             >
               Alert Settings
+            </button>
+            <button
+              onClick={() => setActiveTab("strategy")}
+              className={`py-3 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "strategy"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Strategy
             </button>
             <button
               onClick={() => setActiveTab("reports")}
@@ -2471,6 +2561,103 @@ export default function AutomationPage() {
             </div>
             </>
             )}
+          </div>
+        )}
+
+        {/* Strategy Settings Tab */}
+        {activeTab === "strategy" && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Strategy Settings</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Defaults used by Find Profits when filtering option chains.
+              </p>
+
+              {strategySettingsLoading ? (
+                <div className="flex items-center gap-3 text-gray-600">
+                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  Loading strategy settings…
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl border border-gray-200">
+                      <p className="font-medium text-gray-900 mb-1">Covered Calls</p>
+                      <p className="text-xs text-gray-500 mb-3">
+                        Show only call contracts with Open Interest above this threshold.
+                      </p>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Min Open Interest</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={strategyThresholdsForm.coveredCallMinOI}
+                        onChange={(e) =>
+                          setStrategyThresholdsForm((p) => ({
+                            ...p,
+                            coveredCallMinOI: Number(e.target.value),
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                      />
+                      <p className="text-[11px] text-gray-500 mt-2">
+                        Rule: higher OI usually = easier fills + tighter spreads.
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-gray-200">
+                      <p className="font-medium text-gray-900 mb-1">Cash-Secured Puts</p>
+                      <p className="text-xs text-gray-500 mb-3">
+                        Show only put contracts with Open Interest above this threshold.
+                      </p>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Min Open Interest</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={strategyThresholdsForm.cashSecuredPutMinOI}
+                        onChange={(e) =>
+                          setStrategyThresholdsForm((p) => ({
+                            ...p,
+                            cashSecuredPutMinOI: Number(e.target.value),
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                      />
+                      <p className="text-[11px] text-gray-500 mt-2">
+                        Rule: higher OI usually = easier fills + tighter spreads.
+                      </p>
+                    </div>
+                  </div>
+
+                  {strategySettingsError && (
+                    <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{strategySettingsError}</div>
+                  )}
+                  {strategySettingsMessage && (
+                    <div className="p-3 bg-green-50 text-green-700 rounded-lg text-sm">{strategySettingsMessage}</div>
+                  )}
+
+                  <button
+                    onClick={saveStrategySettings}
+                    disabled={strategySettingsSaving || !selectedAccountId}
+                    className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {strategySettingsSaving ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Saving…
+                      </>
+                    ) : (
+                      "Save Strategy Settings"
+                    )}
+                  </button>
+
+                  {strategySettings && strategySettings._id !== "default" && (
+                    <p className="text-[11px] text-gray-500">
+                      Stored in MongoDB for this account.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

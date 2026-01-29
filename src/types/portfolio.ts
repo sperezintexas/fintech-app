@@ -80,6 +80,17 @@ export type WatchlistStrategy =
   | "leap-call"
   | "collar";
 
+// Per-account strategy configuration (Configure Automation → Strategy tab)
+export type StrategyTag = "covered-call" | "cash-secured-put";
+
+export type StrategySettings = {
+  _id: string;
+  accountId: string;
+  thresholds: Record<StrategyTag, { minOpenInterest: number }>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type WatchlistItem = {
   _id: string;
   accountId: string;

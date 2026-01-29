@@ -19,6 +19,7 @@ type OptionContractData = {
     ask: number;
   };
   volume: number;
+  open_interest: number;
   implied_volatility: number;
   rationale: string;
   dataSource: string;
@@ -147,6 +148,19 @@ function estimateVolume(
   return Math.round(baseVolume * moneynessMultiplier * timeMultiplier);
 }
 
+// Estimate open interest (synthetic) - correlates with volume & closeness to ATM
+function estimateOpenInterest(
+  stockPrice: number,
+  strikePrice: number,
+  daysToExpiration: number
+): number {
+  const moneyness = Math.abs(stockPrice - strikePrice) / stockPrice;
+  const moneynessMultiplier = Math.max(0.08, 1 - moneyness * 4.5);
+  const timeMultiplier = daysToExpiration < 30 ? 1.4 : daysToExpiration < 60 ? 1.15 : 1;
+  const baseOi = 3500;
+  return Math.max(10, Math.round(baseOi * moneynessMultiplier * timeMultiplier));
+}
+
 // Simple premium estimation using time value approximation
 function estimatePremium(
   stockPrice: number,
@@ -216,6 +230,7 @@ function generateSyntheticOptions(
 
     const iv = estimateIV(stockPrice, strikePrice, priceEstimate.premium, daysToExp, contractType === "call");
     const volume = estimateVolume(stockPrice, strikePrice, daysToExp);
+    const openInterest = estimateOpenInterest(stockPrice, strikePrice, daysToExp);
     const rationale = generateRationale(stockPrice, strikePrice, contractType, iv);
     const yahooSymbol = toYahooSymbol(underlying, expiration, contractType, strikePrice);
 
@@ -232,6 +247,7 @@ function generateSyntheticOptions(
         ask: priceEstimate.ask,
       },
       volume,
+      open_interest: openInterest,
       implied_volatility: Math.round(iv * 1000) / 10, // As percentage (e.g., 35.5%)
       rationale,
       dataSource: "synthetic",

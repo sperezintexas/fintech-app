@@ -310,6 +310,13 @@ type SMAData = {
   sma50Minus15: number;
 };
 
+type TechnicalsData = {
+  symbol: string;
+  rsi14: number;
+  volatility: number; // annualized %
+  dataPoints: number;
+};
+
 type OptionContract = {
   ticker: string;
   yahoo_symbol: string;
@@ -318,6 +325,7 @@ type OptionContract = {
   premium: number;
   totalPremium: number;
   volume: number;
+  open_interest: number;
   implied_volatility: number;
   rationale: string;
   contract_type: "call" | "put";
@@ -446,9 +454,18 @@ export default function FindProfitsPage() {
   const [cspAnalysis, setCspAnalysis] = useState<CashSecuredPutAnalysis | null>(null);
   const [searchHistory, setSearchHistory] = useState<TickerData[]>([]);
 
+  // Collapsible step panels (space saver)
+  const [collapseStep1, setCollapseStep1] = useState(false);
+  const [collapseStep2, setCollapseStep2] = useState(false);
+  const [collapseStep3, setCollapseStep3] = useState(false);
+  const [collapseStep4, setCollapseStep4] = useState(false);
+  const [collapseCcAnalysis, setCollapseCcAnalysis] = useState(false);
+
   // Recommendation state
   const [smaData, setSmaData] = useState<SMAData | null>(null);
   const [smaLoading, setSmaLoading] = useState(false);
+  const [technicals, setTechnicals] = useState<TechnicalsData | null>(null);
+  const [technicalsLoading, setTechnicalsLoading] = useState(false);
   const [selectedStrike, setSelectedStrike] = useState<number | null>(null);
   const [selectedWeeks, setSelectedWeeks] = useState<number>(4); // Default to 4 weeks
 
@@ -457,7 +474,16 @@ export default function FindProfitsPage() {
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState("");
   const [selectedOption, setSelectedOption] = useState<OptionContract | null>(null);
+  const [optionsCollapsed, setOptionsCollapsed] = useState(false);
   const [numContracts, setNumContracts] = useState<number>(1);
+
+  // Build Covered Call flow state
+  const [buildExpirationWeeks, setBuildExpirationWeeks] = useState<number>(4);
+  const [buildStrike, setBuildStrike] = useState<number | null>(null);
+  const [buildOptionContract, setBuildOptionContract] = useState<OptionContract | null>(null);
+  const [buildLimitPriceType, setBuildLimitPriceType] = useState<"bid" | "mid" | "ask">("mid");
+  const [buildQuantity, setBuildQuantity] = useState<number>(1);
+  const [buildOptionLoading, setBuildOptionLoading] = useState(false);
 
   // Covered Call Monitor state
   const [showMonitor, setShowMonitor] = useState(false);
@@ -471,6 +497,12 @@ export default function FindProfitsPage() {
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [watchlistSuccess, setWatchlistSuccess] = useState<string | null>(null);
   const [watchlistError, setWatchlistError] = useState("");
+
+  // Strategy thresholds (configured in Configure Automation → Strategy)
+  const [minOiThresholds, setMinOiThresholds] = useState<{
+    coveredCall: number;
+    cashSecuredPut: number;
+  }>({ coveredCall: 500, cashSecuredPut: 500 });
 
   // Fetch accounts on mount
   useEffect(() => {
@@ -491,6 +523,29 @@ export default function FindProfitsPage() {
     fetchAccounts();
   }, []);
 
+  // Fetch strategy settings for selected account (min OI filters)
+  useEffect(() => {
+    if (!selectedAccountId) return;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/strategy-settings?accountId=${encodeURIComponent(selectedAccountId)}`,
+          { cache: "no-store" }
+        );
+        const data = (await res.json()) as any;
+        if (!res.ok) return;
+        const cc = Number(data?.thresholds?.["covered-call"]?.minOpenInterest);
+        const csp = Number(data?.thresholds?.["cash-secured-put"]?.minOpenInterest);
+        setMinOiThresholds({
+          coveredCall: Number.isFinite(cc) ? cc : 500,
+          cashSecuredPut: Number.isFinite(csp) ? csp : 500,
+        });
+      } catch {
+        // keep defaults
+      }
+    })();
+  }, [selectedAccountId]);
+
   const selectedAccount = accounts.find((a) => a._id === selectedAccountId);
   const selectedStrategyData = STRATEGIES.find((s) => s.id === selectedStrategy);
 
@@ -503,6 +558,57 @@ export default function FindProfitsPage() {
       .filter((p) => p.type === "stock" && p.ticker?.toUpperCase() === tickerData.symbol.toUpperCase())
       .reduce((sum, p) => sum + (p.shares || 0), 0);
   }, [selectedAccount, tickerData]);
+
+  // Sort option chain rows by strike based on strategy:
+  // - Covered calls: highest strike first (surface +15% OTM first)
+  // - Cash-secured puts: lowest strike first (surface -15% OTM first)
+  const sortedOptionChain = useMemo((): OptionChainRow[] => {
+    const chain = optionsResult?.optionChain ?? [];
+    if (chain.length === 0) return [];
+    const sorted = [...chain];
+    if (selectedStrategy === "covered-calls") {
+      sorted.sort((a, b) => b.strike - a.strike);
+    } else if (selectedStrategy === "cash-secured-puts") {
+      sorted.sort((a, b) => a.strike - b.strike);
+    }
+    return sorted;
+  }, [optionsResult, selectedStrategy]);
+
+  const minOiForCurrentStrategy = useMemo(() => {
+    if (selectedStrategy === "covered-calls") return minOiThresholds.coveredCall;
+    if (selectedStrategy === "cash-secured-puts") return minOiThresholds.cashSecuredPut;
+    return 500;
+  }, [minOiThresholds, selectedStrategy]);
+
+  const visibleOptionChain = useMemo((): OptionChainRow[] => {
+    if (!optionsResult) return [];
+    const minOi = minOiForCurrentStrategy;
+    if (selectedStrategy === "covered-calls") {
+      return sortedOptionChain.filter((row) => (row.call?.open_interest ?? 0) > minOi);
+    }
+    if (selectedStrategy === "cash-secured-puts") {
+      return sortedOptionChain.filter((row) => (row.put?.open_interest ?? 0) > minOi);
+    }
+    return sortedOptionChain;
+  }, [minOiForCurrentStrategy, optionsResult, selectedStrategy, sortedOptionChain]);
+
+  const selectedOptionLiquidity = useMemo(() => {
+    if (!selectedOption) return null;
+    const bid = selectedOption.last_quote?.bid;
+    const ask = selectedOption.last_quote?.ask;
+    if (bid == null || ask == null) {
+      return {
+        bid: null as number | null,
+        ask: null as number | null,
+        spreadAbs: null as number | null,
+        spreadPct: null as number | null,
+      };
+    }
+    const mid = (bid + ask) / 2;
+    const spreadAbs = Math.max(0, ask - bid);
+    const spreadPct = mid > 0 ? (spreadAbs / mid) * 100 : null;
+    return { bid, ask, spreadAbs, spreadPct };
+  }, [selectedOption]);
 
   // Calculate estimated total cash across all accounts
   // Cash should be stored as positions (type: "cash"), but we also check account.balance as fallback
@@ -550,13 +656,19 @@ export default function FindProfitsPage() {
     setLoading(true);
     setError("");
     setTickerData(null);
-    setUserOutlook(null);
     setAnalysis(null);
     setCspAnalysis(null);
     setSmaData(null);
+    setTechnicals(null);
     setSelectedStrike(null);
     setOptionsResult(null);
     setOptionsError("");
+    setOptionsCollapsed(false);
+    setBuildStrike(null);
+    setBuildOptionContract(null);
+    setBuildExpirationWeeks(4);
+    setBuildQuantity(1);
+    setCollapseCcAnalysis(false);
 
     try {
       const res = await fetch(`/api/ticker/${symbol.trim().toUpperCase()}`);
@@ -574,6 +686,7 @@ export default function FindProfitsPage() {
       }
 
       setTickerData(data);
+      setCollapseStep4(true);
 
       // Generate analysis based on selected strategy and user outlook
       if (selectedAccount && userOutlook) {
@@ -606,6 +719,20 @@ export default function FindProfitsPage() {
         console.error("Failed to fetch SMA data:", smaErr);
       } finally {
         setSmaLoading(false);
+      }
+
+      // Fetch RSI + Volatility
+      setTechnicalsLoading(true);
+      try {
+        const techRes = await fetch(`/api/ticker/${symbol.trim().toUpperCase()}/technicals`);
+        if (techRes.ok) {
+          const tech = (await techRes.json()) as TechnicalsData;
+          setTechnicals(tech);
+        }
+      } catch (techErr) {
+        console.error("Failed to fetch technical indicators:", techErr);
+      } finally {
+        setTechnicalsLoading(false);
       }
 
       // Add to search history
@@ -684,6 +811,24 @@ export default function FindProfitsPage() {
     try {
       const strategy = selectedStrategy === "cash-secured-puts" ? "cash-secured-put" : "covered-call";
       const itemType = selectedOption.contract_type === "put" ? "csp" : "covered-call";
+      const entryDate = new Date().toISOString().split("T")[0];
+
+      // Covered calls must be covered by shares in the selected account.
+      if (strategy === "covered-call" && selectedOption.contract_type === "call") {
+        const maxContracts = Math.floor(availableShares / 100);
+        if (maxContracts <= 0) {
+          setWatchlistError(
+            `No eligible shares found to cover calls for ${tickerData.symbol} in ${selectedAccount?.name || "this account"}.`
+          );
+          return;
+        }
+        if (numContracts > maxContracts) {
+          setWatchlistError(
+            `Not enough shares to cover ${numContracts} contracts. Max for ${tickerData.symbol} in ${selectedAccount?.name || "this account"} is ${maxContracts}.`
+          );
+          return;
+        }
+      }
 
       const res = await fetch("/api/watchlist", {
         method: "POST",
@@ -696,10 +841,11 @@ export default function FindProfitsPage() {
           strategy: strategy,
           quantity: numContracts,
           entryPrice: tickerData.price,
+          entryDate,
           strikePrice: selectedOption.strike_price,
           expirationDate: selectedOption.expiration_date,
           entryPremium: selectedOption.premium,
-          notes: `Added from Find Profits - ${userOutlook} outlook on ${tickerData.symbol}`,
+          notes: `Added from Find Profits • ${userOutlook || "unknown"} outlook • ${tickerData.symbol} ${selectedOption.expiration_date} ${selectedOption.contract_type.toUpperCase()} $${selectedOption.strike_price} • est prem $${selectedOption.premium.toFixed(2)}`,
         }),
       });
 
@@ -723,6 +869,8 @@ export default function FindProfitsPage() {
   };
 
   const handleSearchOptions = async () => {
+    // Only for cash-secured-puts (covered-calls uses build flow)
+    if (selectedStrategy === "covered-calls") return;
     if (!tickerData || !selectedStrike) return;
 
     const expOption = getSelectedExpiration();
@@ -732,6 +880,7 @@ export default function FindProfitsPage() {
     setOptionsError("");
     setOptionsResult(null);
     setSelectedOption(null);
+    setOptionsCollapsed(false);
 
     try {
       const params = new URLSearchParams({
@@ -757,6 +906,53 @@ export default function FindProfitsPage() {
     }
   };
 
+  // Effect to auto-fetch option when strike and expiration are selected
+  useEffect(() => {
+    if (!tickerData || !buildStrike || !buildExpirationWeeks || selectedStrategy !== "covered-calls") {
+      return;
+    }
+
+    const fetchBuildOption = async () => {
+      const expOptions = generateExpirationOptions();
+      const expOption = expOptions.find((o) => o.weeks === buildExpirationWeeks);
+      if (!expOption) return;
+
+      setBuildOptionLoading(true);
+      setBuildOptionContract(null);
+
+      try {
+        const params = new URLSearchParams({
+          underlying: tickerData.symbol,
+          strike: buildStrike.toString(),
+          expiration: expOption.date,
+        });
+
+        const res = await fetch(`/api/options?${params.toString()}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error("Failed to fetch option:", data.error);
+          return;
+        }
+
+        // Find the call option matching our strike
+        const callOption = data.call?.find(
+          (opt: OptionContract) => opt.strike_price === buildStrike
+        );
+
+        if (callOption) {
+          setBuildOptionContract(callOption);
+        }
+      } catch (err) {
+        console.error("Failed to fetch build option:", err);
+      } finally {
+        setBuildOptionLoading(false);
+      }
+    };
+
+    fetchBuildOption();
+  }, [buildStrike, buildExpirationWeeks, tickerData?.symbol, selectedStrategy]);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <AppHeader />
@@ -768,38 +964,139 @@ export default function FindProfitsPage() {
           <p className="text-gray-600 mt-1">Select a strategy and analyze opportunities based on your risk profile</p>
         </div>
 
-        {/* Step 1: Account Selection */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
-            <h3 className="text-lg font-semibold text-gray-900">Select Account & Risk Profile</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Step 1: Account Selection */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
+                <h3 className="text-lg font-semibold text-gray-900">Account</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCollapseStep1((v) => !v)}
+                className="text-xs font-medium text-gray-600 hover:text-gray-900"
+              >
+                {collapseStep1 ? "Show" : "Hide"}
+              </button>
+            </div>
+            {collapseStep1 ? (
+              <p className="text-sm text-gray-500">
+                {selectedAccount ? `${selectedAccount.name} • ${selectedAccount.riskLevel.toUpperCase()} • ${selectedAccount.strategy}` : "Select an account"}
+              </p>
+            ) : (
+              <div className="flex flex-col sm:flex-row gap-4">
+                <select
+                  value={selectedAccountId}
+                  onChange={(e) => {
+                    setSelectedAccountId(e.target.value);
+                    setSelectedStrategy("");
+                    setTickerData(null);
+                    setAnalysis(null);
+                    setCspAnalysis(null);
+                    setSymbol("");
+                    setOptionsResult(null);
+                    setSelectedOption(null);
+                    setCollapseStep1(true);
+                    setCollapseStep2(false);
+                    setCollapseStep4(false);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                >
+                  {accounts.map((account) => (
+                    <option key={account._id} value={account._id}>
+                      {account.name} - {account.riskLevel} risk
+                    </option>
+                  ))}
+                </select>
+                {selectedAccount && (
+                  <div
+                    className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                      selectedAccount.riskLevel === "high"
+                        ? "bg-red-100 text-red-700"
+                        : selectedAccount.riskLevel === "medium"
+                        ? "bg-yellow-100 text-yellow-700"
+                        : "bg-green-100 text-green-700"
+                    }`}
+                  >
+                    {selectedAccount.riskLevel.toUpperCase()} RISK • {selectedAccount.strategy}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <select
-              value={selectedAccountId}
-              onChange={(e) => {
-                setSelectedAccountId(e.target.value);
-                setSelectedStrategy("");
-                setTickerData(null);
-                setAnalysis(null);
-              }}
-              className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-            >
-              {accounts.map((account) => (
-                <option key={account._id} value={account._id}>
-                  {account.name} - {account.riskLevel} risk
-                </option>
-              ))}
-            </select>
-            {selectedAccount && (
-              <div className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                selectedAccount.riskLevel === "high"
-                  ? "bg-red-100 text-red-700"
-                  : selectedAccount.riskLevel === "medium"
-                  ? "bg-yellow-100 text-yellow-700"
-                  : "bg-green-100 text-green-700"
-              }`}>
-                {selectedAccount.riskLevel.toUpperCase()} RISK • {selectedAccount.strategy}
+
+          {/* Step 3: Market Outlook (moved next to account) */}
+          <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-sm border border-purple-200 p-6">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">3</div>
+                <div>
+                  <h3 className="text-lg font-semibold text-purple-900">Market Outlook</h3>
+                  <p className="text-sm text-purple-700">What do you expect the stock to do?</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCollapseStep3((v) => !v)}
+                className="text-xs font-medium text-purple-700 hover:text-purple-900"
+              >
+                {collapseStep3 ? "Show" : "Hide"}
+              </button>
+            </div>
+
+            {collapseStep3 ? (
+              <p className="text-sm text-purple-800">
+                {userOutlook ? `Outlook: ${userOutlook}` : "Select an outlook"}
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                {OUTLOOK_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setUserOutlook(option.value);
+                      setCollapseStep3(true);
+                      setCollapseStep4(false);
+                    }}
+                    className={`p-4 rounded-xl border-2 text-center transition-all ${
+                      userOutlook === option.value
+                        ? option.value === "bullish"
+                          ? "border-green-500 bg-green-50 shadow-md"
+                          : option.value === "bearish"
+                          ? "border-red-500 bg-red-50 shadow-md"
+                          : "border-gray-500 bg-gray-50 shadow-md"
+                        : "border-gray-200 hover:border-purple-300 hover:bg-white"
+                    }`}
+                  >
+                    <div
+                      className={`text-3xl mb-1 ${
+                        option.value === "bullish"
+                          ? "text-green-600"
+                          : option.value === "bearish"
+                          ? "text-red-600"
+                          : "text-gray-600"
+                      }`}
+                    >
+                      {option.icon}
+                    </div>
+                    <p
+                      className={`font-semibold text-sm ${
+                        userOutlook === option.value
+                          ? option.value === "bullish"
+                            ? "text-green-800"
+                            : option.value === "bearish"
+                            ? "text-red-800"
+                            : "text-gray-800"
+                          : "text-gray-800"
+                      }`}
+                    >
+                      {option.label}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">{option.description}</p>
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -808,58 +1105,90 @@ export default function FindProfitsPage() {
         {/* Step 2: Strategy Selection */}
         {selectedAccount && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">2</div>
-              <h3 className="text-lg font-semibold text-gray-900">Choose Strategy</h3>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">2</div>
+                <h3 className="text-lg font-semibold text-gray-900">Strategy</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCollapseStep2((v) => !v)}
+                className="text-xs font-medium text-gray-600 hover:text-gray-900"
+              >
+                {collapseStep2 ? "Show" : "Hide"}
+              </button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {STRATEGIES.map((strategy) => {
-                const fit = getStrategyFit(strategy);
-                const isSelected = selectedStrategy === strategy.id;
 
-                return (
-                  <button
-                    key={strategy.id}
-                    onClick={() => {
-                      setSelectedStrategy(strategy.id);
-                      setTickerData(null);
-                      setAnalysis(null);
-                      setCspAnalysis(null);
-                      setSymbol("");
-                    }}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
-                      isSelected
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <span className="text-2xl">{strategy.icon}</span>
-                      <div className="flex items-center gap-2">
-                        {!strategy.supported && (
-                          <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-600 rounded">
-                            Coming Soon
+            {collapseStep2 ? (
+              <p className="text-sm text-gray-500">
+                {selectedStrategyData ? selectedStrategyData.name : "Choose a strategy"}
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {STRATEGIES.map((strategy) => {
+                  const fit = getStrategyFit(strategy);
+                  const isSelected = selectedStrategy === strategy.id;
+
+                  return (
+                    <button
+                      key={strategy.id}
+                      onClick={() => {
+                        setSelectedStrategy(strategy.id);
+                        setTickerData(null);
+                        setAnalysis(null);
+                        setCspAnalysis(null);
+                        setSymbol("");
+                        setOptionsResult(null);
+                        setSelectedOption(null);
+                        setBuildStrike(null);
+                        setBuildOptionContract(null);
+                        setBuildExpirationWeeks(4);
+                        setBuildQuantity(1);
+                        setCollapseCcAnalysis(false);
+                        setCollapseStep2(true);
+                        setCollapseStep4(false);
+                      }}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        isSelected
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <span className="text-2xl">{strategy.icon}</span>
+                        <div className="flex items-center gap-2">
+                          {!strategy.supported && (
+                            <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-600 rounded">
+                              Coming Soon
+                            </span>
+                          )}
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded ${
+                              fit === "recommended"
+                                ? "bg-green-100 text-green-700"
+                                : fit === "caution"
+                                ? "bg-yellow-100 text-yellow-700"
+                                : "bg-red-100 text-red-700"
+                            }`}
+                          >
+                            {fit === "recommended"
+                              ? "✓ Recommended"
+                              : fit === "caution"
+                              ? "⚠ Caution"
+                              : "✗ High Risk"}
                           </span>
-                        )}
-                        <span className={`text-xs px-2 py-0.5 rounded ${
-                          fit === "recommended" ? "bg-green-100 text-green-700" :
-                          fit === "caution" ? "bg-yellow-100 text-yellow-700" :
-                          "bg-red-100 text-red-700"
-                        }`}>
-                          {fit === "recommended" ? "✓ Recommended" :
-                           fit === "caution" ? "⚠ Caution" : "✗ High Risk"}
-                        </span>
+                        </div>
                       </div>
-                    </div>
-                    <h4 className="font-semibold text-gray-900">{strategy.name}</h4>
-                    <p className="text-sm text-gray-600 mt-1">{strategy.description}</p>
-                    <p className="text-xs text-gray-400 mt-2">
-                      Best for: {strategy.riskLevels.join(", ")} risk
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
+                      <h4 className="font-semibold text-gray-900">{strategy.name}</h4>
+                      <p className="text-sm text-gray-600 mt-1">{strategy.description}</p>
+                      <p className="text-xs text-gray-400 mt-2">
+                        Best for: {strategy.riskLevels.join(", ")} risk
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -888,100 +1217,85 @@ export default function FindProfitsPage() {
               /* Covered Calls - Supported */
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
-                  {/* User Outlook Selector */}
-                  <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-sm border border-purple-200 p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">3</div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-purple-900">Your Market Outlook</h3>
-                        <p className="text-sm text-purple-700">What do you expect the stock to do?</p>
-                      </div>
-                    </div>
+                  {/* Market outlook moved to Step 3 next to account */}
 
-                    <div className="grid grid-cols-3 gap-3">
-                      {OUTLOOK_OPTIONS.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => setUserOutlook(option.value)}
-                          className={`p-4 rounded-xl border-2 text-center transition-all ${
-                            userOutlook === option.value
-                              ? option.value === "bullish"
-                                ? "border-green-500 bg-green-50 shadow-md"
-                                : option.value === "bearish"
-                                ? "border-red-500 bg-red-50 shadow-md"
-                                : "border-gray-500 bg-gray-50 shadow-md"
-                              : "border-gray-200 hover:border-purple-300 hover:bg-white"
-                          }`}
-                        >
-                          <div className={`text-3xl mb-1 ${
-                            option.value === "bullish" ? "text-green-600" :
-                            option.value === "bearish" ? "text-red-600" : "text-gray-600"
-                          }`}>
-                            {option.icon}
-                          </div>
-                          <p className={`font-semibold text-sm ${
-                            userOutlook === option.value
-                              ? option.value === "bullish"
-                                ? "text-green-800"
-                                : option.value === "bearish"
-                                ? "text-red-800"
-                                : "text-gray-800"
-                              : "text-gray-800"
-                          }`}>
-                            {option.label}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">{option.description}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Symbol Search */}
+                  {/* Step 4: Symbol Search */}
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">4</div>
-                      <h3 className="text-lg font-semibold text-gray-900">Enter Stock Symbol</h3>
-                    </div>
-                    <form onSubmit={handleSearch} className="flex gap-3">
-                      <input
-                        type="text"
-                        value={symbol}
-                        onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                        placeholder="Enter stock symbol (e.g., AAPL, MSFT, TSLA)"
-                        className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">4</div>
+                        <h3 className="text-lg font-semibold text-gray-900">Symbol</h3>
+                      </div>
                       <button
-                        type="submit"
-                        disabled={loading || !symbol.trim() || !userOutlook}
-                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        type="button"
+                        onClick={() => setCollapseStep4((v) => !v)}
+                        className="text-xs font-medium text-gray-600 hover:text-gray-900"
                       >
-                        {loading ? (
-                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                          </svg>
-                        )}
-                        Analyze
+                        {collapseStep4 ? "Show" : "Hide"}
                       </button>
-                    </form>
-                    {error && <p className="mt-3 text-red-600 text-sm">{error}</p>}
-                    {!userOutlook && (
-                      <p className="mt-2 text-xs text-amber-600">
-                        ↑ Please select your market outlook above before analyzing
+                    </div>
+                    {collapseStep4 ? (
+                      <p className="text-sm text-gray-500">
+                        {tickerData ? `${tickerData.symbol} • ${formatCurrency(tickerData.price)}` : symbol ? `Symbol: ${symbol}` : "Enter a symbol to analyze"}
                       </p>
-                    )}
-                    {userOutlook && (
-                      <p className="mt-2 text-xs text-gray-500">
-                        Analyzing with <span className={`font-medium ${
-                          userOutlook === "bullish" ? "text-green-600" :
-                          userOutlook === "bearish" ? "text-red-600" : "text-gray-600"
-                        }`}>
-                          {userOutlook === "bullish" ? "↑ bullish" :
-                           userOutlook === "bearish" ? "↓ bearish" : "— neutral"} outlook
-                        </span>
-                      </p>
+                    ) : (
+                      <div>
+                        <form onSubmit={handleSearch} className="flex gap-3">
+                          <input
+                            type="text"
+                            value={symbol}
+                            onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                            placeholder="Enter stock symbol (e.g., AAPL, MSFT, TSLA)"
+                            className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                          <button
+                            type="submit"
+                            disabled={loading || !symbol.trim() || !userOutlook}
+                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                          >
+                            {loading ? (
+                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                                />
+                              </svg>
+                            )}
+                            Analyze
+                          </button>
+                        </form>
+                        {error && <p className="mt-3 text-red-600 text-sm">{error}</p>}
+                        {!userOutlook && (
+                          <p className="mt-2 text-xs text-amber-600">
+                            ↑ Select your market outlook (Step 3) before analyzing
+                          </p>
+                        )}
+                        {userOutlook && (
+                          <p className="mt-2 text-xs text-gray-500">
+                            Analyzing with{" "}
+                            <span
+                              className={`font-medium ${
+                                userOutlook === "bullish"
+                                  ? "text-green-600"
+                                  : userOutlook === "bearish"
+                                  ? "text-red-600"
+                                  : "text-gray-600"
+                              }`}
+                            >
+                              {userOutlook === "bullish"
+                                ? "↑ bullish"
+                                : userOutlook === "bearish"
+                                ? "↓ bearish"
+                                : "— neutral"}{" "}
+                              outlook
+                            </span>
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
 
@@ -1028,74 +1342,6 @@ export default function FindProfitsPage() {
                           </div>
                         </div>
                       </div>
-
-                      {/* Covered Call Analysis */}
-                      {analysis && selectedStrategy === "covered-calls" && (
-                        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl shadow-sm border border-green-200 p-6">
-                          <div className="flex items-center gap-3 mb-4">
-                            <span className="text-2xl">📈</span>
-                            <h3 className="text-lg font-semibold text-green-900">Covered Call Analysis</h3>
-                          </div>
-
-                          {/* Sentiment & Volatility */}
-                          <div className="grid grid-cols-2 gap-4 mb-6">
-                            <div className="bg-white/60 rounded-lg p-4">
-                              <p className="text-sm text-gray-600 mb-1">Your Outlook</p>
-                              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
-                                analysis.sentiment === "bullish" ? "bg-green-100 text-green-700" :
-                                analysis.sentiment === "bearish" ? "bg-red-100 text-red-700" :
-                                "bg-gray-100 text-gray-700"
-                              }`}>
-                                {analysis.sentiment === "bullish" ? "↑" : analysis.sentiment === "bearish" ? "↓" : "—"}
-                                {analysis.sentiment.charAt(0).toUpperCase() + analysis.sentiment.slice(1)}
-                              </div>
-                            </div>
-                            <div className="bg-white/60 rounded-lg p-4">
-                              <p className="text-sm text-gray-600 mb-1">Volatility</p>
-                              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
-                                analysis.volatility === "high" ? "bg-red-100 text-red-700" :
-                                analysis.volatility === "low" ? "bg-green-100 text-green-700" :
-                                "bg-yellow-100 text-yellow-700"
-                              }`}>
-                                {analysis.volatility.charAt(0).toUpperCase() + analysis.volatility.slice(1)}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Key Metrics */}
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                            <div className="bg-white/60 rounded-lg p-3">
-                              <p className="text-xs text-gray-600">Suggested Strike</p>
-                              <p className="font-bold text-green-800">{analysis.suggestedStrike}</p>
-                            </div>
-                            <div className="bg-white/60 rounded-lg p-3">
-                              <p className="text-xs text-gray-600">Potential Income</p>
-                              <p className="font-bold text-green-800">{analysis.potentialIncome}</p>
-                            </div>
-                            <div className="bg-white/60 rounded-lg p-3">
-                              <p className="text-xs text-gray-600">Max Profit</p>
-                              <p className="font-bold text-green-800">{analysis.maxProfit}</p>
-                            </div>
-                            <div className="bg-white/60 rounded-lg p-3">
-                              <p className="text-xs text-gray-600">Breakeven</p>
-                              <p className="font-bold text-green-800">{analysis.breakeven}</p>
-                            </div>
-                          </div>
-
-                          {/* Recommendation */}
-                          <div className="bg-white rounded-lg p-4 border border-green-200">
-                            <h4 className="font-semibold text-green-900 mb-2">Recommendation</h4>
-                            <p className="text-gray-700">{analysis.recommendation}</p>
-                          </div>
-
-                          {/* Risk Assessment */}
-                          <div className="mt-4 p-3 bg-white/40 rounded-lg">
-                            <p className="text-sm text-gray-600">
-                              <strong>Risk Assessment ({selectedAccount?.riskLevel} profile):</strong> {analysis.riskAssessment}
-                            </p>
-                          </div>
-                        </div>
-                      )}
 
                       {/* Cash-Secured Put Analysis */}
                       {cspAnalysis && selectedStrategy === "cash-secured-puts" && (
@@ -1223,98 +1469,348 @@ export default function FindProfitsPage() {
                           )}
                         </div>
 
-                        {/* Strike Price Selector */}
-                        <div className="mb-6">
-                          <h4 className="text-sm font-medium text-gray-700 mb-3">Select Strike Price</h4>
-                          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                            {generateStrikeOptions(tickerData.price, smaData).map((strike) => {
-                              const isCurrentPrice = Math.abs(strike - tickerData.price) < 5;
-                              const isSma = smaData && Math.abs(strike - smaData.sma50) < 5;
-                              const isAbovePrice = strike > tickerData.price;
-
-                              return (
-                                <button
-                                  key={strike}
-                                  onClick={() => {
-                                    setSelectedStrike(strike);
-                                    setOptionsResult(null);
+                        {/* Build Covered Call Flow */}
+                        {selectedStrategy === "covered-calls" && (
+                          <>
+                            {/* Expiration and Strike Row */}
+                            <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {/* Expiration Dropdown */}
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Expiration Date</label>
+                                <select
+                                  value={buildExpirationWeeks}
+                                  onChange={(e) => {
+                                    setBuildExpirationWeeks(parseInt(e.target.value));
+                                    setBuildOptionContract(null);
                                   }}
-                                  className={`p-2 rounded-lg text-sm font-medium transition-all ${
-                                    selectedStrike === strike
-                                      ? "bg-indigo-600 text-white ring-2 ring-indigo-300"
-                                      : isCurrentPrice
-                                      ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                      : isSma
-                                      ? "bg-purple-100 text-purple-700 hover:bg-purple-200"
-                                      : isAbovePrice
-                                      ? "bg-green-50 text-green-700 hover:bg-green-100"
-                                      : "bg-red-50 text-red-700 hover:bg-red-100"
-                                  }`}
+                                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
                                 >
-                                  ${strike}
-                                  {isCurrentPrice && <span className="block text-xs opacity-75">≈ Price</span>}
-                                  {isSma && !isCurrentPrice && <span className="block text-xs opacity-75">≈ 50MA</span>}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <p className="text-xs text-gray-500 mt-2">
-                            {selectedStrategy === "cash-secured-puts" ? (
-                              <>
+                                  {generateExpirationOptions().map((opt) => (
+                                    <option key={opt.weeks} value={opt.weeks}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Strike Price Dropdown */}
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Strike Price</label>
+                                <select
+                                  value={buildStrike || ""}
+                                  onChange={(e) => {
+                                    const strike = e.target.value ? parseFloat(e.target.value) : null;
+                                    setBuildStrike(strike);
+                                    setBuildOptionContract(null);
+                                  }}
+                                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                                >
+                                  <option value="">Select strike...</option>
+                                  {generateStrikeOptions(tickerData.price, smaData)
+                                    .filter((strike) => strike > tickerData.price) // Only OTM for covered calls
+                                    .map((strike) => {
+                                      const isCurrentPrice = Math.abs(strike - tickerData.price) < 5;
+                                      const isSma = smaData && Math.abs(strike - smaData.sma50) < 5;
+                                      const pctFromPrice = ((strike - tickerData.price) / tickerData.price) * 100;
+                                      let label = `$${strike}`;
+                                      if (isCurrentPrice) label += " ≈ Price";
+                                      else if (isSma) label += " ≈ 50MA";
+                                      else if (pctFromPrice >= 15) label += ` (+${pctFromPrice.toFixed(1)}% OTM)`;
+                                      return (
+                                        <option key={strike} value={strike}>
+                                          {label}
+                                        </option>
+                                      );
+                                    })}
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Limit Price Selector (Bid/Mid/Ask) */}
+                            {buildOptionContract && buildOptionContract.last_quote && (
+                              <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Limit Price</label>
+                                <div className="grid grid-cols-3 gap-3">
+                                  {(["bid", "mid", "ask"] as const).map((priceType) => {
+                                    const bid = buildOptionContract.last_quote?.bid ?? 0;
+                                    const ask = buildOptionContract.last_quote?.ask ?? 0;
+                                    const mid = (bid + ask) / 2;
+                                    const price = priceType === "bid" ? bid : priceType === "ask" ? ask : mid;
+                                    const isSelected = buildLimitPriceType === priceType;
+
+                                    return (
+                                      <button
+                                        key={priceType}
+                                        onClick={() => setBuildLimitPriceType(priceType)}
+                                        className={`p-4 rounded-lg border-2 transition-all ${
+                                          isSelected
+                                            ? "border-indigo-600 bg-indigo-50"
+                                            : "border-gray-200 bg-white hover:border-gray-300"
+                                        }`}
+                                      >
+                                        <div className="text-xs font-medium text-gray-600 mb-1 uppercase">
+                                          {priceType}
+                                        </div>
+                                        <div className={`text-lg font-bold ${isSelected ? "text-indigo-700" : "text-gray-900"}`}>
+                                          ${price.toFixed(2)}
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Quantity Input */}
+                            {buildOptionContract && (
+                              <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Quantity (Contracts)</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="1000"
+                                  value={buildQuantity}
+                                  onChange={(e) => setBuildQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {buildQuantity} contract{buildQuantity !== 1 ? "s" : ""} = {buildQuantity * 100} shares
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Breakeven Graph */}
+                            {buildOptionContract && buildOptionContract.last_quote && tickerData && (
+                              <div className="mb-6">
+                                <h4 className="text-sm font-medium text-gray-700 mb-3">Breakeven Analysis</h4>
+                                <div className="bg-white rounded-lg p-4 border border-gray-200">
+                                  {(() => {
+                                    const bid = buildOptionContract.last_quote?.bid ?? 0;
+                                    const ask = buildOptionContract.last_quote?.ask ?? 0;
+                                    const mid = (bid + ask) / 2;
+                                    const premium = buildLimitPriceType === "bid" ? bid : buildLimitPriceType === "ask" ? ask : mid;
+                                    const totalPremium = premium * 100 * buildQuantity;
+                                    const breakeven = buildOptionContract.strike_price + premium;
+                                    const currentPrice = tickerData.price;
+                                    const maxProfit = totalPremium;
+                                    const maxLoss = (breakeven - currentPrice) * 100 * buildQuantity;
+
+                                    // Calculate P&L at different price points
+                                    const pricePoints: number[] = [];
+                                    const minPrice = Math.max(0, currentPrice * 0.7);
+                                    const maxPrice = currentPrice * 1.3;
+                                    for (let p = minPrice; p <= maxPrice; p += (maxPrice - minPrice) / 20) {
+                                      pricePoints.push(Math.round(p * 100) / 100);
+                                    }
+
+                                    const pnlData = pricePoints.map((price) => {
+                                      let pnl = 0;
+                                      if (price <= buildOptionContract.strike_price) {
+                                        // Stock below strike - keep premium, no assignment
+                                        pnl = totalPremium;
+                                      } else {
+                                        // Stock above strike - assigned, lose (price - strike) per share
+                                        pnl = totalPremium - (price - buildOptionContract.strike_price) * 100 * buildQuantity;
+                                      }
+                                      return { price, pnl };
+                                    });
+
+                                    const maxPnl = Math.max(...pnlData.map((d) => d.pnl));
+                                    const minPnl = Math.min(...pnlData.map((d) => d.pnl));
+                                    const pnlRange = maxPnl - minPnl || 1;
+
+                                    return (
+                                      <div>
+                                        <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                                          <div>
+                                            <p className="text-gray-600">Breakeven Price</p>
+                                            <p className="font-bold text-gray-900">{formatCurrency(breakeven)}</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-gray-600">Total Premium</p>
+                                            <p className="font-bold text-green-700">{formatCurrency(totalPremium)}</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-gray-600">Max Profit</p>
+                                            <p className="font-bold text-green-700">{formatCurrency(maxProfit)}</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-gray-600">Max Loss</p>
+                                            <p className="font-bold text-red-700">{formatCurrency(-maxLoss)}</p>
+                                          </div>
+                                        </div>
+
+                                        {/* Simple Line Graph */}
+                                        <div className="relative h-48 sm:h-64 border-l-2 border-b-2 border-gray-300 overflow-x-auto">
+                                          {/* Y-axis labels */}
+                                          <div className="absolute -left-10 sm:-left-12 top-0 h-full flex flex-col justify-between text-[10px] sm:text-xs text-gray-500">
+                                            <span className="whitespace-nowrap">{formatCurrency(maxPnl)}</span>
+                                            <span className="whitespace-nowrap">{formatCurrency((maxPnl + minPnl) / 2)}</span>
+                                            <span className="whitespace-nowrap">{formatCurrency(minPnl)}</span>
+                                          </div>
+
+                                          {/* Graph content area */}
+                                          <div className="ml-8 sm:ml-12 h-full relative">
+                                            {/* Zero line */}
+                                            <div className="absolute left-0 right-0 h-0.5 bg-gray-400" style={{ top: `${((0 - minPnl) / pnlRange) * 100}%` }} />
+
+                                            {/* Breakeven line */}
+                                            <div
+                                              className="absolute top-0 bottom-0 w-0.5 bg-indigo-500 opacity-50"
+                                              style={{
+                                                left: `${((breakeven - minPrice) / (maxPrice - minPrice)) * 100}%`,
+                                              }}
+                                            />
+
+                                            {/* Current price line */}
+                                            <div
+                                              className="absolute top-0 bottom-0 w-0.5 bg-blue-500 opacity-50"
+                                              style={{
+                                                left: `${((currentPrice - minPrice) / (maxPrice - minPrice)) * 100}%`,
+                                              }}
+                                            />
+
+                                            {/* P&L Line */}
+                                            <svg className="absolute inset-0 w-full h-full" style={{ left: "0", top: "0" }}>
+                                              <polyline
+                                                points={pnlData
+                                                  .map(
+                                                    (d, i) =>
+                                                      `${((d.price - minPrice) / (maxPrice - minPrice)) * 100}%,${100 - ((d.pnl - minPnl) / pnlRange) * 100}%`
+                                                  )
+                                                  .join(" ")}
+                                                fill="none"
+                                                stroke="#4f46e5"
+                                                strokeWidth="2"
+                                              />
+                                            </svg>
+
+                                            {/* X-axis labels */}
+                                            <div className="absolute -bottom-6 left-0 right-0 flex justify-between text-[10px] sm:text-xs text-gray-500">
+                                              <span className="whitespace-nowrap">{formatCurrency(minPrice)}</span>
+                                              <span className="whitespace-nowrap hidden sm:inline">{formatCurrency(breakeven)}</span>
+                                              <span className="whitespace-nowrap">{formatCurrency(currentPrice)}</span>
+                                              <span className="whitespace-nowrap hidden sm:inline">{formatCurrency(maxPrice)}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Legend */}
+                                        <div className="flex gap-4 mt-8 text-xs">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 bg-indigo-500 opacity-50"></div>
+                                            <span>Breakeven</span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 bg-blue-500 opacity-50"></div>
+                                            <span>Current Price</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Loading State */}
+                            {buildOptionLoading && (
+                              <div className="mb-6 flex items-center justify-center gap-2 text-gray-500">
+                                <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                Loading option data...
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* Legacy Strike Price Selector (for cash-secured-puts) */}
+                        {selectedStrategy === "cash-secured-puts" && (
+                          <>
+                            {/* Strike Price Selector */}
+                            <div className="mb-6">
+                              <h4 className="text-sm font-medium text-gray-700 mb-3">Select Strike Price</h4>
+                              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                                {generateStrikeOptions(tickerData.price, smaData).map((strike) => {
+                                  const isCurrentPrice = Math.abs(strike - tickerData.price) < 5;
+                                  const isSma = smaData && Math.abs(strike - smaData.sma50) < 5;
+                                  const isAbovePrice = strike > tickerData.price;
+
+                                  return (
+                                    <button
+                                      key={strike}
+                                      onClick={() => {
+                                        setSelectedStrike(strike);
+                                        setOptionsResult(null);
+                                      }}
+                                      className={`p-2 rounded-lg text-sm font-medium transition-all ${
+                                        selectedStrike === strike
+                                          ? "bg-indigo-600 text-white ring-2 ring-indigo-300"
+                                          : isCurrentPrice
+                                          ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                          : isSma
+                                          ? "bg-purple-100 text-purple-700 hover:bg-purple-200"
+                                          : isAbovePrice
+                                          ? "bg-green-50 text-green-700 hover:bg-green-100"
+                                          : "bg-red-50 text-red-700 hover:bg-red-100"
+                                      }`}
+                                    >
+                                      ${strike}
+                                      {isCurrentPrice && <span className="block text-xs opacity-75">≈ Price</span>}
+                                      {isSma && !isCurrentPrice && <span className="block text-xs opacity-75">≈ 50MA</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="text-xs text-gray-500 mt-2">
                                 <span className="inline-block w-3 h-3 bg-red-50 rounded mr-1"></span> Below price (OTM - safer)
                                 <span className="inline-block w-3 h-3 bg-green-50 rounded mx-1 ml-3"></span> Above price (ITM - higher premium)
-                              </>
-                            ) : (
-                              <>
-                                <span className="inline-block w-3 h-3 bg-green-50 rounded mr-1"></span> Above current price (OTM)
-                                <span className="inline-block w-3 h-3 bg-red-50 rounded mx-1 ml-3"></span> Below current price (ITM)
-                              </>
-                            )}
-                          </p>
-                        </div>
+                              </p>
+                            </div>
 
-                        {/* Expiration Selector */}
-                        <div className="mb-6">
-                          <h4 className="text-sm font-medium text-gray-700 mb-3">Select Expiration (1-52 weeks)</h4>
-                          <select
-                            value={selectedWeeks}
-                            onChange={(e) => {
-                              setSelectedWeeks(parseInt(e.target.value));
-                              setOptionsResult(null);
-                            }}
-                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-                          >
-                            {generateExpirationOptions().map((opt) => (
-                              <option key={opt.weeks} value={opt.weeks}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="flex gap-2 mt-2 flex-wrap">
-                            {[1, 2, 4, 8, 12, 26, 52].map((weeks) => (
-                              <button
-                                key={weeks}
-                                onClick={() => {
-                                  setSelectedWeeks(weeks);
+                            {/* Expiration Selector */}
+                            <div className="mb-6">
+                              <h4 className="text-sm font-medium text-gray-700 mb-3">Select Expiration (1-52 weeks)</h4>
+                              <select
+                                value={selectedWeeks}
+                                onChange={(e) => {
+                                  setSelectedWeeks(parseInt(e.target.value));
                                   setOptionsResult(null);
                                 }}
-                                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                                  selectedWeeks === weeks
-                                    ? "bg-indigo-600 text-white"
-                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                }`}
+                                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
                               >
-                                {weeks}w
-                              </button>
-                            ))}
-                          </div>
-                        </div>
+                                {generateExpirationOptions().map((opt) => (
+                                  <option key={opt.weeks} value={opt.weeks}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <div className="flex gap-2 mt-2 flex-wrap">
+                                {[1, 2, 4, 8, 12, 26, 52].map((weeks) => (
+                                  <button
+                                    key={weeks}
+                                    onClick={() => {
+                                      setSelectedWeeks(weeks);
+                                      setOptionsResult(null);
+                                    }}
+                                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                                      selectedWeeks === weeks
+                                        ? "bg-indigo-600 text-white"
+                                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                    }`}
+                                  >
+                                    {weeks}w
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
 
-                        {/* Summary */}
-                        {selectedStrike && (
+                        {/* Summary - Only for cash-secured-puts (covered-calls uses build flow) */}
+                        {selectedStrike && selectedStrategy === "cash-secured-puts" && (
                           <div className="bg-white rounded-lg p-4 border border-indigo-200">
                             <h4 className="font-semibold text-indigo-900 mb-3">
-                              📋 Your {selectedStrategy === "cash-secured-puts" ? "Cash-Secured Put" : "Covered Call"} Setup
+                              📋 Your Cash-Secured Put Setup
                             </h4>
                             <div className="grid grid-cols-2 gap-4 text-sm">
                               <div>
@@ -1325,10 +1821,8 @@ export default function FindProfitsPage() {
                                 <p className="text-gray-600">Strike Price</p>
                                 <p className="font-bold text-gray-900">
                                   ${selectedStrike} (
-                                  {selectedStrategy === "cash-secured-puts"
-                                    ? selectedStrike < tickerData.price ? "OTM" : "ITM"
-                                    : selectedStrike > tickerData.price ? "OTM" : "ITM"
-                                  })
+                                  {selectedStrike < tickerData.price ? "OTM" : "ITM"}
+                                  )
                                 </p>
                               </div>
                               <div>
@@ -1338,24 +1832,18 @@ export default function FindProfitsPage() {
                               <div>
                                 <p className="text-gray-600">Moneyness</p>
                                 <p className={`font-bold ${
-                                  selectedStrategy === "cash-secured-puts"
-                                    ? selectedStrike < tickerData.price ? "text-green-600" : "text-orange-600"
-                                    : selectedStrike > tickerData.price ? "text-green-600" : "text-orange-600"
+                                  selectedStrike < tickerData.price ? "text-green-600" : "text-orange-600"
                                 }`}>
                                   {((selectedStrike - tickerData.price) / tickerData.price * 100).toFixed(1)}% {
-                                    selectedStrategy === "cash-secured-puts"
-                                      ? selectedStrike < tickerData.price ? "OTM" : "ITM"
-                                      : selectedStrike > tickerData.price ? "OTM" : "ITM"
+                                    selectedStrike < tickerData.price ? "OTM" : "ITM"
                                   }
                                 </p>
                               </div>
-                              {selectedStrategy === "cash-secured-puts" && (
-                                <div className="col-span-2 p-2 bg-amber-50 rounded border border-amber-200">
-                                  <p className="text-xs text-amber-800">
-                                    <strong>Cash Required:</strong> {formatCurrency(selectedStrike * 100)} per contract
-                                  </p>
-                                </div>
-                              )}
+                              <div className="col-span-2 p-2 bg-amber-50 rounded border border-amber-200">
+                                <p className="text-xs text-amber-800">
+                                  <strong>Cash Required:</strong> {formatCurrency(selectedStrike * 100)} per contract
+                                </p>
+                              </div>
                             </div>
                             <button
                               onClick={handleSearchOptions}
@@ -1372,7 +1860,7 @@ export default function FindProfitsPage() {
                                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                   </svg>
-                                  Search {selectedStrategy === "cash-secured-puts" ? "Put" : "Call"} Options
+                                  Search Put Options
                                 </>
                               )}
                             </button>
@@ -1382,8 +1870,8 @@ export default function FindProfitsPage() {
                           </div>
                         )}
 
-                        {/* Options Chain Results */}
-                        {optionsResult && (
+                        {/* Options Chain Results - Only for cash-secured-puts (covered-calls uses build flow) */}
+                        {optionsResult && selectedStrategy === "cash-secured-puts" && (
                           <div className="mt-6 bg-white rounded-lg p-4 border border-indigo-200">
                             <div className="flex items-center justify-between mb-4">
                               <div className="flex items-center gap-2">
@@ -1404,10 +1892,18 @@ export default function FindProfitsPage() {
                               </div>
                             </div>
 
-                            <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
-                              <span>Exp: {optionsResult.expiration} ({optionsResult.daysToExpiration} days)</span>
-                              <span>Stock: {formatCurrency(optionsResult.stockPrice)}</span>
-                            </div>
+                                <div className="flex items-center justify-between mb-3">
+                                  <div className="text-xs text-gray-500">
+                                    Exp: {optionsResult.expiration} ({optionsResult.daysToExpiration} days) • Stock: {formatCurrency(optionsResult.stockPrice)}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setOptionsCollapsed((v) => !v)}
+                                    className="text-xs font-medium text-indigo-700 hover:text-indigo-900"
+                                  >
+                                    {optionsCollapsed ? "Show options" : "Hide options"}
+                                  </button>
+                                </div>
 
                             {optionsResult.note && (
                               <div className="mb-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
@@ -1415,7 +1911,7 @@ export default function FindProfitsPage() {
                               </div>
                             )}
 
-                            {optionsResult.optionChain.length === 0 ? (
+                            {visibleOptionChain.length === 0 ? (
                               <div className="text-center py-8">
                                 <p className="text-gray-500">No options found matching your criteria.</p>
                                 <p className="text-sm text-gray-400 mt-1">
@@ -1424,9 +1920,14 @@ export default function FindProfitsPage() {
                               </div>
                             ) : (
                               <>
-                                {/* Option Chain Table */}
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-xs">
+                                <div className="mb-2 text-[11px] text-gray-500">
+                                  Filter: OI &gt; {minOiForCurrentStrategy.toLocaleString()} (from Configure Automation → Strategy)
+                                </div>
+                                {!optionsCollapsed ? (
+                                  <>
+                                  {/* Option Chain Table */}
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
                                     <thead>
                                       <tr className="border-b-2 border-gray-300">
                                         <th colSpan={6} className="text-center py-2 px-1 font-bold text-green-700 bg-green-50">
@@ -1456,11 +1957,14 @@ export default function FindProfitsPage() {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {optionsResult.optionChain.map((row) => {
+                                      {visibleOptionChain.map((row) => {
                                         const isATM = Math.abs(row.strike - optionsResult.stockPrice) < 5;
                                         const isTarget = row.strike === selectedStrike;
                                         const callSelected = selectedOption?.ticker === row.call?.ticker;
                                         const putSelected = selectedOption?.ticker === row.put?.ticker;
+                                        const pctFromSpot = ((row.strike - optionsResult.stockPrice) / optionsResult.stockPrice) * 100;
+                                        const isCoveredCall15Plus = selectedStrategy === "covered-calls" && pctFromSpot >= 15;
+                                        const isCspMinus15Plus = selectedStrategy === "cash-secured-puts" && pctFromSpot <= -15;
 
                                         return (
                                           <tr
@@ -1468,35 +1972,50 @@ export default function FindProfitsPage() {
                                             className={`border-b border-gray-100 ${isATM ? "bg-blue-50/30" : ""}`}
                                           >
                                             {/* Call side */}
-                                            {row.call ? (
+                                          {row.call ? (
                                               <>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.call)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.call);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-center cursor-pointer hover:bg-green-100 transition-colors font-mono text-[10px] ${callSelected ? "bg-green-200" : ""}`}
                                                   title={row.call.yahoo_symbol}
                                                 >
                                                   {row.call.yahoo_symbol?.slice(-12) || "—"}
                                                 </td>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.call)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.call);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-center cursor-pointer hover:bg-green-100 transition-colors ${callSelected ? "bg-green-200" : ""}`}
                                                 >
                                                   ${row.call.last_quote?.bid?.toFixed(2)}
                                                 </td>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.call)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.call);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-center cursor-pointer hover:bg-green-100 transition-colors ${callSelected ? "bg-green-200" : ""}`}
                                                 >
                                                   ${row.call.last_quote?.ask?.toFixed(2)}
                                                 </td>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.call)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.call);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-center cursor-pointer hover:bg-green-100 transition-colors text-gray-600 ${callSelected ? "bg-green-200" : ""}`}
                                                 >
                                                   {row.call.volume > 0 ? row.call.volume.toLocaleString() : "—"}
                                                 </td>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.call)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.call);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-center cursor-pointer hover:bg-green-100 transition-colors ${
                                                     row.call.implied_volatility > 50 ? "text-red-600 font-medium" :
                                                     row.call.implied_volatility < 25 ? "text-blue-600" : "text-gray-600"
@@ -1505,7 +2024,10 @@ export default function FindProfitsPage() {
                                                   {row.call.implied_volatility?.toFixed(0)}%
                                                 </td>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.call)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.call);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-left cursor-pointer hover:bg-green-100 transition-colors text-[10px] ${
                                                     row.call.rationale?.includes("Good STO") ? "text-green-700 font-medium" :
                                                     row.call.rationale?.includes("Safe") ? "text-blue-700" : "text-gray-600"
@@ -1532,38 +2054,63 @@ export default function FindProfitsPage() {
                                             }`}>
                                               ${row.strike}
                                               {isATM && <span className="block text-[9px] font-normal">ATM</span>}
+                                              {isCoveredCall15Plus && (
+                                                <span className="mt-0.5 block text-[9px] font-semibold text-green-700">
+                                                  ≥ +15% OTM
+                                                </span>
+                                              )}
+                                              {isCspMinus15Plus && (
+                                                <span className="mt-0.5 block text-[9px] font-semibold text-red-700">
+                                                  ≤ -15% OTM
+                                                </span>
+                                              )}
                                             </td>
 
                                             {/* Put side */}
                                             {row.put ? (
                                               <>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.put)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.put);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-center cursor-pointer hover:bg-red-100 transition-colors font-mono text-[10px] ${putSelected ? "bg-red-200" : ""}`}
                                                   title={row.put.yahoo_symbol}
                                                 >
                                                   {row.put.yahoo_symbol?.slice(-12) || "—"}
                                                 </td>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.put)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.put);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-center cursor-pointer hover:bg-red-100 transition-colors ${putSelected ? "bg-red-200" : ""}`}
                                                 >
                                                   ${row.put.last_quote?.bid?.toFixed(2)}
                                                 </td>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.put)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.put);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-center cursor-pointer hover:bg-red-100 transition-colors ${putSelected ? "bg-red-200" : ""}`}
                                                 >
                                                   ${row.put.last_quote?.ask?.toFixed(2)}
                                                 </td>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.put)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.put);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-center cursor-pointer hover:bg-red-100 transition-colors text-gray-600 ${putSelected ? "bg-red-200" : ""}`}
                                                 >
                                                   {row.put.volume > 0 ? row.put.volume.toLocaleString() : "—"}
                                                 </td>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.put)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.put);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-center cursor-pointer hover:bg-red-100 transition-colors ${
                                                     row.put.implied_volatility > 50 ? "text-red-600 font-medium" :
                                                     row.put.implied_volatility < 25 ? "text-blue-600" : "text-gray-600"
@@ -1572,7 +2119,10 @@ export default function FindProfitsPage() {
                                                   {row.put.implied_volatility?.toFixed(0)}%
                                                 </td>
                                                 <td
-                                                  onClick={() => setSelectedOption(row.put)}
+                                                  onClick={() => {
+                                                    setSelectedOption(row.put);
+                                                    setOptionsCollapsed(true);
+                                                  }}
                                                   className={`py-1.5 px-1 text-left cursor-pointer hover:bg-red-100 transition-colors text-[10px] ${
                                                     row.put.rationale?.includes("CSP target") ? "text-green-700 font-medium" :
                                                     row.put.rationale?.includes("Safe") ? "text-blue-700" : "text-gray-600"
@@ -1594,13 +2144,19 @@ export default function FindProfitsPage() {
                                           </tr>
                                         );
                                       })}
-                                    </tbody>
-                                  </table>
-                                </div>
+                                      </tbody>
+                                    </table>
+                                  </div>
 
-                                <p className="text-xs text-gray-400 mt-2 text-center">
-                                  Click on a call or put to see full details and calculate estimated income
-                                </p>
+                                  <p className="text-xs text-gray-400 mt-2 text-center">
+                                    Click on a call or put to see full details and calculate estimated income
+                                  </p>
+                                  </>
+                                ) : (
+                                  <div className="py-6 text-center text-sm text-gray-500">
+                                    Options hidden to save space. Click <strong>Show options</strong> to expand.
+                                  </div>
+                                )}
 
                                 {/* Selected Option Income Calculator */}
                                 {selectedOption && (
@@ -1671,6 +2227,46 @@ export default function FindProfitsPage() {
                                       }`}>
                                         {selectedOption.rationale}
                                       </p>
+                                    </div>
+
+                                    {/* Option Liquidity */}
+                                    <div className="mb-4 p-3 bg-white/80 rounded-lg border border-gray-200">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs font-medium text-gray-700">Option Liquidity</span>
+                                        <span className="text-[10px] text-gray-500">
+                                          {optionsResult?.dataSource === "synthetic" ? "modeled" : optionsResult?.dataSource || ""}
+                                        </span>
+                                      </div>
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                        <div className="bg-gray-50 rounded p-2">
+                                          <p className="text-gray-600 mb-0.5">OI</p>
+                                          <p className="font-bold text-gray-900">{selectedOption.open_interest?.toLocaleString?.() ?? "—"}</p>
+                                          <p className="text-[10px] text-gray-500 mt-0.5">higher = easier fills</p>
+                                        </div>
+                                        <div className="bg-gray-50 rounded p-2">
+                                          <p className="text-gray-600 mb-0.5">Daily Vol</p>
+                                          <p className="font-bold text-gray-900">{selectedOption.volume?.toLocaleString?.() ?? "—"}</p>
+                                          <p className="text-[10px] text-gray-500 mt-0.5">higher = tighter markets</p>
+                                        </div>
+                                        <div className="bg-gray-50 rounded p-2">
+                                          <p className="text-gray-600 mb-0.5">Bid–Ask Spread</p>
+                                          <p className="font-bold text-gray-900">
+                                            {selectedOptionLiquidity?.spreadAbs != null && selectedOptionLiquidity?.spreadPct != null
+                                              ? `${formatCurrency(selectedOptionLiquidity.spreadAbs)} (${selectedOptionLiquidity.spreadPct.toFixed(1)}%)`
+                                              : "—"}
+                                          </p>
+                                          <p className="text-[10px] text-gray-500 mt-0.5">&lt;5% good • &gt;10% avoid</p>
+                                        </div>
+                                        <div className="bg-gray-50 rounded p-2">
+                                          <p className="text-gray-600 mb-0.5">IV</p>
+                                          <p className="font-bold text-gray-900">{selectedOption.implied_volatility?.toFixed?.(0) ?? "—"}%</p>
+                                          <p className="text-[10px] text-gray-500 mt-0.5">
+                                            {selectedOption.contract_type === "call"
+                                              ? "higher IV = more premium (sell)"
+                                              : "higher IV = more premium, more assignment risk"}
+                                          </p>
+                                        </div>
+                                      </div>
                                     </div>
 
                                     {/* Contract Calculator */}
@@ -1748,14 +2344,14 @@ export default function FindProfitsPage() {
                                         {watchlistLoading ? (
                                           <>
                                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                            Adding to Configure Automation...
+                                            Adding to Watchlist...
                                           </>
                                         ) : (
                                           <>
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                             </svg>
-                                            Add {selectedOption.contract_type === "put" ? "CSP" : "Covered Call"} to Configure Automation
+                                            Add to Watchlist
                                           </>
                                         )}
                                       </button>
@@ -1969,7 +2565,89 @@ export default function FindProfitsPage() {
                 </div>
 
                 {/* Sidebar */}
-                <div className="space-y-6">
+                <div className="space-y-6 lg:sticky lg:top-6 self-start">
+                  {/* Covered Call Analysis - above strategy info */}
+                  {analysis && selectedStrategy === "covered-calls" && (
+                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl shadow-sm border border-green-200 p-6">
+                      <div className="flex items-center justify-between gap-3 mb-4">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">📈</span>
+                          <h3 className="text-lg font-semibold text-green-900">Covered Call Analysis</h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCollapseCcAnalysis((v) => !v)}
+                          className="text-xs font-medium text-green-700 hover:text-green-900"
+                        >
+                          {collapseCcAnalysis ? "Show" : "Hide"}
+                        </button>
+                      </div>
+                      {collapseCcAnalysis ? (
+                        <p className="text-sm text-green-700">Click Show to expand analysis.</p>
+                      ) : (
+                        <>
+                          {/* Sentiment & Volatility */}
+                          <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div className="bg-white/60 rounded-lg p-4">
+                              <p className="text-sm text-gray-600 mb-1">Your Outlook</p>
+                              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
+                                analysis.sentiment === "bullish" ? "bg-green-100 text-green-700" :
+                                analysis.sentiment === "bearish" ? "bg-red-100 text-red-700" :
+                                "bg-gray-100 text-gray-700"
+                              }`}>
+                                {analysis.sentiment === "bullish" ? "↑" : analysis.sentiment === "bearish" ? "↓" : "—"}
+                                {analysis.sentiment.charAt(0).toUpperCase() + analysis.sentiment.slice(1)}
+                              </div>
+                            </div>
+                            <div className="bg-white/60 rounded-lg p-4">
+                              <p className="text-sm text-gray-600 mb-1">Volatility</p>
+                              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
+                                analysis.volatility === "high" ? "bg-red-100 text-red-700" :
+                                analysis.volatility === "low" ? "bg-green-100 text-green-700" :
+                                "bg-yellow-100 text-yellow-700"
+                              }`}>
+                                {analysis.volatility.charAt(0).toUpperCase() + analysis.volatility.slice(1)}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Key Metrics */}
+                          <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div className="bg-white/60 rounded-lg p-3">
+                              <p className="text-xs text-gray-600">Suggested Strike</p>
+                              <p className="font-bold text-green-800">{analysis.suggestedStrike}</p>
+                            </div>
+                            <div className="bg-white/60 rounded-lg p-3">
+                              <p className="text-xs text-gray-600">Potential Income</p>
+                              <p className="font-bold text-green-800">{analysis.potentialIncome}</p>
+                            </div>
+                            <div className="bg-white/60 rounded-lg p-3">
+                              <p className="text-xs text-gray-600">Max Profit</p>
+                              <p className="font-bold text-green-800">{analysis.maxProfit}</p>
+                            </div>
+                            <div className="bg-white/60 rounded-lg p-3">
+                              <p className="text-xs text-gray-600">Breakeven</p>
+                              <p className="font-bold text-green-800">{analysis.breakeven}</p>
+                            </div>
+                          </div>
+
+                          {/* Recommendation */}
+                          <div className="bg-white rounded-lg p-4 border border-green-200">
+                            <h4 className="font-semibold text-green-900 mb-2">Recommendation</h4>
+                            <p className="text-gray-700">{analysis.recommendation}</p>
+                          </div>
+
+                          {/* Risk Assessment */}
+                          <div className="mt-4 p-3 bg-white/40 rounded-lg">
+                            <p className="text-sm text-gray-600">
+                              <strong>Risk Assessment ({selectedAccount?.riskLevel} profile):</strong> {analysis.riskAssessment}
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   {/* Strategy Info - Covered Calls */}
                   {selectedStrategy === "covered-calls" && (
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-100">
@@ -1977,6 +2655,36 @@ export default function FindProfitsPage() {
                       <p className="text-sm text-blue-800 mb-4">
                         A covered call involves owning shares of stock and selling call options against them to generate income.
                       </p>
+
+                      {/* RSI + Volatility */}
+                      <div className="mb-4 p-3 bg-white/80 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-blue-900">RSI (14)</span>
+                          <span className="text-sm font-bold text-blue-900">
+                            {technicalsLoading ? "Loading…" : technicals?.rsi14 != null ? technicals.rsi14.toFixed(1) : "—"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-blue-800 mt-1">
+                          RSI Signals:
+                        </p>
+                        <p className="text-xs text-blue-700">
+                          &gt;70: Overbought • &lt;30: Oversold • 30–70: Normal
+                        </p>
+
+                        <div className="mt-3 flex items-center justify-between">
+                          <span className="text-xs font-medium text-blue-900">Volatility (ann.)</span>
+                          <span className="text-sm font-bold text-blue-900">
+                            {technicalsLoading
+                              ? "Loading…"
+                              : technicals?.volatility != null
+                              ? `${technicals.volatility.toFixed(1)}%`
+                              : "—"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-blue-700 mt-1">
+                          Quick ref: &lt;25% low • 25–50% moderate • &gt;50% high
+                        </p>
+                      </div>
 
                       {/* Available Shares Display */}
                       {tickerData && selectedAccount && (
@@ -2028,6 +2736,36 @@ export default function FindProfitsPage() {
                       <p className="text-sm text-amber-800 mb-4">
                         Sell put options while holding cash to cover potential stock purchase. Get paid premium upfront for agreeing to buy shares at the strike price.
                       </p>
+
+                      {/* RSI + Volatility */}
+                      <div className="mb-4 p-3 bg-white/80 rounded-lg border border-amber-300">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-amber-900">RSI (14)</span>
+                          <span className="text-sm font-bold text-amber-900">
+                            {technicalsLoading ? "Loading…" : technicals?.rsi14 != null ? technicals.rsi14.toFixed(1) : "—"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-800 mt-1">
+                          RSI Signals:
+                        </p>
+                        <p className="text-xs text-amber-700">
+                          &gt;70: Overbought • &lt;30: Oversold • 30–70: Normal
+                        </p>
+
+                        <div className="mt-3 flex items-center justify-between">
+                          <span className="text-xs font-medium text-amber-900">Volatility (ann.)</span>
+                          <span className="text-sm font-bold text-amber-900">
+                            {technicalsLoading
+                              ? "Loading…"
+                              : technicals?.volatility != null
+                              ? `${technicals.volatility.toFixed(1)}%`
+                              : "—"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-700 mt-1">
+                          Quick ref: &lt;25% low • 25–50% moderate • &gt;50% high
+                        </p>
+                      </div>
 
                       {/* Estimated Total Cash */}
                       <div className="mb-4 p-3 bg-white/80 rounded-lg border border-amber-300">
