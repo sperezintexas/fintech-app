@@ -230,6 +230,97 @@ export async function getMultipleTickerOHLC(
   return ohlcMap;
 }
 
+type QuotePoint = { date?: Date | number | string; close: number | null };
+
+function toEpochMs(d: QuotePoint["date"]): number {
+  if (!d) return 0;
+  if (typeof d === "number") return d > 10_000_000_000 ? d : d * 1000;
+  if (typeof d === "string") return new Date(d).getTime();
+  return d.getTime();
+}
+
+function computeRsiWilder(closes: number[], period = 14): number | null {
+  if (closes.length < period + 1) return null;
+  const deltas: number[] = [];
+  for (let i = 1; i < closes.length; i++) deltas.push(closes[i] - closes[i - 1]);
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 0; i < period; i++) {
+    const d = deltas[i];
+    if (d >= 0) avgGain += d;
+    else avgLoss += -d;
+  }
+  avgGain /= period;
+  avgLoss /= period;
+  for (let i = period; i < deltas.length; i++) {
+    const d = deltas[i];
+    const gain = d > 0 ? d : 0;
+    const loss = d < 0 ? -d : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  }
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - 100 / (1 + rs);
+}
+
+export type PriceRSIData = {
+  price: number;
+  changePercent: number;
+  rsi: number | null;
+};
+
+/** Fetches price, daily change %, and RSI for multiple symbols (for watchlist reports). */
+export async function getBatchPriceAndRSI(
+  symbols: string[]
+): Promise<Map<string, PriceRSIData>> {
+  const result = new Map<string, PriceRSIData>();
+  if (symbols.length === 0) return result;
+
+  const unique = Array.from(new Set(symbols.map((s) => s.toUpperCase())));
+
+  const fetchOne = async (ticker: string): Promise<void> => {
+    try {
+      const [quote, chart] = await Promise.all([
+        yahooFinance.quote(ticker),
+        yahooFinance.chart(ticker, {
+          period1: Math.floor((Date.now() - 120 * 24 * 60 * 60 * 1000) / 1000),
+          period2: Math.floor(Date.now() / 1000),
+          interval: "1d",
+        }),
+      ]);
+
+      if (!quote?.regularMarketPrice) return;
+
+      const previousClose =
+        quote.regularMarketPreviousClose || quote.regularMarketOpen || quote.regularMarketPrice;
+      const changePercent =
+        previousClose > 0 ? ((quote.regularMarketPrice - previousClose) / previousClose) * 100 : 0;
+
+      let rsi: number | null = null;
+      const quotesRaw = (chart?.quotes ?? []) as QuotePoint[];
+      const quotes = quotesRaw
+        .filter((q) => q.close != null && q.close > 0)
+        .sort((a, b) => toEpochMs(a.date) - toEpochMs(b.date));
+      const closes = quotes.map((q) => q.close as number);
+      if (closes.length >= 15) {
+        rsi = computeRsiWilder(closes, 14);
+      }
+
+      result.set(ticker, {
+        price: quote.regularMarketPrice,
+        changePercent,
+        rsi: rsi != null ? Math.round(rsi * 10) / 10 : null,
+      });
+    } catch (e) {
+      console.error(`getBatchPriceAndRSI ${ticker}:`, e);
+    }
+  };
+
+  await Promise.all(unique.map(fetchOne));
+  return result;
+}
+
 // Get grouped daily data (for compatibility with old Polygon API)
 export async function getGroupedDailyData(): Promise<Map<string, { close: number; open: number; high: number; low: number; volume: number }>> {
   // Return cached data if still valid

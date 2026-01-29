@@ -4,7 +4,7 @@ import { getDb } from "./mongodb";
 import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, ReportJob, ReportDefinition } from "@/types/portfolio";
 import { getReportTemplate } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
-import { getMultipleTickerOHLC } from "./yahoo";
+import { getMultipleTickerOHLC, getBatchPriceAndRSI } from "./yahoo";
 import { postToXTweet, truncateForX } from "./x";
 
 // Removed - using Yahoo Finance
@@ -91,15 +91,22 @@ function defineJobs(agenda: Agenda) {
     const data = job.attrs.data as { jobId?: string } | undefined;
     const jobId = data?.jobId;
     if (!jobId) return;
+    await executeReportJob(jobId);
+  });
+}
 
+/** Execute a report job synchronously (used by Run Now and scheduled runs). Returns { success, error? }. */
+export async function executeReportJob(jobId: string): Promise<{ success: boolean; error?: string }> {
+  try {
     const db = await getDb();
     const reportJob = (await db.collection("reportJobs").findOne({ _id: new ObjectId(jobId) })) as (ReportJob & { _id: ObjectId }) | null;
-    if (!reportJob || reportJob.status !== "active") return;
+    if (!reportJob) return { success: false, error: "Report job not found" };
+    if (reportJob.status !== "active") return { success: false, error: "Report job is paused" };
 
     const reportDef = (await db
       .collection("reportDefinitions")
       .findOne({ _id: new ObjectId(reportJob.reportId) })) as (ReportDefinition & { _id: ObjectId }) | null;
-    if (!reportDef) return;
+    if (!reportDef) return { success: false, error: "Report definition not found" };
 
     // Generate report output (SmartXAI or PortfolioSummary)
     let title = reportDef.name;
@@ -275,28 +282,72 @@ function defineJobs(agenda: Agenda) {
             .collection("watchlist")
             .find({ accountId })
             .toArray()) as (WatchlistItem & { _id: ObjectId })[];
-        const stocks = watchlistItems.filter((i) => i.type === "stock");
-        const options = watchlistItems.filter(
-          (i) => i.type === "covered-call" || i.type === "csp" || i.type === "call" || i.type === "put"
-        );
-        const dateStr = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
-        const stocksBlock =
-          stocks.length > 0
-            ? stocks.map((s) => `• ${s.symbol}${s.underlyingSymbol ? ` (${s.underlyingSymbol})` : ""}`).join("\n")
-            : "_No stocks on watchlist_";
-        const optionsBlock =
-          options.length > 0
-            ? options.map((o) => `• ${o.symbol}${o.underlyingSymbol ? ` (${o.underlyingSymbol})` : ""}`).join("\n")
-            : "_No options on watchlist_";
-        const templateStr =
-          reportDef.customSlackTemplate ??
-          getReportTemplate(reportDef.templateId ?? "concise").slackTemplate;
-        const body = templateStr
-          .replace(/\{date\}/g, dateStr)
-          .replace(/\{stocks\}/g, stocksBlock)
-          .replace(/\{options\}/g, optionsBlock);
-        title = reportDef.name;
-        bodyText = body;
+          const stocks = watchlistItems.filter((i) => i.type === "stock");
+          const options = watchlistItems.filter(
+            (i) => i.type === "covered-call" || i.type === "csp" || i.type === "call" || i.type === "put"
+          );
+
+          const underlyingSymbols = [
+            ...stocks.map((s) => (s.underlyingSymbol || s.symbol).toUpperCase()),
+            ...options.map((o) => (o.underlyingSymbol || o.symbol.replace(/\d+[CP]\d+$/, "")).toUpperCase()),
+          ];
+          const uniqueSymbols = Array.from(new Set(underlyingSymbols));
+          const priceRsiMap = await getBatchPriceAndRSI(uniqueSymbols);
+
+          const rsiSentiment = (rsi: number | null): string => {
+            if (rsi == null) return "";
+            if (rsi < 30) return "Oversold";
+            if (rsi < 50) return "Bearish";
+            if (rsi <= 70) return "Bullish📈";
+            return "Overbought⚠️";
+          };
+
+          const rationale = (item: WatchlistItem & { _id: ObjectId }, rsi: number | null): string => {
+            const isOption = ["covered-call", "csp", "call", "put"].includes(item.type);
+            if (isOption) {
+              if (item.type === "covered-call") return "Option: CC income";
+              if (item.type === "csp" || item.type === "put") return "Option: CSP entry";
+              return "Option: directional play";
+            }
+            if (rsi != null && rsi < 35) return "Stock: Buy dips";
+            if (rsi != null && rsi > 65) return "Option: Consider CC for income";
+            return "Stock: Buy & hold";
+          };
+
+          const formatLine = (
+            item: WatchlistItem & { _id: ObjectId },
+            displaySymbol: string
+          ): string => {
+            const underlying = (item.underlyingSymbol || item.symbol.replace(/\d+[CP]\d+$/, "")).toUpperCase();
+            const data = priceRsiMap.get(underlying);
+            if (!data) return `• $${displaySymbol}`;
+            const emoji = data.changePercent >= 0 ? "🟢" : "🔴";
+            const sign = data.changePercent >= 0 ? "+" : "";
+            const rsiStr = data.rsi != null ? ` RSI:${data.rsi} ${rsiSentiment(data.rsi)}` : "";
+            const rat = rationale(item, data.rsi);
+            return `${emoji} $${displaySymbol}: $${data.price.toFixed(2)} (${sign}${data.changePercent.toFixed(1)}%)${rsiStr} ${rat}`;
+          };
+
+          const stocksBlock =
+            stocks.length > 0
+              ? stocks.map((s) => formatLine(s, s.symbol)).join("\n")
+              : "_No stocks on watchlist_";
+          const optionsBlock =
+            options.length > 0
+              ? options.map((o) => formatLine(o, o.symbol)).join("\n")
+              : "No options";
+
+          const d = new Date();
+          const dateStr = `${d.toISOString().slice(0, 10)} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+          const templateStr =
+            reportDef.customSlackTemplate ??
+            getReportTemplate(reportDef.templateId ?? "concise").slackTemplate;
+          const body = templateStr
+            .replace(/\{date\}/g, dateStr)
+            .replace(/\{stocks\}/g, stocksBlock)
+            .replace(/\{options\}/g, optionsBlock);
+          title = reportDef.name;
+          bodyText = body;
         }
       } catch (e) {
         console.error("Failed to generate Watchlist report for scheduled job:", e);
@@ -365,19 +416,28 @@ function defineJobs(agenda: Agenda) {
     const slackConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "slack");
     const twitterConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "twitter");
 
-    if (reportJob.channels.includes("slack") && slackConfig?.target) {
+    if (reportJob.channels.includes("slack")) {
+      if (!slackConfig?.target) {
+        return { success: false, error: "Slack not configured. Go to Automation → Settings → Alert Settings and add a Slack webhook URL." };
+      }
       try {
         const slackText =
           reportDef.type === "watchlistreport"
             ? bodyText
             : `*${title}*\n${bodyText}${reportLink ? `\n\nView: ${reportLink}` : ""}`;
-        await fetch(slackConfig.target, {
+        const slackRes = await fetch(slackConfig.target, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: slackText }),
         });
+        if (!slackRes.ok) {
+          const errBody = await slackRes.text();
+          return { success: false, error: `Slack webhook failed (${slackRes.status}): ${errBody.slice(0, 200)}` };
+        }
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
         console.error("Failed to post report to Slack:", e);
+        return { success: false, error: `Slack delivery failed: ${msg}` };
       }
     }
 
@@ -401,7 +461,12 @@ function defineJobs(agenda: Agenda) {
       { _id: new ObjectId(jobId) },
       { $set: { lastRunAt: new Date().toISOString(), updatedAt: new Date().toISOString() } }
     );
-  });
+    return { success: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("executeReportJob failed:", e);
+    return { success: false, error: msg };
+  }
 }
 
 // Fetch market data using grouped daily (single API call)

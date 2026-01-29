@@ -833,14 +833,12 @@ export default function AutomationPage() {
   const runReportJobNow = async (jobId: string) => {
     setSchedulerMessage("");
     try {
-      const res = await fetch("/api/scheduler", {
+      const res = await fetch(`/api/report-jobs/${jobId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "run", jobName: "scheduled-report", data: { jobId } }),
       });
       const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
       if (res.ok && data.success) {
-        setSchedulerMessage(data.message ?? "Job triggered. Check your configured channels (e.g. Slack) for the report.");
+        setSchedulerMessage(data.message ?? "Report sent to Slack.");
         setTimeout(() => setSchedulerMessage(""), 5000);
       } else {
         setSchedulerMessage(`Error: ${data.error ?? "Failed to run job"}`);
@@ -2989,6 +2987,12 @@ export default function AutomationPage() {
                   New Job
                 </button>
               </div>
+
+              {schedulerMessage && (
+                <div className={`mb-4 p-3 rounded-lg ${schedulerMessage.startsWith("Error") ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                  {schedulerMessage}
+                </div>
+              )}
 
               {reportDefinitions.length === 0 ? (
                 <div className="text-center py-10 text-gray-500">

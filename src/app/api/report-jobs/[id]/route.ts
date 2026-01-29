@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { getAgenda } from "@/lib/scheduler";
+import { getAgenda, executeReportJob } from "@/lib/scheduler";
 import type { AlertDeliveryChannel, ReportJob } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +19,33 @@ async function upsertAgendaSchedule(jobId: string, cron: string): Promise<void> 
 async function cancelAgendaSchedule(jobId: string): Promise<void> {
   const agenda = await getAgenda();
   await agenda.cancel({ name: "scheduled-report", "data.jobId": jobId });
+}
+
+// POST /api/report-jobs/[id]/run - Run report job synchronously (Run Now)
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params;
+    if (!ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+    }
+
+    const result = await executeReportJob(id);
+    if (!result.success) {
+      const errMsg = result.error ?? "Report job failed";
+      console.error("[report-jobs run] Failed:", errMsg);
+      return NextResponse.json(
+        { success: false, error: errMsg },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json({ success: true, message: "Report sent to Slack" });
+  } catch (error) {
+    console.error("Run report job failed:", error);
+    return NextResponse.json(
+      { error: "Failed to run report job" },
+      { status: 500 }
+    );
+  }
 }
 
 // PUT /api/report-jobs/[id]
