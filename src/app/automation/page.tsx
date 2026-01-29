@@ -17,9 +17,10 @@ import type {
   ScheduledAlert,
   ReportDefinition,
   ReportJob,
+  ReportTemplateId,
   StrategySettings,
 } from "@/types/portfolio";
-import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS } from "@/types/portfolio";
+import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS, REPORT_TEMPLATES } from "@/types/portfolio";
 import {
   requestPushPermission,
   registerPushSubscription,
@@ -90,10 +91,18 @@ export default function AutomationPage() {
   const [reportFormError, setReportFormError] = useState<string>("");
   const [reportFormSaving, setReportFormSaving] = useState(false);
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
-  const [reportForm, setReportForm] = useState<{ name: string; description: string; type: "smartxai" | "portfoliosummary" | "cleanup" }>({
+  const [reportForm, setReportForm] = useState<{
+    name: string;
+    description: string;
+    type: "smartxai" | "portfoliosummary" | "cleanup" | "watchlistreport";
+    templateId: ReportTemplateId;
+    customSlackTemplate: string;
+  }>({
     name: "",
     description: "",
     type: "smartxai",
+    templateId: "concise",
+    customSlackTemplate: "",
   });
 
   const [showJobForm, setShowJobForm] = useState(false);
@@ -109,6 +118,10 @@ export default function AutomationPage() {
   const [strategyThresholdsForm, setStrategyThresholdsForm] = useState({
     coveredCallMinOI: 500,
     cashSecuredPutMinOI: 500,
+    coveredCallMinVolume: 0,
+    cashSecuredPutMinVolume: 0,
+    coveredCallMaxAssignProb: 100,
+    cashSecuredPutMaxAssignProb: 100,
   });
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [jobForm, setJobForm] = useState<{
@@ -124,6 +137,8 @@ export default function AutomationPage() {
     channels: ["slack"],
     status: "active",
   });
+  const [jobScheduleTime, setJobScheduleTime] = useState("16:00");
+  const [jobScheduleFreq, setJobScheduleFreq] = useState<"daily" | "weekdays">("weekdays");
 
   // Scheduler state
   type ScheduledJob = {
@@ -565,6 +580,10 @@ export default function AutomationPage() {
       setStrategyThresholdsForm({
         coveredCallMinOI: settings.thresholds?.["covered-call"]?.minOpenInterest ?? 500,
         cashSecuredPutMinOI: settings.thresholds?.["cash-secured-put"]?.minOpenInterest ?? 500,
+        coveredCallMinVolume: settings.thresholds?.["covered-call"]?.minVolume ?? 0,
+        cashSecuredPutMinVolume: settings.thresholds?.["cash-secured-put"]?.minVolume ?? 0,
+        coveredCallMaxAssignProb: settings.thresholds?.["covered-call"]?.maxAssignmentProbability ?? 100,
+        cashSecuredPutMaxAssignProb: settings.thresholds?.["cash-secured-put"]?.maxAssignmentProbability ?? 100,
       });
     } catch (e) {
       console.error("Failed to fetch strategy settings:", e);
@@ -592,8 +611,16 @@ export default function AutomationPage() {
         body: JSON.stringify({
           accountId: selectedAccountId,
           thresholds: {
-            "covered-call": { minOpenInterest: Number(strategyThresholdsForm.coveredCallMinOI) },
-            "cash-secured-put": { minOpenInterest: Number(strategyThresholdsForm.cashSecuredPutMinOI) },
+            "covered-call": {
+              minOpenInterest: Number(strategyThresholdsForm.coveredCallMinOI),
+              minVolume: Number(strategyThresholdsForm.coveredCallMinVolume),
+              maxAssignmentProbability: Number(strategyThresholdsForm.coveredCallMaxAssignProb),
+            },
+            "cash-secured-put": {
+              minOpenInterest: Number(strategyThresholdsForm.cashSecuredPutMinOI),
+              minVolume: Number(strategyThresholdsForm.cashSecuredPutMinVolume),
+              maxAssignmentProbability: Number(strategyThresholdsForm.cashSecuredPutMaxAssignProb),
+            },
           },
         }),
       });
@@ -623,14 +650,26 @@ export default function AutomationPage() {
 
   const openNewReport = () => {
     setEditingReportId(null);
-    setReportForm({ name: "", description: "", type: "smartxai" });
+    setReportForm({
+      name: "",
+      description: "",
+      type: "smartxai",
+      templateId: "concise",
+      customSlackTemplate: "",
+    });
     setReportFormError("");
     setShowReportForm(true);
   };
 
   const openEditReport = (def: ReportDefinition) => {
     setEditingReportId(def._id);
-    setReportForm({ name: def.name, description: def.description, type: def.type });
+    setReportForm({
+      name: def.name,
+      description: def.description,
+      type: def.type,
+      templateId: def.templateId ?? "concise",
+      customSlackTemplate: def.customSlackTemplate ?? "",
+    });
     setReportFormError("");
     setShowReportForm(true);
   };
@@ -652,8 +691,21 @@ export default function AutomationPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
             editingReportId
-              ? { name, description: reportForm.description, type: reportForm.type }
-              : { accountId: selectedAccountId, name, description: reportForm.description, type: reportForm.type }
+              ? {
+                  name,
+                  description: reportForm.description,
+                  type: reportForm.type,
+                  templateId: reportForm.templateId,
+                  customSlackTemplate: reportForm.customSlackTemplate.trim() || undefined,
+                }
+              : {
+                  accountId: selectedAccountId,
+                  name,
+                  description: reportForm.description,
+                  type: reportForm.type,
+                  templateId: reportForm.templateId,
+                  customSlackTemplate: reportForm.customSlackTemplate.trim() || undefined,
+                }
           ),
         }
       );
@@ -685,14 +737,24 @@ export default function AutomationPage() {
     }
   };
 
+  const scheduleToCron = (time: string, freq: "daily" | "weekdays"): string => {
+    const [h, m] = time.split(":").map((x) => parseInt(x, 10) || 0);
+    const hour = Math.min(23, Math.max(0, h));
+    const minute = Math.min(59, Math.max(0, m));
+    if (freq === "weekdays") return `${minute} ${hour} * * 1-5`;
+    return `${minute} ${hour} * * *`;
+  };
+
   const openNewJob = () => {
     setEditingJobId(null);
     setJobFormError("");
+    setJobScheduleTime("16:00");
+    setJobScheduleFreq("weekdays");
     setJobForm((prev) => ({
       ...prev,
       name: "",
       reportId: reportDefinitions[0]?._id ?? "",
-      scheduleCron: "0 16 * * 1-5",
+      scheduleCron: scheduleToCron("16:00", "weekdays"),
       channels: ["slack"],
       status: "active",
     }));
@@ -702,6 +764,14 @@ export default function AutomationPage() {
   const openEditJob = (j: ReportJob) => {
     setEditingJobId(j._id);
     setJobFormError("");
+    const cronParts = j.scheduleCron.trim().split(/\s+/);
+    if (cronParts.length >= 5) {
+      const minute = cronParts[0] ?? "0";
+      const hour = cronParts[1] ?? "16";
+      const dow = cronParts[4] ?? "*";
+      setJobScheduleTime(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+      setJobScheduleFreq(dow === "*" ? "daily" : "weekdays");
+    }
     setJobForm({
       name: j.name,
       reportId: j.reportId,
@@ -761,15 +831,24 @@ export default function AutomationPage() {
   };
 
   const runReportJobNow = async (jobId: string) => {
+    setSchedulerMessage("");
     try {
-      await fetch("/api/scheduler", {
+      const res = await fetch("/api/scheduler", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "run", jobName: "scheduled-report", data: { jobId } }),
       });
+      const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
+      if (res.ok && data.success) {
+        setSchedulerMessage(data.message ?? "Job triggered. Check your configured channels (e.g. Slack) for the report.");
+        setTimeout(() => setSchedulerMessage(""), 5000);
+      } else {
+        setSchedulerMessage(`Error: ${data.error ?? "Failed to run job"}`);
+      }
       await fetchReportJobs();
     } catch (err) {
       console.error("Failed to run job now:", err);
+      setSchedulerMessage("Error: Failed to run job");
     }
   };
 
@@ -2584,7 +2663,7 @@ export default function AutomationPage() {
                     <div className="p-4 rounded-xl border border-gray-200">
                       <p className="font-medium text-gray-900 mb-1">Covered Calls</p>
                       <p className="text-xs text-gray-500 mb-3">
-                        Show only call contracts with Open Interest above this threshold.
+                        Option chain filters for Find Profits (calls).
                       </p>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Min Open Interest</label>
                       <input
@@ -2597,17 +2676,44 @@ export default function AutomationPage() {
                             coveredCallMinOI: Number(e.target.value),
                           }))
                         }
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg mb-3"
+                      />
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Min Volume</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={strategyThresholdsForm.coveredCallMinVolume}
+                        onChange={(e) =>
+                          setStrategyThresholdsForm((p) => ({
+                            ...p,
+                            coveredCallMinVolume: Number(e.target.value),
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg mb-3"
+                      />
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Max Assignment Prob (%)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={strategyThresholdsForm.coveredCallMaxAssignProb}
+                        onChange={(e) =>
+                          setStrategyThresholdsForm((p) => ({
+                            ...p,
+                            coveredCallMaxAssignProb: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+                          }))
+                        }
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg"
                       />
                       <p className="text-[11px] text-gray-500 mt-2">
-                        Rule: higher OI usually = easier fills + tighter spreads.
+                        OI/Vol ≥ threshold; 0 = no filter. Hide options with assignment prob &gt; max (100 = no filter).
                       </p>
                     </div>
 
                     <div className="p-4 rounded-xl border border-gray-200">
                       <p className="font-medium text-gray-900 mb-1">Cash-Secured Puts</p>
                       <p className="text-xs text-gray-500 mb-3">
-                        Show only put contracts with Open Interest above this threshold.
+                        Option chain filters for Find Profits (puts).
                       </p>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Min Open Interest</label>
                       <input
@@ -2620,10 +2726,37 @@ export default function AutomationPage() {
                             cashSecuredPutMinOI: Number(e.target.value),
                           }))
                         }
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg mb-3"
+                      />
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Min Volume</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={strategyThresholdsForm.cashSecuredPutMinVolume}
+                        onChange={(e) =>
+                          setStrategyThresholdsForm((p) => ({
+                            ...p,
+                            cashSecuredPutMinVolume: Number(e.target.value),
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg mb-3"
+                      />
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Max Assignment Prob (%)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={strategyThresholdsForm.cashSecuredPutMaxAssignProb}
+                        onChange={(e) =>
+                          setStrategyThresholdsForm((p) => ({
+                            ...p,
+                            cashSecuredPutMaxAssignProb: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+                          }))
+                        }
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg"
                       />
                       <p className="text-[11px] text-gray-500 mt-2">
-                        Rule: higher OI usually = easier fills + tighter spreads.
+                        OI/Vol ≥ threshold; 0 = no filter. Hide options with assignment prob &gt; max (100 = no filter).
                       </p>
                     </div>
                   </div>
@@ -2738,11 +2871,12 @@ export default function AutomationPage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
                       <select
                         value={reportForm.type}
-                        onChange={(e) => setReportForm({ ...reportForm, type: e.target.value as "smartxai" | "portfoliosummary" | "cleanup" })}
+                        onChange={(e) => setReportForm({ ...reportForm, type: e.target.value as "smartxai" | "portfoliosummary" | "cleanup" | "watchlistreport" })}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg"
                       >
                         <option value="smartxai">SmartXAI Report</option>
                         <option value="portfoliosummary">Portfolio Summary</option>
+                        <option value="watchlistreport">Watchlist Report</option>
                         <option value="cleanup">Data Cleanup</option>
                       </select>
                     </div>
@@ -2757,6 +2891,8 @@ export default function AutomationPage() {
                             ? "e.g. Daily SmartXAI Summary"
                             : reportForm.type === "portfoliosummary"
                             ? "e.g. Daily Portfolio Update"
+                            : reportForm.type === "watchlistreport"
+                            ? "e.g. Daily Watchlist Alert"
                             : "e.g. Weekly Data Cleanup"
                         }
                       />
@@ -2771,6 +2907,49 @@ export default function AutomationPage() {
                         placeholder="What does this report contain?"
                       />
                     </div>
+                    {(reportForm.type === "watchlistreport" || reportForm.type === "smartxai" || reportForm.type === "portfoliosummary") && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Message template</label>
+                          <p className="text-sm text-gray-600 mb-3">
+                            Choose how the report message is styled when sent to Slack (e.g. concise, detailed, actionable, risk-aware).
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {REPORT_TEMPLATES.map((template) => (
+                              <button
+                                key={template.id}
+                                type="button"
+                                onClick={() => setReportForm({ ...reportForm, templateId: template.id })}
+                                className={`p-3 rounded-xl border-2 text-left transition-all ${
+                                  reportForm.templateId === template.id
+                                    ? "border-blue-500 bg-blue-50"
+                                    : "border-gray-200 hover:border-gray-300"
+                                }`}
+                              >
+                                <p className="font-medium text-gray-900">{template.name}</p>
+                                <p className="text-xs text-gray-600 mt-0.5">{template.description}</p>
+                                <div className="mt-2 p-2 bg-gray-100 rounded text-xs font-mono text-gray-700 line-clamp-2">
+                                  {template.slackTemplate.replace(/\{(?:date|stocks|options)\}/g, "…").substring(0, 80)}…
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Custom message template (optional)</label>
+                          <p className="text-xs text-gray-500 mb-1">
+                            Override the template above. Use {"{date}"}, {"{stocks}"}, {"{options}"} as placeholders.
+                          </p>
+                          <textarea
+                            value={reportForm.customSlackTemplate}
+                            onChange={(e) => setReportForm({ ...reportForm, customSlackTemplate: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono text-sm"
+                            rows={4}
+                            placeholder="Leave empty to use the selected template."
+                          />
+                        </div>
+                      </>
+                    )}
                     <div className="flex items-center justify-end gap-2 pt-2">
                       <button
                         onClick={() => setShowReportForm(false)}
@@ -2908,14 +3087,47 @@ export default function AutomationPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Cron Schedule</label>
-                      <input
-                        value={jobForm.scheduleCron}
-                        onChange={(e) => setJobForm({ ...jobForm, scheduleCron: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono"
-                        placeholder="0 16 * * 1-5"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Example: 4 PM Mon–Fri = <span className="font-mono">0 16 * * 1-5</span></p>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Schedule</label>
+                      <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Frequency</label>
+                          <select
+                            value={jobScheduleFreq}
+                            onChange={(e) => {
+                              const v = e.target.value as "daily" | "weekdays";
+                              setJobScheduleFreq(v);
+                              setJobForm({ ...jobForm, scheduleCron: scheduleToCron(jobScheduleTime, v) });
+                            }}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white"
+                          >
+                            <option value="daily">Daily</option>
+                            <option value="weekdays">Weekdays (Mon–Fri)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Time (24h)</label>
+                          <input
+                            type="time"
+                            value={jobScheduleTime}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setJobScheduleTime(v);
+                              setJobForm({ ...jobForm, scheduleCron: scheduleToCron(v, jobScheduleFreq) });
+                            }}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Cron (edit if needed)</label>
+                        <input
+                          value={jobForm.scheduleCron}
+                          onChange={(e) => setJobForm({ ...jobForm, scheduleCron: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono text-sm"
+                          placeholder="0 16 * * 1-5"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">minute hour day month dow · e.g. <span className="font-mono">0 16 * * 1-5</span> = 4 PM Mon–Fri</p>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Channels</label>

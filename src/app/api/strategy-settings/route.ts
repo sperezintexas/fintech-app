@@ -9,8 +9,8 @@ type StrategySettingsDoc = Omit<StrategySettings, "_id"> & { _id: ObjectId };
 
 function defaultThresholds(): StrategySettings["thresholds"] {
   return {
-    "covered-call": { minOpenInterest: 500 },
-    "cash-secured-put": { minOpenInterest: 500 },
+    "covered-call": { minOpenInterest: 500, minVolume: 0, maxAssignmentProbability: 100 },
+    "cash-secured-put": { minOpenInterest: 500, minVolume: 0, maxAssignmentProbability: 100 },
   };
 }
 
@@ -29,8 +29,22 @@ export async function GET(request: NextRequest) {
       .findOne({ accountId });
 
     if (existing) {
+      const defaults = defaultThresholds();
+      const thresholds = {
+        "covered-call": {
+          minOpenInterest: existing.thresholds?.["covered-call"]?.minOpenInterest ?? defaults["covered-call"].minOpenInterest,
+          minVolume: existing.thresholds?.["covered-call"]?.minVolume ?? defaults["covered-call"].minVolume,
+          maxAssignmentProbability: existing.thresholds?.["covered-call"]?.maxAssignmentProbability ?? defaults["covered-call"].maxAssignmentProbability,
+        },
+        "cash-secured-put": {
+          minOpenInterest: existing.thresholds?.["cash-secured-put"]?.minOpenInterest ?? defaults["cash-secured-put"].minOpenInterest,
+          minVolume: existing.thresholds?.["cash-secured-put"]?.minVolume ?? defaults["cash-secured-put"].minVolume,
+          maxAssignmentProbability: existing.thresholds?.["cash-secured-put"]?.maxAssignmentProbability ?? defaults["cash-secured-put"].maxAssignmentProbability,
+        },
+      };
       return NextResponse.json({
         ...existing,
+        thresholds,
         _id: existing._id.toString(),
       });
     }
@@ -62,17 +76,40 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "accountId is required" }, { status: 400 });
     }
 
+    const defaults = defaultThresholds();
     const thresholds = {
-      ...defaultThresholds(),
-      ...(body.thresholds || {}),
+      "covered-call": {
+        minOpenInterest: body.thresholds?.["covered-call"]?.minOpenInterest ?? defaults["covered-call"].minOpenInterest,
+        minVolume: body.thresholds?.["covered-call"]?.minVolume ?? defaults["covered-call"].minVolume,
+        maxAssignmentProbability: body.thresholds?.["covered-call"]?.maxAssignmentProbability ?? defaults["covered-call"].maxAssignmentProbability,
+      },
+      "cash-secured-put": {
+        minOpenInterest: body.thresholds?.["cash-secured-put"]?.minOpenInterest ?? defaults["cash-secured-put"].minOpenInterest,
+        minVolume: body.thresholds?.["cash-secured-put"]?.minVolume ?? defaults["cash-secured-put"].minVolume,
+        maxAssignmentProbability: body.thresholds?.["cash-secured-put"]?.maxAssignmentProbability ?? defaults["cash-secured-put"].maxAssignmentProbability,
+      },
     };
 
     // Validate
     for (const key of ["covered-call", "cash-secured-put"] as const) {
-      const v = thresholds[key]?.minOpenInterest;
-      if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+      const oi = thresholds[key]?.minOpenInterest;
+      const vol = thresholds[key]?.minVolume;
+      const maxAssign = thresholds[key]?.maxAssignmentProbability;
+      if (typeof oi !== "number" || !Number.isFinite(oi) || oi < 0) {
         return NextResponse.json(
           { error: `Invalid minOpenInterest for ${key}` },
+          { status: 400 }
+        );
+      }
+      if (typeof vol !== "number" || !Number.isFinite(vol) || vol < 0) {
+        return NextResponse.json(
+          { error: `Invalid minVolume for ${key}` },
+          { status: 400 }
+        );
+      }
+      if (typeof maxAssign !== "number" || !Number.isFinite(maxAssign) || maxAssign < 0 || maxAssign > 100) {
+        return NextResponse.json(
+          { error: `Invalid maxAssignmentProbability for ${key} (0–100)` },
           { status: 400 }
         );
       }

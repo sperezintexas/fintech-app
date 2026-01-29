@@ -48,3 +48,7 @@ ok now i want a new job types;
 
 - portfolioReport this report will give a concise portfolo value summary total and by account name risk level, value , % change if availale, create a  snapshot in mongodb as needed, along with market snapshot outlook
 - pruneHistory - will prune all snapshop data to preseve data
+
+01/29/26
+
+on the CSP page please

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import type { ReportDefinition, ReportDefinitionType } from "@/types/portfolio";
+import type { ReportDefinition, ReportDefinitionType, ReportTemplateId } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +23,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       name?: string;
       description?: string;
       type?: ReportDefinitionType;
+      templateId?: ReportTemplateId;
+      customSlackTemplate?: string;
     };
 
     const name = body.name !== undefined ? body.name.trim() : undefined;
     const description = body.description !== undefined ? body.description.trim() : undefined;
     const type = body.type;
+    const templateId = body.templateId;
+    const customSlackTemplate = body.customSlackTemplate !== undefined ? (body.customSlackTemplate?.trim() || undefined) : undefined;
 
     const update: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     if (name !== undefined) {
@@ -36,6 +40,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
     if (description !== undefined) update.description = description;
     if (type !== undefined) update.type = type;
+    if (templateId !== undefined) update.templateId = templateId;
+    if (customSlackTemplate !== undefined) update.customSlackTemplate = customSlackTemplate;
 
     const db = await getDb();
     const result = await db

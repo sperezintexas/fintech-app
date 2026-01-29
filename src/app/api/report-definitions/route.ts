@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import type { ReportDefinition, ReportDefinitionType } from "@/types/portfolio";
+import type { ReportDefinition, ReportDefinitionType, ReportTemplateId } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
@@ -44,12 +44,16 @@ export async function POST(request: NextRequest) {
       name?: string;
       description?: string;
       type?: ReportDefinitionType;
+      templateId?: ReportTemplateId;
+      customSlackTemplate?: string;
     };
 
     const accountId = body.accountId;
     const name = (body.name ?? "").trim();
     const description = (body.description ?? "").trim();
     const type: ReportDefinitionType = body.type ?? "smartxai";
+    const templateId = body.templateId ?? "concise";
+    const customSlackTemplate = body.customSlackTemplate?.trim() || undefined;
 
     if (!accountId) {
       return NextResponse.json({ error: "accountId is required" }, { status: 400 });
@@ -70,6 +74,8 @@ export async function POST(request: NextRequest) {
       name,
       description,
       type,
+      templateId,
+      ...(customSlackTemplate !== undefined && { customSlackTemplate }),
       createdAt: now,
       updatedAt: now,
     };

@@ -329,10 +329,15 @@ type OptionContract = {
   implied_volatility: number;
   rationale: string;
   contract_type: "call" | "put";
+  /** Risk-neutral P(stock > strike at expiration); calls only. 0–1. */
+  probability_called_away?: number;
+  /** Risk-neutral P(stock > strike at expiration) = expire OTM; puts only. 0–1. */
+  probability_expire_otm?: number;
   last_quote?: {
     bid: number;
     ask: number;
   };
+  dataSource?: string;
 };
 
 type OptionChainRow = {
@@ -351,7 +356,7 @@ type OptionsSearchResult = {
   totalCalls: number;
   totalPuts: number;
   optionChain: OptionChainRow[];
-  dataSource?: "live" | "estimated" | "synthetic";
+  dataSource?: "yahoo" | "live" | "estimated" | "synthetic";
   note?: string;
 };
 
@@ -466,8 +471,6 @@ export default function FindProfitsPage() {
   const [smaLoading, setSmaLoading] = useState(false);
   const [technicals, setTechnicals] = useState<TechnicalsData | null>(null);
   const [technicalsLoading, setTechnicalsLoading] = useState(false);
-  const [selectedStrike, setSelectedStrike] = useState<number | null>(null);
-  const [selectedWeeks, setSelectedWeeks] = useState<number>(4); // Default to 4 weeks
 
   // Options search state
   const [optionsResult, setOptionsResult] = useState<OptionsSearchResult | null>(null);
@@ -477,13 +480,15 @@ export default function FindProfitsPage() {
   const [optionsCollapsed, setOptionsCollapsed] = useState(false);
   const [numContracts, setNumContracts] = useState<number>(1);
 
-  // Build Covered Call flow state
-  const [buildExpirationWeeks, setBuildExpirationWeeks] = useState<number>(4);
+  // Build flow state (Covered Call / CSP)
+  const [buildExpirationWeeks, setBuildExpirationWeeks] = useState<number | null>(null);
   const [buildStrike, setBuildStrike] = useState<number | null>(null);
   const [buildOptionContract, setBuildOptionContract] = useState<OptionContract | null>(null);
   const [buildLimitPriceType, setBuildLimitPriceType] = useState<"bid" | "mid" | "ask">("mid");
   const [buildQuantity, setBuildQuantity] = useState<number>(1);
   const [buildOptionLoading, setBuildOptionLoading] = useState(false);
+  const [buildLimitTouched, setBuildLimitTouched] = useState(false);
+  const [buildQtyTouched, setBuildQtyTouched] = useState(false);
 
   // Covered Call Monitor state
   const [showMonitor, setShowMonitor] = useState(false);
@@ -503,6 +508,14 @@ export default function FindProfitsPage() {
     coveredCall: number;
     cashSecuredPut: number;
   }>({ coveredCall: 500, cashSecuredPut: 500 });
+  const [minVolumeThresholds, setMinVolumeThresholds] = useState<{
+    coveredCall: number;
+    cashSecuredPut: number;
+  }>({ coveredCall: 0, cashSecuredPut: 0 });
+  const [maxAssignProbThresholds, setMaxAssignProbThresholds] = useState<{
+    coveredCall: number;
+    cashSecuredPut: number;
+  }>({ coveredCall: 100, cashSecuredPut: 100 });
 
   // Fetch accounts on mount
   useEffect(() => {
@@ -534,11 +547,23 @@ export default function FindProfitsPage() {
         );
         const data = (await res.json()) as any;
         if (!res.ok) return;
-        const cc = Number(data?.thresholds?.["covered-call"]?.minOpenInterest);
-        const csp = Number(data?.thresholds?.["cash-secured-put"]?.minOpenInterest);
+        const ccOi = Number(data?.thresholds?.["covered-call"]?.minOpenInterest);
+        const cspOi = Number(data?.thresholds?.["cash-secured-put"]?.minOpenInterest);
+        const ccVol = Number(data?.thresholds?.["covered-call"]?.minVolume);
+        const cspVol = Number(data?.thresholds?.["cash-secured-put"]?.minVolume);
         setMinOiThresholds({
-          coveredCall: Number.isFinite(cc) ? cc : 500,
-          cashSecuredPut: Number.isFinite(csp) ? csp : 500,
+          coveredCall: Number.isFinite(ccOi) ? ccOi : 500,
+          cashSecuredPut: Number.isFinite(cspOi) ? cspOi : 500,
+        });
+        setMinVolumeThresholds({
+          coveredCall: Number.isFinite(ccVol) ? ccVol : 0,
+          cashSecuredPut: Number.isFinite(cspVol) ? cspVol : 0,
+        });
+        const ccAssign = Number(data?.thresholds?.["covered-call"]?.maxAssignmentProbability);
+        const cspAssign = Number(data?.thresholds?.["cash-secured-put"]?.maxAssignmentProbability);
+        setMaxAssignProbThresholds({
+          coveredCall: Number.isFinite(ccAssign) ? ccAssign : 100,
+          cashSecuredPut: Number.isFinite(cspAssign) ? cspAssign : 100,
         });
       } catch {
         // keep defaults
@@ -580,17 +605,59 @@ export default function FindProfitsPage() {
     return 500;
   }, [minOiThresholds, selectedStrategy]);
 
-  const visibleOptionChain = useMemo((): OptionChainRow[] => {
-    if (!optionsResult) return [];
+  const minVolumeForCurrentStrategy = useMemo(() => {
+    if (selectedStrategy === "covered-calls") return minVolumeThresholds.coveredCall;
+    if (selectedStrategy === "cash-secured-puts") return minVolumeThresholds.cashSecuredPut;
+    return 0;
+  }, [minVolumeThresholds, selectedStrategy]);
+
+  const maxAssignProbForCurrentStrategy = useMemo(() => {
+    if (selectedStrategy === "covered-calls") return maxAssignProbThresholds.coveredCall;
+    if (selectedStrategy === "cash-secured-puts") return maxAssignProbThresholds.cashSecuredPut;
+    return 100;
+  }, [maxAssignProbThresholds, selectedStrategy]);
+
+  const { visibleOptionChain, oiFilterFallbackActive } = useMemo(() => {
+    if (!optionsResult) return { visibleOptionChain: [] as OptionChainRow[], oiFilterFallbackActive: false };
     const minOi = minOiForCurrentStrategy;
+    const minVol = minVolumeForCurrentStrategy;
+    const maxAssign = maxAssignProbForCurrentStrategy;
+    const assignProbOk = (callOrPut: OptionContract | null | undefined, isCall: boolean): boolean => {
+      if (!callOrPut || maxAssign >= 100) return true;
+      if (isCall) {
+        const prob = callOrPut.probability_called_away;
+        if (prob == null) return true;
+        return prob * 100 <= maxAssign;
+      }
+      const probOtm = callOrPut.probability_expire_otm;
+      if (probOtm == null) return true;
+      const assignProb = (1 - probOtm) * 100;
+      return assignProb <= maxAssign;
+    };
+    let filtered: OptionChainRow[];
     if (selectedStrategy === "covered-calls") {
-      return sortedOptionChain.filter((row) => (row.call?.open_interest ?? 0) > minOi);
+      filtered = sortedOptionChain.filter(
+        (row) =>
+          (row.call?.open_interest ?? 0) >= minOi &&
+          (row.call?.volume ?? 0) >= minVol &&
+          assignProbOk(row.call, true)
+      );
+    } else if (selectedStrategy === "cash-secured-puts") {
+      filtered = sortedOptionChain.filter(
+        (row) =>
+          (row.put?.open_interest ?? 0) >= minOi &&
+          (row.put?.volume ?? 0) >= minVol &&
+          assignProbOk(row.put, false)
+      );
+    } else {
+      return { visibleOptionChain: sortedOptionChain, oiFilterFallbackActive: false };
     }
-    if (selectedStrategy === "cash-secured-puts") {
-      return sortedOptionChain.filter((row) => (row.put?.open_interest ?? 0) > minOi);
+    // Fallback: when filters remove all rows, show unfiltered chain (like Yahoo)
+    if (filtered.length === 0 && sortedOptionChain.length > 0) {
+      return { visibleOptionChain: sortedOptionChain, oiFilterFallbackActive: true };
     }
-    return sortedOptionChain;
-  }, [minOiForCurrentStrategy, optionsResult, selectedStrategy, sortedOptionChain]);
+    return { visibleOptionChain: filtered, oiFilterFallbackActive: false };
+  }, [minOiForCurrentStrategy, minVolumeForCurrentStrategy, maxAssignProbForCurrentStrategy, optionsResult, selectedStrategy, sortedOptionChain]);
 
   const selectedOptionLiquidity = useMemo(() => {
     if (!selectedOption) return null;
@@ -609,6 +676,24 @@ export default function FindProfitsPage() {
     const spreadPct = mid > 0 ? (spreadAbs / mid) * 100 : null;
     return { bid, ask, spreadAbs, spreadPct };
   }, [selectedOption]);
+
+  const buildOptionLiquidity = useMemo(() => {
+    if (!buildOptionContract) return null;
+    const bid = buildOptionContract.last_quote?.bid;
+    const ask = buildOptionContract.last_quote?.ask;
+    if (bid == null || ask == null) {
+      return {
+        bid: null as number | null,
+        ask: null as number | null,
+        spreadAbs: null as number | null,
+        spreadPct: null as number | null,
+      };
+    }
+    const mid = (bid + ask) / 2;
+    const spreadAbs = Math.max(0, ask - bid);
+    const spreadPct = mid > 0 ? (spreadAbs / mid) * 100 : null;
+    return { bid, ask, spreadAbs, spreadPct };
+  }, [buildOptionContract]);
 
   // Calculate estimated total cash across all accounts
   // Cash should be stored as positions (type: "cash"), but we also check account.balance as fallback
@@ -660,14 +745,15 @@ export default function FindProfitsPage() {
     setCspAnalysis(null);
     setSmaData(null);
     setTechnicals(null);
-    setSelectedStrike(null);
     setOptionsResult(null);
     setOptionsError("");
     setOptionsCollapsed(false);
     setBuildStrike(null);
     setBuildOptionContract(null);
-    setBuildExpirationWeeks(4);
+    setBuildExpirationWeeks(null);
     setBuildQuantity(1);
+    setBuildLimitTouched(false);
+    setBuildQtyTouched(false);
     setCollapseCcAnalysis(false);
 
     try {
@@ -695,13 +781,13 @@ export default function FindProfitsPage() {
           setAnalysis(ccAnalysis);
           // Default strike based on outlook
           const strikeMultiplier = userOutlook === "bullish" ? 1.05 : userOutlook === "bearish" ? 1.00 : 1.03;
-          setSelectedStrike(Math.round(data.price * strikeMultiplier));
+          setBuildStrike(Math.round(data.price * strikeMultiplier));
         } else if (selectedStrategy === "cash-secured-puts") {
           const cspResult = analyzeCashSecuredPut(data, selectedAccount.riskLevel, userOutlook);
           setCspAnalysis(cspResult);
           // Default strike based on outlook - CSP strikes below current price
           const strikeMultiplier = userOutlook === "bullish" ? 0.97 : userOutlook === "bearish" ? 0.90 : 0.95;
-          setSelectedStrike(Math.round(data.price * strikeMultiplier));
+          setBuildStrike(Math.round(data.price * strikeMultiplier));
         }
       }
 
@@ -712,8 +798,6 @@ export default function FindProfitsPage() {
         if (smaRes.ok) {
           const smaResult = await smaRes.json();
           setSmaData(smaResult);
-          const suggestedStrike = Math.round(data.price * 1.03);
-          setSelectedStrike(suggestedStrike);
         }
       } catch (smaErr) {
         console.error("Failed to fetch SMA data:", smaErr);
@@ -757,10 +841,6 @@ export default function FindProfitsPage() {
 
   const formatVolume = (value: number) =>
     new Intl.NumberFormat("en-US", { notation: "compact" }).format(value);
-
-  const getSelectedExpiration = () => {
-    return generateExpirationOptions().find((o) => o.weeks === selectedWeeks);
-  };
 
   // Evaluate covered call position
   const handleEvaluatePosition = async () => {
@@ -868,38 +948,35 @@ export default function FindProfitsPage() {
     }
   };
 
-  const handleSearchOptions = async () => {
-    // Only for cash-secured-puts (covered-calls uses build flow)
-    if (selectedStrategy === "covered-calls") return;
-    if (!tickerData || !selectedStrike) return;
-
-    const expOption = getSelectedExpiration();
+  const handleLoadOptionChainBuild = async () => {
+    if (!tickerData) return;
+    if (selectedStrategy !== "covered-calls" && selectedStrategy !== "cash-secured-puts") return;
+    if (buildExpirationWeeks == null) return;
+    const expOptions = generateExpirationOptions();
+    const expOption = expOptions.find((o) => o.weeks === buildExpirationWeeks);
     if (!expOption) return;
 
+    const centerStrike = buildStrike ?? Math.round(tickerData.price);
     setOptionsLoading(true);
     setOptionsError("");
     setOptionsResult(null);
-    setSelectedOption(null);
     setOptionsCollapsed(false);
 
     try {
       const params = new URLSearchParams({
         underlying: tickerData.symbol,
-        strike: selectedStrike.toString(),
+        strike: centerStrike.toString(),
         expiration: expOption.date,
       });
-
       const res = await fetch(`/api/options?${params.toString()}`);
       const data = await res.json();
-
       if (!res.ok) {
-        setOptionsError(data.error || "Failed to fetch options");
+        setOptionsError((data as { error?: string }).error ?? "Failed to load option chain");
         return;
       }
-
       setOptionsResult(data);
     } catch (err) {
-      setOptionsError("Failed to search options");
+      setOptionsError("Failed to load option chain");
       console.error(err);
     } finally {
       setOptionsLoading(false);
@@ -908,9 +985,10 @@ export default function FindProfitsPage() {
 
   // Effect to auto-fetch option when strike and expiration are selected
   useEffect(() => {
-    if (!tickerData || !buildStrike || !buildExpirationWeeks || selectedStrategy !== "covered-calls") {
+    if (!tickerData || !buildStrike || buildExpirationWeeks == null) {
       return;
     }
+    if (selectedStrategy !== "covered-calls" && selectedStrategy !== "cash-secured-puts") return;
 
     const fetchBuildOption = async () => {
       const expOptions = generateExpirationOptions();
@@ -919,6 +997,9 @@ export default function FindProfitsPage() {
 
       setBuildOptionLoading(true);
       setBuildOptionContract(null);
+      // Reset "BE preview" gating when inputs change
+      setBuildLimitTouched(false);
+      setBuildQtyTouched(false);
 
       try {
         const params = new URLSearchParams({
@@ -928,21 +1009,27 @@ export default function FindProfitsPage() {
         });
 
         const res = await fetch(`/api/options?${params.toString()}`);
-        const data = await res.json();
+        const data = (await res.json()) as unknown;
 
         if (!res.ok) {
-          console.error("Failed to fetch option:", data.error);
+          const errMsg =
+            typeof data === "object" && data != null && "error" in data
+              ? String((data as { error?: unknown }).error ?? "Failed to fetch option")
+              : "Failed to fetch option";
+          console.error("Failed to fetch option:", errMsg);
           return;
         }
 
-        // Find the call option matching our strike
-        const callOption = data.call?.find(
-          (opt: OptionContract) => opt.strike_price === buildStrike
-        );
+        // /api/options returns an optionChain[] of { strike, call, put }
+        const optionChain = (data as { optionChain?: unknown }).optionChain;
+        const row =
+          Array.isArray(optionChain)
+            ? (optionChain as OptionChainRow[]).find((r) => r.strike === buildStrike)
+            : undefined;
+        const callOrPutOption =
+          selectedStrategy === "cash-secured-puts" ? (row?.put ?? null) : (row?.call ?? null);
 
-        if (callOption) {
-          setBuildOptionContract(callOption);
-        }
+        setBuildOptionContract(callOrPutOption);
       } catch (err) {
         console.error("Failed to fetch build option:", err);
       } finally {
@@ -1142,7 +1229,7 @@ export default function FindProfitsPage() {
                         setSelectedOption(null);
                         setBuildStrike(null);
                         setBuildOptionContract(null);
-                        setBuildExpirationWeeks(4);
+                        setBuildExpirationWeeks(null);
                         setBuildQuantity(1);
                         setCollapseCcAnalysis(false);
                         setCollapseStep2(true);
@@ -1243,11 +1330,27 @@ export default function FindProfitsPage() {
                         <form onSubmit={handleSearch} className="flex gap-3">
                           <input
                             type="text"
+                            list="recent-symbols"
                             value={symbol}
                             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
                             placeholder="Enter stock symbol (e.g., AAPL, MSFT, TSLA)"
                             className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           />
+                          <datalist id="recent-symbols">
+                            {Array.from(
+                              new Map(
+                                (searchHistory ?? [])
+                                  .filter((t) => t.type === "stock" && t.symbol)
+                                  .map((t) => [t.symbol.toUpperCase(), t] as const)
+                              ).values()
+                            )
+                              .slice(0, 10)
+                              .map((t) => (
+                                <option key={t.symbol} value={t.symbol.toUpperCase()}>
+                                  {t.name}
+                                </option>
+                              ))}
+                          </datalist>
                           <button
                             type="submit"
                             disabled={loading || !symbol.trim() || !userOutlook}
@@ -1268,6 +1371,26 @@ export default function FindProfitsPage() {
                             Analyze
                           </button>
                         </form>
+                        {(searchHistory?.length ?? 0) > 0 && (
+                          <div className="mt-3">
+                            <p className="text-xs text-gray-500 mb-2">Recent symbols</p>
+                            <div className="flex flex-wrap gap-2">
+                              {searchHistory
+                                .filter((t) => t.type === "stock" && t.symbol)
+                                .slice(0, 6)
+                                .map((t) => (
+                                  <button
+                                    key={t.symbol}
+                                    type="button"
+                                    onClick={() => setSymbol(t.symbol.toUpperCase())}
+                                    className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                  >
+                                    {t.symbol.toUpperCase()}
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        )}
                         {error && <p className="mt-3 text-red-600 text-sm">{error}</p>}
                         {!userOutlook && (
                           <p className="mt-2 text-xs text-amber-600">
@@ -1341,6 +1464,14 @@ export default function FindProfitsPage() {
                             <p className="font-semibold text-gray-900">{formatVolume(tickerData.volume)}</p>
                           </div>
                         </div>
+
+                        {/* Option filters note (CC/CSP only) */}
+                        {(selectedStrategy === "covered-calls" || selectedStrategy === "cash-secured-puts") && (
+                          <p className="mt-3 text-[11px] text-gray-500">
+                            Option chain filters: OI ≥ {minOiForCurrentStrategy.toLocaleString()}, Vol ≥ {minVolumeForCurrentStrategy.toLocaleString()}, Assign prob ≤ {maxAssignProbForCurrentStrategy}%{" "}
+                            <span className="text-gray-400">(Automation → Strategy)</span>
+                          </p>
+                        )}
                       </div>
 
                       {/* Cash-Secured Put Analysis */}
@@ -1469,8 +1600,8 @@ export default function FindProfitsPage() {
                           )}
                         </div>
 
-                        {/* Build Covered Call Flow */}
-                        {selectedStrategy === "covered-calls" && (
+                        {/* Build Flow (Covered Call / CSP) */}
+                        {(selectedStrategy === "covered-calls" || selectedStrategy === "cash-secured-puts") && (
                           <>
                             {/* Expiration and Strike Row */}
                             <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1478,13 +1609,18 @@ export default function FindProfitsPage() {
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Expiration Date</label>
                                 <select
-                                  value={buildExpirationWeeks}
+                                  value={buildExpirationWeeks ?? ""}
                                   onChange={(e) => {
-                                    setBuildExpirationWeeks(parseInt(e.target.value));
+                                    const next = e.target.value ? parseInt(e.target.value) : null;
+                                    setBuildExpirationWeeks(next);
+                                    setBuildStrike(null);
                                     setBuildOptionContract(null);
+                                    setBuildLimitTouched(false);
+                                    setBuildQtyTouched(false);
                                   }}
                                   className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
                                 >
+                                  <option value="">Select expiration...</option>
                                   {generateExpirationOptions().map((opt) => (
                                     <option key={opt.weeks} value={opt.weeks}>
                                       {opt.label}
@@ -1496,68 +1632,79 @@ export default function FindProfitsPage() {
                               {/* Strike Price Dropdown */}
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Strike Price</label>
-                                <select
-                                  value={buildStrike || ""}
-                                  onChange={(e) => {
-                                    const strike = e.target.value ? parseFloat(e.target.value) : null;
-                                    setBuildStrike(strike);
-                                    setBuildOptionContract(null);
-                                  }}
-                                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-                                >
-                                  <option value="">Select strike...</option>
-                                  {generateStrikeOptions(tickerData.price, smaData)
-                                    .filter((strike) => strike > tickerData.price) // Only OTM for covered calls
-                                    .map((strike) => {
-                                      const isCurrentPrice = Math.abs(strike - tickerData.price) < 5;
-                                      const isSma = smaData && Math.abs(strike - smaData.sma50) < 5;
-                                      const pctFromPrice = ((strike - tickerData.price) / tickerData.price) * 100;
-                                      let label = `$${strike}`;
-                                      if (isCurrentPrice) label += " ≈ Price";
-                                      else if (isSma) label += " ≈ 50MA";
-                                      else if (pctFromPrice >= 15) label += ` (+${pctFromPrice.toFixed(1)}% OTM)`;
-                                      return (
-                                        <option key={strike} value={strike}>
-                                          {label}
-                                        </option>
-                                      );
-                                    })}
-                                </select>
+                                {buildExpirationWeeks == null ? (
+                                  <div className="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-500">
+                                    Select expiration first
+                                  </div>
+                                ) : (
+                                  <select
+                                    value={buildStrike || ""}
+                                    onChange={(e) => {
+                                      const strike = e.target.value ? parseFloat(e.target.value) : null;
+                                      setBuildStrike(strike);
+                                      setBuildOptionContract(null);
+                                    }}
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                                  >
+                                    <option value="">Select strike...</option>
+                                    {generateStrikeOptions(tickerData.price, smaData)
+                                      .filter((strike) =>
+                                        selectedStrategy === "covered-calls"
+                                          ? strike > tickerData.price // OTM calls
+                                          : strike < tickerData.price // OTM puts
+                                      )
+                                      .map((strike) => {
+                                        const isCurrentPrice = Math.abs(strike - tickerData.price) < 5;
+                                        const isSma = smaData && Math.abs(strike - smaData.sma50) < 5;
+                                        const pctFromPrice = ((strike - tickerData.price) / tickerData.price) * 100;
+                                        let label = `$${strike}`;
+                                        if (isCurrentPrice) label += " ≈ Price";
+                                        else if (isSma) label += " ≈ 50MA";
+                                        else if (selectedStrategy === "covered-calls" && pctFromPrice >= 15) {
+                                          label += ` (+${pctFromPrice.toFixed(1)}% OTM)`;
+                                        } else if (selectedStrategy === "cash-secured-puts" && pctFromPrice <= -15) {
+                                          label += ` (${pctFromPrice.toFixed(1)}% OTM)`;
+                                        }
+                                        return (
+                                          <option key={strike} value={strike}>
+                                            {label}
+                                          </option>
+                                        );
+                                      })}
+                                  </select>
+                                )}
                               </div>
                             </div>
 
-                            {/* Limit Price Selector (Bid/Mid/Ask) */}
-                            {buildOptionContract && buildOptionContract.last_quote && (
+                            {/* Limit Price (Bid/Mid/Ask dropdown) */}
+                            {buildOptionContract && (buildOptionContract.last_quote || buildOptionContract.premium != null) && (
                               <div className="mb-6">
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Limit Price</label>
-                                <div className="grid grid-cols-3 gap-3">
-                                  {(["bid", "mid", "ask"] as const).map((priceType) => {
-                                    const bid = buildOptionContract.last_quote?.bid ?? 0;
-                                    const ask = buildOptionContract.last_quote?.ask ?? 0;
+                                <select
+                                  value={buildLimitPriceType}
+                                  onChange={(e) => {
+                                    const v = e.target.value as "bid" | "mid" | "ask";
+                                    setBuildLimitPriceType(v);
+                                    setBuildLimitTouched(true);
+                                  }}
+                                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                                >
+                                  {(() => {
+                                    const premium = buildOptionContract.premium ?? 0;
+                                    const rawBid = buildOptionContract.last_quote?.bid;
+                                    const rawAsk = buildOptionContract.last_quote?.ask;
+                                    const bid = (rawBid != null && rawBid > 0) ? rawBid : premium;
+                                    const ask = (rawAsk != null && rawAsk > 0) ? rawAsk : premium;
                                     const mid = (bid + ask) / 2;
-                                    const price = priceType === "bid" ? bid : priceType === "ask" ? ask : mid;
-                                    const isSelected = buildLimitPriceType === priceType;
-
                                     return (
-                                      <button
-                                        key={priceType}
-                                        onClick={() => setBuildLimitPriceType(priceType)}
-                                        className={`p-4 rounded-lg border-2 transition-all ${
-                                          isSelected
-                                            ? "border-indigo-600 bg-indigo-50"
-                                            : "border-gray-200 bg-white hover:border-gray-300"
-                                        }`}
-                                      >
-                                        <div className="text-xs font-medium text-gray-600 mb-1 uppercase">
-                                          {priceType}
-                                        </div>
-                                        <div className={`text-lg font-bold ${isSelected ? "text-indigo-700" : "text-gray-900"}`}>
-                                          ${price.toFixed(2)}
-                                        </div>
-                                      </button>
+                                      <>
+                                        <option value="bid">Bid — ${bid.toFixed(2)}</option>
+                                        <option value="mid">Mid — ${mid.toFixed(2)}</option>
+                                        <option value="ask">Ask — ${ask.toFixed(2)}</option>
+                                      </>
                                     );
-                                  })}
-                                </div>
+                                  })()}
+                                </select>
                               </div>
                             )}
 
@@ -1570,7 +1717,10 @@ export default function FindProfitsPage() {
                                   min="1"
                                   max="1000"
                                   value={buildQuantity}
-                                  onChange={(e) => setBuildQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                                  onChange={(e) => {
+                                    setBuildQuantity(Math.max(1, parseInt(e.target.value) || 1));
+                                    setBuildQtyTouched(true);
+                                  }}
                                   className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
                                 />
                                 <p className="text-xs text-gray-500 mt-1">
@@ -1579,55 +1729,99 @@ export default function FindProfitsPage() {
                               </div>
                             )}
 
-                            {/* Breakeven Graph */}
-                            {buildOptionContract && buildOptionContract.last_quote && tickerData && (
+                            {/* Breakeven (preview) */}
+                            {buildOptionContract && tickerData && (
                               <div className="mb-6">
-                                <h4 className="text-sm font-medium text-gray-700 mb-3">Breakeven Analysis</h4>
+                                <h4 className="text-sm font-medium text-gray-700 mb-3">Breakeven (Preview)</h4>
                                 <div className="bg-white rounded-lg p-4 border border-gray-200">
-                                  {(() => {
-                                    const bid = buildOptionContract.last_quote?.bid ?? 0;
-                                    const ask = buildOptionContract.last_quote?.ask ?? 0;
+                                  {!buildLimitTouched || !buildQtyTouched ? (
+                                    <p className="text-sm text-gray-600">
+                                      Select a <strong>limit price</strong> and set <strong>quantity</strong> to calculate breakeven.
+                                    </p>
+                                  ) : (() => {
+                                    const contractPremium = buildOptionContract.premium ?? 0;
+                                    const rawBid = buildOptionContract.last_quote?.bid;
+                                    const rawAsk = buildOptionContract.last_quote?.ask;
+                                    const bid = (rawBid != null && rawBid > 0) ? rawBid : contractPremium;
+                                    const ask = (rawAsk != null && rawAsk > 0) ? rawAsk : contractPremium;
                                     const mid = (bid + ask) / 2;
+                                    const currentPrice = tickerData.price;
+                                    const strike = buildOptionContract.strike_price;
                                     const premium = buildLimitPriceType === "bid" ? bid : buildLimitPriceType === "ask" ? ask : mid;
                                     const totalPremium = premium * 100 * buildQuantity;
-                                    const breakeven = buildOptionContract.strike_price + premium;
-                                    const currentPrice = tickerData.price;
-                                    const maxProfit = totalPremium;
-                                    const maxLoss = (breakeven - currentPrice) * 100 * buildQuantity;
+                                    const isCall = buildOptionContract.contract_type === "call";
+                                    const breakeven = isCall ? currentPrice - premium : strike - premium;
 
-                                    // Calculate P&L at different price points
-                                    const pricePoints: number[] = [];
+                                    const pnlAtExpiry = (stockPriceAtExpiry: number) => {
+                                      if (isCall) {
+                                        // Covered call payoff (assumes stock acquired at currentPrice, call sold for premium)
+                                        if (stockPriceAtExpiry <= strike) {
+                                          return (stockPriceAtExpiry - currentPrice) * 100 * buildQuantity + totalPremium;
+                                        }
+                                        return (strike - currentPrice) * 100 * buildQuantity + totalPremium;
+                                      }
+                                      // Cash-secured put payoff (short put): keep premium if stock >= strike; else assigned
+                                      if (stockPriceAtExpiry >= strike) return totalPremium;
+                                      return (stockPriceAtExpiry - strike) * 100 * buildQuantity + totalPremium;
+                                    };
+
+                                    const maxProfit = isCall ? pnlAtExpiry(strike + 1) : totalPremium;
+                                    const maxLoss = pnlAtExpiry(0);
+
+                                    const scenarios = [
+                                      { label: "Down 10%", price: Math.max(0, currentPrice * 0.9) },
+                                      { label: "Now", price: currentPrice },
+                                      { label: "Strike", price: strike },
+                                      { label: "B/E", price: breakeven },
+                                      { label: "Up 10%", price: currentPrice * 1.1 },
+                                    ].map((s) => ({
+                                      ...s,
+                                      price: Math.round(s.price * 100) / 100,
+                                      pnl: Math.round(pnlAtExpiry(s.price) * 100) / 100,
+                                    }));
+
+                                    const pnlValues = scenarios.map((s) => s.pnl);
+                                    const maxPnl = Math.max(...pnlValues);
+                                    const minPnl = Math.min(...pnlValues);
+                                    const range = maxPnl - minPnl || 1;
+
+                                    // P&L chart: X = stock price, Y = P&L (more points for smooth line)
                                     const minPrice = Math.max(0, currentPrice * 0.7);
                                     const maxPrice = currentPrice * 1.3;
-                                    for (let p = minPrice; p <= maxPrice; p += (maxPrice - minPrice) / 20) {
-                                      pricePoints.push(Math.round(p * 100) / 100);
+                                    const priceStep = (maxPrice - minPrice) / 30;
+                                    const chartData: { price: number; pnl: number }[] = [];
+                                    for (let p = minPrice; p <= maxPrice; p += priceStep) {
+                                      chartData.push({ price: p, pnl: pnlAtExpiry(p) });
                                     }
-
-                                    const pnlData = pricePoints.map((price) => {
-                                      let pnl = 0;
-                                      if (price <= buildOptionContract.strike_price) {
-                                        // Stock below strike - keep premium, no assignment
-                                        pnl = totalPremium;
-                                      } else {
-                                        // Stock above strike - assigned, lose (price - strike) per share
-                                        pnl = totalPremium - (price - buildOptionContract.strike_price) * 100 * buildQuantity;
-                                      }
-                                      return { price, pnl };
-                                    });
-
-                                    const maxPnl = Math.max(...pnlData.map((d) => d.pnl));
-                                    const minPnl = Math.min(...pnlData.map((d) => d.pnl));
-                                    const pnlRange = maxPnl - minPnl || 1;
+                                    const chartMinPnl = Math.min(...chartData.map((d) => d.pnl));
+                                    const chartMaxPnl = Math.max(...chartData.map((d) => d.pnl));
+                                    const chartPnlRange = chartMaxPnl - chartMinPnl || 1;
+                                    const pad = 24;
+                                    const w = 280;
+                                    const h = 140;
+                                    const toX = (price: number) =>
+                                      pad + ((price - minPrice) / (maxPrice - minPrice)) * (w - 2 * pad);
+                                    const toY = (pnl: number) =>
+                                      h - pad - ((pnl - chartMinPnl) / chartPnlRange) * (h - 2 * pad);
+                                    const zeroY = toY(0);
+                                    const strikeX = toX(strike);
+                                    const breakevenX = toX(breakeven);
+                                    const currentX = toX(currentPrice);
+                                    const linePoints = chartData.map((d) => `${toX(d.price)},${toY(d.pnl)}`).join(" ");
 
                                     return (
                                       <div>
                                         <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
                                           <div>
-                                            <p className="text-gray-600">Breakeven Price</p>
+                                            <p className="text-gray-600">Breakeven (stock)</p>
                                             <p className="font-bold text-gray-900">{formatCurrency(breakeven)}</p>
                                           </div>
                                           <div>
-                                            <p className="text-gray-600">Total Premium</p>
+                                            <p className="text-gray-600">Limit premium</p>
+                                            <p className="font-bold text-gray-900">{formatCurrency(premium)} / share</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-gray-600">Estimated income</p>
                                             <p className="font-bold text-green-700">{formatCurrency(totalPremium)}</p>
                                           </div>
                                           <div>
@@ -1636,74 +1830,134 @@ export default function FindProfitsPage() {
                                           </div>
                                           <div>
                                             <p className="text-gray-600">Max Loss</p>
-                                            <p className="font-bold text-red-700">{formatCurrency(-maxLoss)}</p>
+                                            <p className="font-bold text-red-700">{formatCurrency(maxLoss)}</p>
                                           </div>
                                         </div>
 
-                                        {/* Simple Line Graph */}
-                                        <div className="relative h-48 sm:h-64 border-l-2 border-b-2 border-gray-300 overflow-x-auto">
-                                          {/* Y-axis labels */}
-                                          <div className="absolute -left-10 sm:-left-12 top-0 h-full flex flex-col justify-between text-[10px] sm:text-xs text-gray-500">
-                                            <span className="whitespace-nowrap">{formatCurrency(maxPnl)}</span>
-                                            <span className="whitespace-nowrap">{formatCurrency((maxPnl + minPnl) / 2)}</span>
-                                            <span className="whitespace-nowrap">{formatCurrency(minPnl)}</span>
-                                          </div>
+                                        {/* Trade summary note */}
+                                        {(() => {
+                                          const expDate = buildOptionContract.expiration_date
+                                            ? new Date(buildOptionContract.expiration_date + "T12:00:00")
+                                            : null;
+                                          const expFormatted = expDate
+                                            ? expDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                                            : "—";
+                                          const today = new Date();
+                                          const dte = expDate
+                                            ? Math.max(0, Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
+                                            : 0;
+                                          const weeks = Math.floor(dte / 7);
+                                          const days = dte % 7;
+                                          const isCall = buildOptionContract.contract_type === "call";
+                                          const probOtm =
+                                            isCall
+                                              ? (buildOptionContract.probability_called_away != null
+                                                ? Math.round((1 - buildOptionContract.probability_called_away) * 100)
+                                                : null)
+                                              : (buildOptionContract.probability_expire_otm != null
+                                                ? Math.round(buildOptionContract.probability_expire_otm * 100)
+                                                : null);
+                                          const probItm =
+                                            probOtm != null ? Math.max(0, Math.min(100, 100 - probOtm)) : null;
+                                          const symbol = tickerData?.symbol ?? "—";
+                                          return (
+                                            <p className="text-xs text-gray-600 mt-3 pt-3 border-t border-gray-200">
+                                              You are selling <strong>{buildQuantity}</strong>{" "}
+                                              {isCall ? "call" : "put"}
+                                              {buildQuantity !== 1 ? "s" : ""} to open with a strike price of{" "}
+                                              <strong>{formatCurrency(strike)}</strong> that expires <strong>{expFormatted}</strong>{" "}
+                                              ({weeks > 0 ? `${weeks} week${weeks !== 1 ? "s" : ""}${days > 0 ? `, ${days} day${days !== 1 ? "s" : ""}` : ""}` : `${days} day${days !== 1 ? "s" : ""}`}). This trade is expected to result in receiving a credit of{" "}
+                                              <strong>{formatCurrency(totalPremium)}</strong>.
+                                              {probOtm != null && probItm != null ? (
+                                                <> This trade has a <strong>{probOtm}%</strong> probability to expire out of the money (OTM) and <strong>{probItm}%</strong> probability to be in the money (ITM / assigned).</>
+                                              ) : null}
+                                              {" "}If assigned at any time you have the obligation to{" "}
+                                              {isCall ? "sell" : "buy"} <strong>{symbol}</strong> at the strike price of <strong>{formatCurrency(strike)}</strong>.
+                                            </p>
+                                          );
+                                        })()}
 
-                                          {/* Graph content area */}
-                                          <div className="ml-8 sm:ml-12 h-full relative">
+                                        {/* P&L vs Stock Price chart */}
+                                        <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50/50 p-3">
+                                          <p className="text-xs font-medium text-gray-700 mb-2">P&L at expiry vs stock price</p>
+                                          <svg viewBox={`0 0 ${w} ${h}`} className="w-full max-w-md h-36" preserveAspectRatio="xMidYMid meet">
+                                            <defs>
+                                              <line id="grid-v" x1="0" y1="0" x2="0" y2={h} stroke="#e5e7eb" strokeWidth="0.5" />
+                                              <line id="grid-h" x1="0" y1="0" x2={w} y2="0" stroke="#e5e7eb" strokeWidth="0.5" />
+                                            </defs>
                                             {/* Zero line */}
-                                            <div className="absolute left-0 right-0 h-0.5 bg-gray-400" style={{ top: `${((0 - minPnl) / pnlRange) * 100}%` }} />
+                                            <line x1={pad} y1={zeroY} x2={w - pad} y2={zeroY} stroke="#9ca3af" strokeWidth="0.5" strokeDasharray="2,2" />
+                                            {/* P&L line */}
+                                            <polyline points={linePoints} fill="none" stroke="#4f46e5" strokeWidth="2" />
+                                            {/* Strike vertical */}
+                                            <line x1={strikeX} y1={pad} x2={strikeX} y2={h - pad} stroke="#7c3aed" strokeWidth="1" strokeDasharray="3,2" opacity={0.8} />
+                                            {/* Breakeven vertical */}
+                                            <line x1={breakevenX} y1={pad} x2={breakevenX} y2={h - pad} stroke="#059669" strokeWidth="1" strokeDasharray="3,2" opacity={0.8} />
+                                            {/* Current price vertical (optional, subtle) */}
+                                            <line x1={currentX} y1={pad} x2={currentX} y2={h - pad} stroke="#3b82f6" strokeWidth="0.5" opacity={0.5} />
+                                          </svg>
+                                          <div className="flex flex-wrap justify-between gap-2 mt-1 text-[10px] text-gray-500">
+                                            <span>{formatCurrency(minPrice)}</span>
+                                            <span className="text-indigo-600 font-medium">Strike {formatCurrency(strike)}</span>
+                                            <span className="text-emerald-600 font-medium">B/E {formatCurrency(breakeven)}</span>
+                                            <span className="text-blue-600">Now {formatCurrency(currentPrice)}</span>
+                                            <span>{formatCurrency(maxPrice)}</span>
+                                          </div>
+                                          <div className="flex gap-4 mt-2 text-[10px]">
+                                            <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-indigo-500 rounded" /> Strike</span>
+                                            <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-emerald-500 rounded" /> Breakeven</span>
+                                            <span className="flex items-center gap-1"><span className="w-2 h-0.5 bg-blue-500 rounded opacity-50" /> Current</span>
+                                          </div>
+                                        </div>
 
-                                            {/* Breakeven line */}
-                                            <div
-                                              className="absolute top-0 bottom-0 w-0.5 bg-indigo-500 opacity-50"
-                                              style={{
-                                                left: `${((breakeven - minPrice) / (maxPrice - minPrice)) * 100}%`,
-                                              }}
-                                            />
-
-                                            {/* Current price line */}
-                                            <div
-                                              className="absolute top-0 bottom-0 w-0.5 bg-blue-500 opacity-50"
-                                              style={{
-                                                left: `${((currentPrice - minPrice) / (maxPrice - minPrice)) * 100}%`,
-                                              }}
-                                            />
-
-                                            {/* P&L Line */}
-                                            <svg className="absolute inset-0 w-full h-full" style={{ left: "0", top: "0" }}>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                          {/* Mini chart (compact) */}
+                                          <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                            <p className="text-xs text-gray-600 mb-2">P&L at expiry (sample)</p>
+                                            <svg viewBox="0 0 100 40" className="w-full h-16">
                                               <polyline
-                                                points={pnlData
-                                                  .map(
-                                                    (d, i) =>
-                                                      `${((d.price - minPrice) / (maxPrice - minPrice)) * 100}%,${100 - ((d.pnl - minPnl) / pnlRange) * 100}%`
-                                                  )
+                                                points={scenarios
+                                                  .map((s, idx) => {
+                                                    const x = (idx / Math.max(1, scenarios.length - 1)) * 100;
+                                                    const y = 40 - ((s.pnl - minPnl) / range) * 40;
+                                                    return `${x},${y}`;
+                                                  })
                                                   .join(" ")}
                                                 fill="none"
                                                 stroke="#4f46e5"
                                                 strokeWidth="2"
                                               />
                                             </svg>
-
-                                            {/* X-axis labels */}
-                                            <div className="absolute -bottom-6 left-0 right-0 flex justify-between text-[10px] sm:text-xs text-gray-500">
-                                              <span className="whitespace-nowrap">{formatCurrency(minPrice)}</span>
-                                              <span className="whitespace-nowrap hidden sm:inline">{formatCurrency(breakeven)}</span>
-                                              <span className="whitespace-nowrap">{formatCurrency(currentPrice)}</span>
-                                              <span className="whitespace-nowrap hidden sm:inline">{formatCurrency(maxPrice)}</span>
+                                            <div className="flex justify-between text-[10px] text-gray-500">
+                                              <span>{scenarios[0]?.label}</span>
+                                              <span>{scenarios[scenarios.length - 1]?.label}</span>
                                             </div>
                                           </div>
-                                        </div>
 
-                                        {/* Legend */}
-                                        <div className="flex gap-4 mt-8 text-xs">
-                                          <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 bg-indigo-500 opacity-50"></div>
-                                            <span>Breakeven</span>
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 bg-blue-500 opacity-50"></div>
-                                            <span>Current Price</span>
+                                          {/* Table */}
+                                          <div className="overflow-hidden rounded-lg border border-gray-200">
+                                            <table className="w-full text-xs">
+                                              <thead className="bg-gray-50 text-gray-600">
+                                                <tr>
+                                                  <th className="text-left px-3 py-2 font-medium">Scenario</th>
+                                                  <th className="text-right px-3 py-2 font-medium">Stock</th>
+                                                  <th className="text-right px-3 py-2 font-medium">P&L</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-gray-100">
+                                                {scenarios.map((s) => (
+                                                  <tr key={s.label}>
+                                                    <td className="px-3 py-2 text-gray-700">{s.label}</td>
+                                                    <td className="px-3 py-2 text-right font-medium text-gray-900">
+                                                      {formatCurrency(s.price)}
+                                                    </td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${s.pnl >= 0 ? "text-green-700" : "text-red-700"}`}>
+                                                      {formatCurrency(s.pnl)}
+                                                    </td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
                                           </div>
                                         </div>
                                       </div>
@@ -1720,170 +1974,56 @@ export default function FindProfitsPage() {
                                 Loading option data...
                               </div>
                             )}
-                          </>
-                        )}
 
-                        {/* Legacy Strike Price Selector (for cash-secured-puts) */}
-                        {selectedStrategy === "cash-secured-puts" && (
-                          <>
-                            {/* Strike Price Selector */}
+                            {/* Load option chain (optional) */}
                             <div className="mb-6">
-                              <h4 className="text-sm font-medium text-gray-700 mb-3">Select Strike Price</h4>
-                              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                                {generateStrikeOptions(tickerData.price, smaData).map((strike) => {
-                                  const isCurrentPrice = Math.abs(strike - tickerData.price) < 5;
-                                  const isSma = smaData && Math.abs(strike - smaData.sma50) < 5;
-                                  const isAbovePrice = strike > tickerData.price;
-
-                                  return (
-                                    <button
-                                      key={strike}
-                                      onClick={() => {
-                                        setSelectedStrike(strike);
-                                        setOptionsResult(null);
-                                      }}
-                                      className={`p-2 rounded-lg text-sm font-medium transition-all ${
-                                        selectedStrike === strike
-                                          ? "bg-indigo-600 text-white ring-2 ring-indigo-300"
-                                          : isCurrentPrice
-                                          ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                          : isSma
-                                          ? "bg-purple-100 text-purple-700 hover:bg-purple-200"
-                                          : isAbovePrice
-                                          ? "bg-green-50 text-green-700 hover:bg-green-100"
-                                          : "bg-red-50 text-red-700 hover:bg-red-100"
-                                      }`}
-                                    >
-                                      ${strike}
-                                      {isCurrentPrice && <span className="block text-xs opacity-75">≈ Price</span>}
-                                      {isSma && !isCurrentPrice && <span className="block text-xs opacity-75">≈ 50MA</span>}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              <p className="text-xs text-gray-500 mt-2">
-                                <span className="inline-block w-3 h-3 bg-red-50 rounded mr-1"></span> Below price (OTM - safer)
-                                <span className="inline-block w-3 h-3 bg-green-50 rounded mx-1 ml-3"></span> Above price (ITM - higher premium)
-                              </p>
-                            </div>
-
-                            {/* Expiration Selector */}
-                            <div className="mb-6">
-                              <h4 className="text-sm font-medium text-gray-700 mb-3">Select Expiration (1-52 weeks)</h4>
-                              <select
-                                value={selectedWeeks}
-                                onChange={(e) => {
-                                  setSelectedWeeks(parseInt(e.target.value));
-                                  setOptionsResult(null);
-                                }}
-                                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                              <p className="text-sm text-gray-600 mb-2">Optional: load the full option chain and pick a contract from the table:</p>
+                              <button
+                                type="button"
+                                onClick={handleLoadOptionChainBuild}
+                                disabled={optionsLoading || !tickerData || buildExpirationWeeks == null}
+                                className="px-4 py-2 rounded-lg border-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                               >
-                                {generateExpirationOptions().map((opt) => (
-                                  <option key={opt.weeks} value={opt.weeks}>
-                                    {opt.label}
-                                  </option>
-                                ))}
-                              </select>
-                              <div className="flex gap-2 mt-2 flex-wrap">
-                                {[1, 2, 4, 8, 12, 26, 52].map((weeks) => (
-                                  <button
-                                    key={weeks}
-                                    onClick={() => {
-                                      setSelectedWeeks(weeks);
-                                      setOptionsResult(null);
-                                    }}
-                                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                                      selectedWeeks === weeks
-                                        ? "bg-indigo-600 text-white"
-                                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                    }`}
-                                  >
-                                    {weeks}w
-                                  </button>
-                                ))}
-                              </div>
+                                {optionsLoading ? (
+                                  <>
+                                    <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                    Loading...
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                                    </svg>
+                                    Load option chain{" "}
+                                    {buildExpirationWeeks == null
+                                      ? "(select expiration)"
+                                      : `(${generateExpirationOptions().find((o) => o.weeks === buildExpirationWeeks)?.label ?? `${buildExpirationWeeks}w`})`}
+                                  </>
+                                )}
+                              </button>
+                              {optionsError && (
+                                <p className="mt-2 text-red-600 text-sm">{optionsError}</p>
+                              )}
                             </div>
                           </>
                         )}
 
-                        {/* Summary - Only for cash-secured-puts (covered-calls uses build flow) */}
-                        {selectedStrike && selectedStrategy === "cash-secured-puts" && (
-                          <div className="bg-white rounded-lg p-4 border border-indigo-200">
-                            <h4 className="font-semibold text-indigo-900 mb-3">
-                              📋 Your Cash-Secured Put Setup
-                            </h4>
-                            <div className="grid grid-cols-2 gap-4 text-sm">
-                              <div>
-                                <p className="text-gray-600">Stock</p>
-                                <p className="font-bold text-gray-900">{tickerData.symbol} @ {formatCurrency(tickerData.price)}</p>
-                              </div>
-                              <div>
-                                <p className="text-gray-600">Strike Price</p>
-                                <p className="font-bold text-gray-900">
-                                  ${selectedStrike} (
-                                  {selectedStrike < tickerData.price ? "OTM" : "ITM"}
-                                  )
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-gray-600">Expiration</p>
-                                <p className="font-bold text-gray-900">{generateExpirationOptions().find(o => o.weeks === selectedWeeks)?.label}</p>
-                              </div>
-                              <div>
-                                <p className="text-gray-600">Moneyness</p>
-                                <p className={`font-bold ${
-                                  selectedStrike < tickerData.price ? "text-green-600" : "text-orange-600"
-                                }`}>
-                                  {((selectedStrike - tickerData.price) / tickerData.price * 100).toFixed(1)}% {
-                                    selectedStrike < tickerData.price ? "OTM" : "ITM"
-                                  }
-                                </p>
-                              </div>
-                              <div className="col-span-2 p-2 bg-amber-50 rounded border border-amber-200">
-                                <p className="text-xs text-amber-800">
-                                  <strong>Cash Required:</strong> {formatCurrency(selectedStrike * 100)} per contract
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={handleSearchOptions}
-                              disabled={optionsLoading}
-                              className="mt-4 w-full px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                            >
-                              {optionsLoading ? (
-                                <>
-                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  Searching Options...
-                                </>
-                              ) : (
-                                <>
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                  </svg>
-                                  Search Put Options
-                                </>
-                              )}
-                            </button>
-                            {optionsError && (
-                              <p className="mt-2 text-red-600 text-sm">{optionsError}</p>
-                            )}
-                          </div>
-                        )}
+                        {/* Legacy CSP strike/expiration selector removed in favor of build dropdowns */}
 
-                        {/* Options Chain Results - Only for cash-secured-puts (covered-calls uses build flow) */}
-                        {optionsResult && selectedStrategy === "cash-secured-puts" && (
+                        {/* Options Chain Results - for both covered-calls (manual pick) and cash-secured-puts */}
+                        {optionsResult && (selectedStrategy === "cash-secured-puts" || selectedStrategy === "covered-calls") && (
                           <div className="mt-6 bg-white rounded-lg p-4 border border-indigo-200">
                             <div className="flex items-center justify-between mb-4">
                               <div className="flex items-center gap-2">
                                 <h4 className="font-semibold text-indigo-900">📊 Option Chain</h4>
                                 <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                  optionsResult.dataSource === "live"
+                                  optionsResult.dataSource === "live" || optionsResult.dataSource === "yahoo"
                                     ? "bg-green-100 text-green-700"
                                     : optionsResult.dataSource === "synthetic"
                                     ? "bg-orange-100 text-orange-700"
                                     : "bg-yellow-100 text-yellow-700"
                                 }`}>
-                                  {optionsResult.dataSource === "live" ? "Live Quotes" :
+                                  {optionsResult.dataSource === "live" || optionsResult.dataSource === "yahoo" ? "Live Quotes" :
                                    optionsResult.dataSource === "synthetic" ? "Modeled" : "Estimated"}
                                 </span>
                               </div>
@@ -1921,7 +2061,17 @@ export default function FindProfitsPage() {
                             ) : (
                               <>
                                 <div className="mb-2 text-[11px] text-gray-500">
-                                  Filter: OI &gt; {minOiForCurrentStrategy.toLocaleString()} (from Configure Automation → Strategy)
+                                  {oiFilterFallbackActive ? (
+                                    <>
+                                      Filters (OI ≥{minOiForCurrentStrategy.toLocaleString()}, Vol ≥{minVolumeForCurrentStrategy.toLocaleString()}, Assign ≤{maxAssignProbForCurrentStrategy}%) removed all rows; showing all strikes.{" "}
+                                      <span className="text-amber-600">Adjust in Automation → Strategy</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      Filter: OI ≥ {minOiForCurrentStrategy.toLocaleString()}, Vol ≥ {minVolumeForCurrentStrategy.toLocaleString()}, Assign ≤ {maxAssignProbForCurrentStrategy}%{" "}
+                                      (Automation → Strategy)
+                                    </>
+                                  )}
                                 </div>
                                 {!optionsCollapsed ? (
                                   <>
@@ -1959,8 +2109,11 @@ export default function FindProfitsPage() {
                                     <tbody>
                                       {visibleOptionChain.map((row) => {
                                         const isATM = Math.abs(row.strike - optionsResult.stockPrice) < 5;
-                                        const isTarget = row.strike === selectedStrike;
-                                        const callSelected = selectedOption?.ticker === row.call?.ticker;
+                                        const isTarget = buildStrike != null ? row.strike === buildStrike : false;
+                                        const callSelected =
+                                          selectedStrategy === "covered-calls"
+                                            ? buildOptionContract?.ticker === row.call?.ticker
+                                            : selectedOption?.ticker === row.call?.ticker;
                                         const putSelected = selectedOption?.ticker === row.put?.ticker;
                                         const pctFromSpot = ((row.strike - optionsResult.stockPrice) / optionsResult.stockPrice) * 100;
                                         const isCoveredCall15Plus = selectedStrategy === "covered-calls" && pctFromSpot >= 15;
@@ -1976,6 +2129,10 @@ export default function FindProfitsPage() {
                                               <>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "covered-calls") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.call);
+                                                    }
                                                     setSelectedOption(row.call);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -1986,6 +2143,10 @@ export default function FindProfitsPage() {
                                                 </td>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "covered-calls") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.call);
+                                                    }
                                                     setSelectedOption(row.call);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -1995,6 +2156,10 @@ export default function FindProfitsPage() {
                                                 </td>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "covered-calls") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.call);
+                                                    }
                                                     setSelectedOption(row.call);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -2004,6 +2169,10 @@ export default function FindProfitsPage() {
                                                 </td>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "covered-calls") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.call);
+                                                    }
                                                     setSelectedOption(row.call);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -2013,6 +2182,10 @@ export default function FindProfitsPage() {
                                                 </td>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "covered-calls") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.call);
+                                                    }
                                                     setSelectedOption(row.call);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -2025,6 +2198,10 @@ export default function FindProfitsPage() {
                                                 </td>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "covered-calls") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.call);
+                                                    }
                                                     setSelectedOption(row.call);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -2071,6 +2248,12 @@ export default function FindProfitsPage() {
                                               <>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "cash-secured-puts") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.put);
+                                                      setBuildLimitTouched(false);
+                                                      setBuildQtyTouched(false);
+                                                    }
                                                     setSelectedOption(row.put);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -2081,6 +2264,12 @@ export default function FindProfitsPage() {
                                                 </td>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "cash-secured-puts") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.put);
+                                                      setBuildLimitTouched(false);
+                                                      setBuildQtyTouched(false);
+                                                    }
                                                     setSelectedOption(row.put);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -2090,6 +2279,12 @@ export default function FindProfitsPage() {
                                                 </td>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "cash-secured-puts") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.put);
+                                                      setBuildLimitTouched(false);
+                                                      setBuildQtyTouched(false);
+                                                    }
                                                     setSelectedOption(row.put);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -2099,6 +2294,12 @@ export default function FindProfitsPage() {
                                                 </td>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "cash-secured-puts") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.put);
+                                                      setBuildLimitTouched(false);
+                                                      setBuildQtyTouched(false);
+                                                    }
                                                     setSelectedOption(row.put);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -2108,6 +2309,12 @@ export default function FindProfitsPage() {
                                                 </td>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "cash-secured-puts") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.put);
+                                                      setBuildLimitTouched(false);
+                                                      setBuildQtyTouched(false);
+                                                    }
                                                     setSelectedOption(row.put);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -2120,6 +2327,12 @@ export default function FindProfitsPage() {
                                                 </td>
                                                 <td
                                                   onClick={() => {
+                                                    if (selectedStrategy === "cash-secured-puts") {
+                                                      setBuildStrike(row.strike);
+                                                      setBuildOptionContract(row.put);
+                                                      setBuildLimitTouched(false);
+                                                      setBuildQtyTouched(false);
+                                                    }
                                                     setSelectedOption(row.put);
                                                     setOptionsCollapsed(true);
                                                   }}
@@ -2229,6 +2442,44 @@ export default function FindProfitsPage() {
                                       </p>
                                     </div>
 
+                                    {/* CSP trade summary note */}
+                                    {selectedStrategy === "cash-secured-puts" && selectedOption.contract_type === "put" && (() => {
+                                      const expDate = selectedOption.expiration_date
+                                        ? new Date(selectedOption.expiration_date + "T12:00:00")
+                                        : null;
+                                      const expFormatted = expDate
+                                        ? expDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                                        : "—";
+                                      const today = new Date();
+                                      const dte = expDate
+                                        ? Math.max(0, Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
+                                        : 0;
+                                      const weeks = Math.floor(dte / 7);
+                                      const days = dte % 7;
+                                      const probOtm = selectedOption.probability_expire_otm != null
+                                        ? Math.round(selectedOption.probability_expire_otm * 100)
+                                        : null;
+                                      const probItm = selectedOption.probability_expire_otm != null
+                                        ? Math.round((1 - selectedOption.probability_expire_otm) * 100)
+                                        : null;
+                                      const symbol = tickerData?.symbol ?? "—";
+                                      const totalCredit = selectedOption.premium * 100 * numContracts;
+                                      const timeText = weeks > 0
+                                        ? `${weeks} week${weeks !== 1 ? "s" : ""}${days > 0 ? `, ${days} day${days !== 1 ? "s" : ""}` : ""}`
+                                        : `${days} day${days !== 1 ? "s" : ""}`;
+                                      return (
+                                        <p className="text-xs text-gray-600 mb-4 pt-3 border-t border-gray-200">
+                                          You are selling <strong>{numContracts}</strong> put{numContracts !== 1 ? "s" : ""} to open with a strike price of{" "}
+                                          <strong>{formatCurrency(selectedOption.strike_price)}</strong> that expires <strong>{expFormatted}</strong>{" "}
+                                          ({timeText}). This trade is expected to result in receiving a credit of <strong>{formatCurrency(totalCredit)}</strong>.
+                                          {probOtm != null && probItm != null ? (
+                                            <> This trade has a <strong>{probOtm}%</strong> probability to expire out of the money (OTM; stock above ${selectedOption.strike_price} at expiration) and <strong>{probItm}%</strong> probability to be in the money (ITM / assigned).</>
+                                          ) : null}
+                                          {" "}If assigned at any time you have the obligation to buy <strong>{symbol}</strong> at the strike price of <strong>{formatCurrency(selectedOption.strike_price)}</strong>.
+                                        </p>
+                                      );
+                                    })()}
+
                                     {/* Option Liquidity */}
                                     <div className="mb-4 p-3 bg-white/80 rounded-lg border border-gray-200">
                                       <div className="flex items-center justify-between mb-2">
@@ -2266,6 +2517,17 @@ export default function FindProfitsPage() {
                                               : "higher IV = more premium, more assignment risk"}
                                           </p>
                                         </div>
+                                        {selectedOption.contract_type === "call" && selectedOption.probability_called_away != null && (
+                                          <div className="bg-blue-50 rounded p-2 border border-blue-100">
+                                            <p className="text-blue-700 mb-0.5">Chance of being called away</p>
+                                            <p className="font-bold text-blue-900">
+                                              ~{Math.round(selectedOption.probability_called_away * 100)}%
+                                            </p>
+                                            <p className="text-[10px] text-blue-600 mt-0.5">
+                                              P(stock &gt; strike at exp), risk-neutral
+                                            </p>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
 
@@ -2686,6 +2948,65 @@ export default function FindProfitsPage() {
                         </p>
                       </div>
 
+                      {/* Option Liquidity (selected contract) */}
+                      <div className="mb-4 p-3 bg-white/80 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-blue-900">Option Liquidity</span>
+                          <span className="text-[10px] text-blue-700">
+                            {buildOptionContract?.dataSource === "synthetic" ? "modeled" : buildOptionContract?.dataSource || ""}
+                          </span>
+                        </div>
+                        {buildOptionContract && buildOptionContract.contract_type === "call" ? (
+                          <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
+                            <div className="bg-blue-50/50 rounded p-2">
+                              <p className="text-blue-800">OI</p>
+                              <p className="font-bold text-blue-950">
+                                {buildOptionContract.open_interest?.toLocaleString?.() ?? "—"}
+                              </p>
+                              <p className="text-[10px] text-blue-700">Rule: higher = easier fills</p>
+                            </div>
+                            <div className="bg-blue-50/50 rounded p-2">
+                              <p className="text-blue-800">Daily Vol (DV)</p>
+                              <p className="font-bold text-blue-950">
+                                {buildOptionContract.volume?.toLocaleString?.() ?? "—"}
+                              </p>
+                              <p className="text-[10px] text-blue-700">Rule: higher = tighter markets</p>
+                            </div>
+                            <div className="bg-blue-50/50 rounded p-2">
+                              <p className="text-blue-800">Bid–Ask Spread</p>
+                              <p className="font-bold text-blue-950">
+                                {buildOptionLiquidity?.spreadAbs != null && buildOptionLiquidity?.spreadPct != null
+                                  ? `${formatCurrency(buildOptionLiquidity.spreadAbs)} (${buildOptionLiquidity.spreadPct.toFixed(1)}%)`
+                                  : "—"}
+                              </p>
+                              <p className="text-[10px] text-blue-700">Rule: &lt;5% good • &gt;10% avoid</p>
+                            </div>
+                            <div className="bg-blue-50/50 rounded p-2">
+                              <p className="text-blue-800">IV</p>
+                              <p className="font-bold text-blue-950">
+                                {buildOptionContract.implied_volatility?.toFixed?.(0) ?? "—"}%
+                              </p>
+                              <p className="text-[10px] text-blue-700">CC: higher IV = more premium (sell)</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-blue-700">
+                            Select an expiration + strike to load a <strong>call</strong> contract.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Rationale explained */}
+                      <div className="mb-4 p-3 bg-white/80 rounded-lg border border-blue-200">
+                        <h4 className="text-xs font-semibold text-blue-900 mb-2">Rationale (e.g. 10% OTM • Low premium • Low IV)</h4>
+                        <ul className="text-[11px] text-blue-800 space-y-1">
+                          <li><strong>% OTM</strong> — Strike above spot; higher % = more cushion, less income, lower chance of being called away.</li>
+                          <li><strong>Low premium</strong> — Far OTM = less time value; you keep more upside, less income.</li>
+                          <li><strong>Low IV</strong> — Market expects smaller moves; options cheaper, probability of finishing above strike is lower.</li>
+                          <li><strong>Chance of being called away</strong> — Risk-neutral P(stock &gt; strike at expiration). Use it to compare strikes.</li>
+                        </ul>
+                      </div>
+
                       {/* Available Shares Display */}
                       {tickerData && selectedAccount && (
                         <div className="mb-4 p-3 bg-white/80 rounded-lg border border-blue-300">
@@ -2767,6 +3088,54 @@ export default function FindProfitsPage() {
                         </p>
                       </div>
 
+                      {/* Option Liquidity (selected contract) */}
+                      <div className="mb-4 p-3 bg-white/80 rounded-lg border border-amber-300">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-amber-900">Option Liquidity</span>
+                          <span className="text-[10px] text-amber-800">
+                            {optionsResult?.dataSource === "synthetic" ? "modeled" : optionsResult?.dataSource || ""}
+                          </span>
+                        </div>
+                        {selectedOption && selectedOption.contract_type === "put" ? (
+                          <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
+                            <div className="bg-amber-50/60 rounded p-2">
+                              <p className="text-amber-900">OI</p>
+                              <p className="font-bold text-amber-950">
+                                {selectedOption.open_interest?.toLocaleString?.() ?? "—"}
+                              </p>
+                              <p className="text-[10px] text-amber-700">Rule: higher = easier fills</p>
+                            </div>
+                            <div className="bg-amber-50/60 rounded p-2">
+                              <p className="text-amber-900">Daily Vol (DV)</p>
+                              <p className="font-bold text-amber-950">
+                                {selectedOption.volume?.toLocaleString?.() ?? "—"}
+                              </p>
+                              <p className="text-[10px] text-amber-700">Rule: higher = tighter markets</p>
+                            </div>
+                            <div className="bg-amber-50/60 rounded p-2">
+                              <p className="text-amber-900">Bid–Ask Spread</p>
+                              <p className="font-bold text-amber-950">
+                                {selectedOptionLiquidity?.spreadAbs != null && selectedOptionLiquidity?.spreadPct != null
+                                  ? `${formatCurrency(selectedOptionLiquidity.spreadAbs)} (${selectedOptionLiquidity.spreadPct.toFixed(1)}%)`
+                                  : "—"}
+                              </p>
+                              <p className="text-[10px] text-amber-700">Rule: &lt;5% good • &gt;10% avoid</p>
+                            </div>
+                            <div className="bg-amber-50/60 rounded p-2">
+                              <p className="text-amber-900">IV</p>
+                              <p className="font-bold text-amber-950">
+                                {selectedOption.implied_volatility?.toFixed?.(0) ?? "—"}%
+                              </p>
+                              <p className="text-[10px] text-amber-700">CSP: higher IV = more premium, more assignment risk</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-amber-800">
+                            Select a <strong>put</strong> contract to see OI, DV, spread, and IV.
+                          </p>
+                        )}
+                      </div>
+
                       {/* Estimated Total Cash */}
                       <div className="mb-4 p-3 bg-white/80 rounded-lg border border-amber-300">
                         <div className="flex items-center justify-between">
@@ -2807,10 +3176,24 @@ export default function FindProfitsPage() {
                           Assigned if stock drops below strike
                         </li>
                       </ul>
-                      <div className="mt-4 p-3 bg-white/60 rounded-lg border border-amber-200">
-                        <p className="text-xs text-amber-900">
-                          <strong>Fidelity:</strong> Requires Level 2+ options approval. With $25k cash, can typically sell 1-2 CSPs on mid-priced stocks.
-                        </p>
+
+                      {/* Max Loss (per contract, scales with quantity) */}
+                      <div className="mt-4 p-3 bg-white/80 rounded-lg border border-amber-300">
+                        <p className="text-xs font-medium text-amber-900 mb-1">Max loss</p>
+                        {buildOptionContract && buildOptionContract.contract_type === "put" ? (
+                          <>
+                            <p className="text-lg font-bold text-amber-950">
+                              {formatCurrency((buildOptionContract.strike_price - buildOptionContract.premium) * 100)} per contract
+                            </p>
+                            {buildQuantity > 1 && (
+                              <p className="text-xs text-amber-800 mt-1">
+                                {formatCurrency((buildOptionContract.strike_price - buildOptionContract.premium) * 100 * buildQuantity)} total for {buildQuantity} contracts
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-xs text-amber-700">Select expiration + strike to see max loss</p>
+                        )}
                       </div>
                     </div>
                   )}

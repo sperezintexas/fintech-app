@@ -22,14 +22,11 @@ type OptionContractData = {
   open_interest: number;
   implied_volatility: number;
   rationale: string;
+  /** Risk-neutral P(stock > strike at expiration); calls only. 0–1. */
+  probability_called_away?: number;
+  /** Risk-neutral P(stock > strike at expiration) = expire OTM; puts only. 0–1. */
+  probability_expire_otm?: number;
   dataSource: string;
-};
-
-type PolygonOptionContract = {
-  ticker: string;
-  strike_price: number;
-  expiration_date: string;
-  contract_type: string;
 };
 
 // Convert to Yahoo Finance option symbol format: TSLA260130C00170000
@@ -44,6 +41,34 @@ function toYahooSymbol(
   const typeChar = contractType === "call" ? "C" : "P";
   const strikeStr = String(Math.round(strikePrice * 1000)).padStart(8, "0");
   return `${underlying}${expDate}${typeChar}${strikeStr}`;
+}
+
+// Standard normal CDF approximation (Abramowitz & Stegun 26.2.17)
+function normCDF(x: number): number {
+  const b1 = 0.31938153, b2 = -0.356563782, b3 = 1.781477937, b4 = -1.821255978, b5 = 1.330274429;
+  const p = 0.2316419;
+
+  const sign = x < 0 ? -1 : 1;
+  x = Math.abs(x);
+  const t = 1.0 / (1.0 + p * x);
+  const phi = Math.exp(-(x * x) / 2) / Math.sqrt(2 * Math.PI);
+  const y = 1.0 - phi * (b1 * t + b2 * t * t + b3 * t * t * t + b4 * t * t * t * t + b5 * t * t * t * t * t);
+  return sign < 0 ? 1.0 - y : y;
+}
+
+// Risk-neutral probability of finishing ITM at expiration (P(S > K) for call) = N(d2)
+function probabilityCalledAway(
+  stockPrice: number,
+  strikePrice: number,
+  daysToExpiration: number,
+  ivDecimal: number
+): number {
+  if (stockPrice <= 0 || strikePrice <= 0 || daysToExpiration <= 0 || ivDecimal <= 0) return 0;
+  const T = daysToExpiration / 365;
+  const sigma = ivDecimal;
+  const r = 0.05;
+  const d2 = (Math.log(stockPrice / strikePrice) + (r - (sigma * sigma) / 2) * T) / (sigma * Math.sqrt(T));
+  return normCDF(d2);
 }
 
 // Estimate implied volatility based on premium and time
@@ -71,12 +96,14 @@ function estimateIV(
   return Math.min(2.0, Math.max(0.1, iv)); // Cap between 10% and 200%
 }
 
-// Generate rationale based on option characteristics
+// Generate rationale based on option characteristics; probCalledAway 0–1 for calls only
 function generateRationale(
   stockPrice: number,
   strikePrice: number,
   contractType: "call" | "put",
-  iv: number
+  iv: number,
+  daysToExp: number,
+  probCalledAway?: number
 ): string {
   const otmPercent = contractType === "call"
     ? ((strikePrice - stockPrice) / stockPrice) * 100
@@ -127,7 +154,13 @@ function generateRationale(
   // IV note
   const ivNote = iv > 0.5 ? " • High IV" : iv < 0.25 ? " • Low IV" : "";
 
-  return `${moneyness} • ${strategy}${ivNote}`;
+  // For calls: add probability of being called away (P(S > K) at exp)
+  const callAwayNote =
+    contractType === "call" && probCalledAway != null
+      ? ` • ~${Math.round(probCalledAway * 100)}% call away`
+      : "";
+
+  return `${moneyness} • ${strategy}${ivNote}${callAwayNote}`;
 }
 
 // Estimate volume (synthetic - based on moneyness and expiration)
@@ -231,7 +264,17 @@ function generateSyntheticOptions(
     const iv = estimateIV(stockPrice, strikePrice, priceEstimate.premium, daysToExp, contractType === "call");
     const volume = estimateVolume(stockPrice, strikePrice, daysToExp);
     const openInterest = estimateOpenInterest(stockPrice, strikePrice, daysToExp);
-    const rationale = generateRationale(stockPrice, strikePrice, contractType, iv);
+    const probOtm = probabilityCalledAway(stockPrice, strikePrice, daysToExp, iv);
+    const probCalledAway = contractType === "call" ? probOtm : undefined;
+    const probExpireOtm = contractType === "put" ? probOtm : undefined;
+    const rationale = generateRationale(
+      stockPrice,
+      strikePrice,
+      contractType,
+      iv,
+      daysToExp,
+      probCalledAway
+    );
     const yahooSymbol = toYahooSymbol(underlying, expiration, contractType, strikePrice);
 
     return {
@@ -250,6 +293,8 @@ function generateSyntheticOptions(
       open_interest: openInterest,
       implied_volatility: Math.round(iv * 1000) / 10, // As percentage (e.g., 35.5%)
       rationale,
+      probability_called_away: probCalledAway,
+      probability_expire_otm: probExpireOtm,
       dataSource: "synthetic",
     };
   });
@@ -263,11 +308,186 @@ async function fetchOptionsForType(
   stockPrice: number,
   daysToExp: number
 ): Promise<{ options: OptionContractData[]; synthetic: boolean }> {
-  // Using synthetic options (Yahoo doesn't provide free options contract reference data like Polygon)
   return {
     options: generateSyntheticOptions(underlying, targetExpiration, targetStrike, contractType, stockPrice, daysToExp),
     synthetic: true,
   };
+}
+
+// Yahoo options contract shape (from yahoo-finance2 options module)
+type YahooCallOrPut = {
+  contractSymbol: string;
+  strike: number;
+  lastPrice: number;
+  bid?: number;
+  ask?: number;
+  volume?: number;
+  openInterest?: number;
+  impliedVolatility?: number;
+  expiration: Date;
+};
+
+type YahooOptionGroup = {
+  expirationDate: Date;
+  calls: YahooCallOrPut[];
+  puts: YahooCallOrPut[];
+};
+
+// Find expiration group matching YYYY-MM-DD from options array; fallback to closest by date.
+// Prefer future expirations when requested date is ahead (avoids showing Jan 30 when user picked 4w = Feb 27).
+function findExpirationGroup(options: YahooOptionGroup[], expTarget: string): YahooOptionGroup {
+  const exact = options.find((g) => {
+    const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
+    return d.toISOString().slice(0, 10) === expTarget;
+  });
+  if (exact) return exact;
+  const targetTime = new Date(expTarget + "T12:00:00Z").getTime();
+  const future = options.filter((g) => {
+    const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
+    return d.getTime() >= targetTime;
+  });
+  // Prefer nearest future expiration when user requested a future date
+  if (future.length > 0) {
+    let best = future[0];
+    let minDiff = Infinity;
+    for (const g of future) {
+      const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
+      const diff = d.getTime() - targetTime;
+      if (diff < minDiff) {
+        minDiff = diff;
+        best = g;
+      }
+    }
+    return best;
+  }
+  // Fallback: closest overall (all expirations are in the past)
+  let closest = options[0];
+  let minDiff = Infinity;
+  for (const g of options) {
+    const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
+    const diff = Math.abs(d.getTime() - targetTime);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = g;
+    }
+  }
+  return closest;
+}
+
+// Try to fetch live options from Yahoo Finance; returns null on failure or empty data
+async function fetchFromYahooOptions(
+  underlying: string,
+  expiration: string,
+  stockPrice: number,
+  daysToExp: number
+): Promise<{
+  optionChain: { strike: number; call: OptionContractData | null; put: OptionContractData | null }[];
+  actualExpiration: string;
+} | null> {
+  const expTarget = expiration.slice(0, 10);
+  const parseResult = (result: unknown) => {
+    const options = (result as { options?: YahooOptionGroup[] }).options;
+    if (!options?.length) return null;
+    return findExpirationGroup(options, expTarget);
+  };
+
+  try {
+    const targetTime = new Date(expTarget + "T12:00:00Z").getTime();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    const isAcceptable = (g: YahooOptionGroup) => {
+      const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
+      const actualTime = d.getTime();
+      // Reject if Yahoo returned an expiration >7 days before what we requested
+      if (actualTime < targetTime - 7 * DAY_MS) return false;
+      return true;
+    };
+
+    // 1. Try WITH date first - Yahoo may return requested expiration or "nearest"
+    const unixSec = Math.floor(new Date(expTarget + "T00:00:00Z").getTime() / 1000);
+    let result = await yahooFinance.options(underlying, { date: unixSec });
+    let group = parseResult(result);
+
+    // 2. If Yahoo returned a past expiration (e.g. Jan 30 when we asked Mar 6), use full chain
+    if (group && !isAcceptable(group)) {
+      group = null;
+    }
+
+    // 3. If empty or unacceptable, try without date (full chain) and pick nearest future
+    if (!group || ((group.calls?.length ?? 0) === 0 && (group.puts?.length ?? 0) === 0)) {
+      result = await yahooFinance.options(underlying);
+      const g2 = parseResult(result);
+      if (g2 && ((g2.calls?.length ?? 0) > 0 || (g2.puts?.length ?? 0) > 0) && isAcceptable(g2)) {
+        group = g2;
+      } else if (g2 && ((g2.calls?.length ?? 0) > 0 || (g2.puts?.length ?? 0) > 0)) {
+        // Full chain has data but g2 might be past - use it anyway if no acceptable alternative
+        group = g2;
+      }
+    }
+
+    if (!group) return null;
+    const calls = group.calls ?? [];
+    const puts = group.puts ?? [];
+    if (calls.length === 0 && puts.length === 0) return null;
+
+    const mapContract = (c: YahooCallOrPut, contractType: "call" | "put"): OptionContractData => {
+      const strikePrice = c.strike;
+      const premium = c.lastPrice > 0 ? c.lastPrice : ((c.bid ?? 0) + (c.ask ?? 0)) / 2 || 0;
+      const bid = (c.bid != null && c.bid > 0) ? c.bid : premium;
+      const ask = (c.ask != null && c.ask > 0) ? c.ask : premium;
+      // Yahoo IV can be decimal (0.35) or already % (35); treat < 2 as decimal
+      const ivRaw = c.impliedVolatility ?? 0;
+      const iv = ivRaw <= 2 ? ivRaw : ivRaw / 100;
+      const expDateStr = c.expiration instanceof Date
+        ? c.expiration.toISOString().slice(0, 10)
+        : expiration;
+      const probOtm = probabilityCalledAway(stockPrice, strikePrice, daysToExp, iv); // P(S > K) at exp
+      const probCalledAway = contractType === "call" ? probOtm : undefined;
+      const probExpireOtm = contractType === "put" ? probOtm : undefined;
+      const rationale = generateRationale(stockPrice, strikePrice, contractType, iv, daysToExp, probCalledAway);
+
+      return {
+        ticker: `O:${underlying}`,
+        yahoo_symbol: c.contractSymbol,
+        strike_price: strikePrice,
+        expiration_date: expDateStr,
+        contract_type: contractType,
+        premium,
+        totalPremium: premium * 100,
+        last_quote: { bid, ask },
+        volume: c.volume ?? 0,
+        open_interest: c.openInterest ?? 0,
+        implied_volatility: Math.round((iv <= 2 ? iv * 100 : iv) * 10) / 10,
+        rationale,
+        probability_called_away: probCalledAway,
+        probability_expire_otm: probExpireOtm,
+        dataSource: "yahoo",
+      };
+    };
+
+    const callList: OptionContractData[] = calls.map((c) => mapContract(c, "call"));
+    const putList: OptionContractData[] = puts.map((p) => mapContract(p, "put"));
+
+    const allStrikes = new Set<number>();
+    callList.forEach((c) => allStrikes.add(c.strike_price));
+    putList.forEach((p) => allStrikes.add(p.strike_price));
+    const strikes = Array.from(allStrikes).sort((a, b) => a - b);
+
+    const optionChain = strikes.map((strike) => ({
+      strike,
+      call: callList.find((c) => c.strike_price === strike) ?? null,
+      put: putList.find((p) => p.strike_price === strike) ?? null,
+    }));
+
+    const actualExpiration =
+      group.expirationDate instanceof Date
+        ? group.expirationDate.toISOString().slice(0, 10)
+        : expiration;
+
+    return { optionChain, actualExpiration };
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -291,7 +511,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get current stock price for premium estimation
+    // Get current stock price
     let stockPrice = targetStrike;
     try {
       const quote = await yahooFinance.quote(underlying);
@@ -300,7 +520,6 @@ export async function GET(request: NextRequest) {
       // Fallback to strike
     }
 
-    // Calculate days to expiration
     const expDate = new Date(expiration);
     const today = new Date();
     const daysToExp = Math.max(
@@ -308,37 +527,43 @@ export async function GET(request: NextRequest) {
       Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     );
 
-    // Fetch both calls and puts in parallel
+    // Try Yahoo live options first; fall back to synthetic on failure or empty
+    const yahooResult = await fetchFromYahooOptions(underlying, expiration, stockPrice, daysToExp);
+
+    if (yahooResult && yahooResult.optionChain.length > 0) {
+      return NextResponse.json({
+        underlying,
+        expiration: yahooResult.actualExpiration,
+        requestedExpiration: expiration,
+        targetStrike,
+        stockPrice,
+        daysToExpiration: daysToExp,
+        strikeTolerance: targetStrike * 0.15,
+        totalCalls: yahooResult.optionChain.filter((r) => r.call).length,
+        totalPuts: yahooResult.optionChain.filter((r) => r.put).length,
+        optionChain: yahooResult.optionChain,
+        dataSource: "yahoo",
+        note:
+          yahooResult.actualExpiration !== expiration
+            ? `Showing options expiring ${yahooResult.actualExpiration} (closest to requested date).`
+            : "Live data from Yahoo Finance. Prices may be delayed.",
+      });
+    }
+
+    // Fallback: synthetic option chain
     const [callsResult, putsResult] = await Promise.all([
-      fetchOptionsForType(
-        underlying,
-        expiration,
-        targetStrike,
-        "call",
-        stockPrice,
-        daysToExp
-      ),
-      fetchOptionsForType(
-        underlying,
-        expiration,
-        targetStrike,
-        "put",
-        stockPrice,
-        daysToExp
-      ),
+      fetchOptionsForType(underlying, expiration, targetStrike, "call", stockPrice, daysToExp),
+      fetchOptionsForType(underlying, expiration, targetStrike, "put", stockPrice, daysToExp),
     ]);
 
     const calls = callsResult.options;
     const puts = putsResult.options;
-    const isSynthetic = callsResult.synthetic || putsResult.synthetic;
 
-    // Get unique strikes and sort them
     const allStrikes = new Set<number>();
     calls.forEach((c: OptionContractData) => allStrikes.add(c.strike_price));
     puts.forEach((p: OptionContractData) => allStrikes.add(p.strike_price));
     const strikes = Array.from(allStrikes).sort((a, b) => a - b);
 
-    // Build option chain by strike
     const optionChain = strikes.map((strike) => {
       const call = calls.find((c: OptionContractData) => c.strike_price === strike);
       const put = puts.find((p: OptionContractData) => p.strike_price === strike);
@@ -349,7 +574,6 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Get actual expiration used (from first option found)
     const actualExpiration = calls[0]?.expiration_date || puts[0]?.expiration_date || expiration;
 
     return NextResponse.json({
@@ -363,12 +587,8 @@ export async function GET(request: NextRequest) {
       totalCalls: calls.length,
       totalPuts: puts.length,
       optionChain,
-      dataSource: isSynthetic ? "synthetic" : "estimated",
-      note: isSynthetic
-        ? "Premiums are modeled estimates (API rate limited). Actual market prices will vary."
-        : actualExpiration !== expiration
-          ? `Showing options expiring ${actualExpiration} (closest to requested date). Premiums are estimated.`
-          : "Premiums are estimated. Actual market prices may vary.",
+      dataSource: "synthetic",
+      note: "Premiums are modeled (no live options feed). Actual market prices will vary.",
     });
   } catch (error) {
     console.error("Error fetching options:", error);

@@ -86,7 +86,10 @@ export type StrategyTag = "covered-call" | "cash-secured-put";
 export type StrategySettings = {
   _id: string;
   accountId: string;
-  thresholds: Record<StrategyTag, { minOpenInterest: number }>;
+  thresholds: Record<
+    StrategyTag,
+    { minOpenInterest: number; minVolume: number; maxAssignmentProbability: number }
+  >;
   createdAt: string;
   updatedAt: string;
 };
@@ -394,7 +397,68 @@ export type SmartXAIReport = {
 };
 
 // Custom Report Definitions (user-configured)
-export type ReportDefinitionType = "smartxai" | "portfoliosummary" | "cleanup";
+export type ReportDefinitionType = "smartxai" | "portfoliosummary" | "cleanup" | "watchlistreport";
+
+// Report message template (e.g. for watchlist Slack). Placeholders: {date}, {stocks}, {options}
+export type ReportTemplateId = "concise" | "detailed" | "actionable" | "risk-aware";
+
+export type ReportTemplate = {
+  id: ReportTemplateId;
+  name: string;
+  description: string;
+  slackTemplate: string;
+};
+
+export const REPORT_TEMPLATES: ReportTemplate[] = [
+  {
+    id: "concise",
+    name: "Concise",
+    description: "Short, punchy watchlist summary",
+    slackTemplate: `📊 Watchlist Alert - {date} Spotting Profit Plays! 💎🤝
+{stocks}
+{options}
+What's your top pick today?
+#stocks #options #trading #TeslaTo1M`,
+  },
+  {
+    id: "detailed",
+    name: "Detailed",
+    description: "Full context with sections and labels",
+    slackTemplate: `📊 *Watchlist Report – {date}*
+_Stocks on watchlist:_
+{stocks}
+
+_Options on watchlist:_
+{options}
+
+Review positions and adjust entries. Full details in the app.`,
+  },
+  {
+    id: "actionable",
+    name: "Actionable",
+    description: "Action-focused with clear next steps",
+    slackTemplate: `📋 Watchlist – {date}
+Stocks: {stocks}
+Options: {options}
+→ Check app for entry/exit signals.`,
+  },
+  {
+    id: "risk-aware",
+    name: "Risk-Aware",
+    description: "Emphasizes risk and due diligence",
+    slackTemplate: `⚠️ Watchlist Update – {date}
+Stocks: {stocks}
+Options: {options}
+Do your own research. Options involve substantial risk.`,
+  },
+];
+
+/** @deprecated Use REPORT_TEMPLATES or reportDef.templateId / customSlackTemplate */
+export const WATCHLIST_REPORT_TEMPLATE = REPORT_TEMPLATES[0].slackTemplate;
+
+export function getReportTemplate(templateId: ReportTemplateId): ReportTemplate {
+  return REPORT_TEMPLATES.find((t) => t.id === templateId) ?? REPORT_TEMPLATES[0];
+}
 
 export type ReportDefinition = {
   _id: string;
@@ -402,6 +466,10 @@ export type ReportDefinition = {
   name: string;
   description: string;
   type: ReportDefinitionType;
+  /** Message template style for Slack (watchlist, etc.). Default: concise */
+  templateId?: ReportTemplateId;
+  /** Override: custom Slack message body. Placeholders: {date}, {stocks}, {options} */
+  customSlackTemplate?: string;
   createdAt: string;
   updatedAt: string;
 };

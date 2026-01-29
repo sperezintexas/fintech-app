@@ -2,6 +2,7 @@ import Agenda, { Job } from "agenda";
 import { ObjectId } from "mongodb";
 import { getDb } from "./mongodb";
 import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, ReportJob, ReportDefinition } from "@/types/portfolio";
+import { getReportTemplate } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
 import { getMultipleTickerOHLC } from "./yahoo";
 import { postToXTweet, truncateForX } from "./x";
@@ -263,6 +264,45 @@ function defineJobs(agenda: Agenda) {
         console.error("Failed to generate PortfolioSummary report for scheduled job:", e);
         bodyText += `Failed to generate PortfolioSummary report.`;
       }
+    } else if (reportDef.type === "watchlistreport") {
+      try {
+        const accountId = reportJob.accountId ?? (reportDef as ReportDefinition & { accountId?: string }).accountId;
+        if (!accountId) {
+          bodyText = "Watchlist report: no account configured.";
+          title = reportDef.name;
+        } else {
+          const watchlistItems = (await db
+            .collection("watchlist")
+            .find({ accountId })
+            .toArray()) as (WatchlistItem & { _id: ObjectId })[];
+        const stocks = watchlistItems.filter((i) => i.type === "stock");
+        const options = watchlistItems.filter(
+          (i) => i.type === "covered-call" || i.type === "csp" || i.type === "call" || i.type === "put"
+        );
+        const dateStr = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+        const stocksBlock =
+          stocks.length > 0
+            ? stocks.map((s) => `• ${s.symbol}${s.underlyingSymbol ? ` (${s.underlyingSymbol})` : ""}`).join("\n")
+            : "_No stocks on watchlist_";
+        const optionsBlock =
+          options.length > 0
+            ? options.map((o) => `• ${o.symbol}${o.underlyingSymbol ? ` (${o.underlyingSymbol})` : ""}`).join("\n")
+            : "_No options on watchlist_";
+        const templateStr =
+          reportDef.customSlackTemplate ??
+          getReportTemplate(reportDef.templateId ?? "concise").slackTemplate;
+        const body = templateStr
+          .replace(/\{date\}/g, dateStr)
+          .replace(/\{stocks\}/g, stocksBlock)
+          .replace(/\{options\}/g, optionsBlock);
+        title = reportDef.name;
+        bodyText = body;
+        }
+      } catch (e) {
+        console.error("Failed to generate Watchlist report for scheduled job:", e);
+        title = reportDef.name;
+        bodyText = `Failed to generate Watchlist report: ${e instanceof Error ? e.message : String(e)}`;
+      }
     } else if (reportDef.type === "cleanup") {
       // Run cleanup job - delete old data older than 30 days
       try {
@@ -327,12 +367,14 @@ function defineJobs(agenda: Agenda) {
 
     if (reportJob.channels.includes("slack") && slackConfig?.target) {
       try {
+        const slackText =
+          reportDef.type === "watchlistreport"
+            ? bodyText
+            : `*${title}*\n${bodyText}${reportLink ? `\n\nView: ${reportLink}` : ""}`;
         await fetch(slackConfig.target, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: `*${title}*\n${bodyText}${reportLink ? `\n\nView: ${reportLink}` : ""}`,
-          }),
+          body: JSON.stringify({ text: slackText }),
         });
       } catch (e) {
         console.error("Failed to post report to Slack:", e);
