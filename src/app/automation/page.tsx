@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import type {
   Account,
@@ -20,7 +19,8 @@ import type {
   ReportTemplateId,
   StrategySettings,
 } from "@/types/portfolio";
-import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS, REPORT_TEMPLATES } from "@/types/portfolio";
+import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS, REPORT_TEMPLATES, getReportTemplate } from "@/types/portfolio";
+import { cronToHuman } from "@/lib/cron-utils";
 import {
   requestPushPermission,
   registerPushSubscription,
@@ -46,7 +46,7 @@ const ITEM_TYPES: { value: WatchlistItemType; label: string }[] = [
   { value: "covered-call", label: "Covered Call" },
 ];
 
-export default function AutomationPage() {
+function AutomationContent() {
   const searchParams = useSearchParams();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
@@ -109,7 +109,7 @@ export default function AutomationPage() {
   const [jobFormError, setJobFormError] = useState<string>("");
   const [jobFormSaving, setJobFormSaving] = useState(false);
 
-  // Strategy settings (min OI filters for Find Profits option chains)
+  // Strategy settings (min OI filters for xAIProfitBuilder option chains)
   const [strategySettingsLoading, setStrategySettingsLoading] = useState(false);
   const [strategySettingsSaving, setStrategySettingsSaving] = useState(false);
   const [strategySettingsMessage, setStrategySettingsMessage] = useState<string>("");
@@ -571,7 +571,7 @@ export default function AutomationPage() {
       });
       const data = (await res.json()) as StrategySettings | { error?: string };
       if (!res.ok) {
-        setStrategySettingsError((data as any).error || "Failed to load strategy settings");
+        setStrategySettingsError((data as { error?: string }).error || "Failed to load strategy settings");
         return;
       }
 
@@ -626,7 +626,7 @@ export default function AutomationPage() {
       });
       const data = (await res.json()) as StrategySettings | { error?: string };
       if (!res.ok) {
-        setStrategySettingsError((data as any).error || "Failed to save strategy settings");
+        setStrategySettingsError((data as { error?: string }).error || "Failed to save strategy settings");
         return;
       }
       setStrategySettings(data as StrategySettings);
@@ -1132,7 +1132,7 @@ export default function AutomationPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-3xl font-bold text-gray-900">Configure Automation</h2>
+            <h2 className="text-3xl font-bold text-gray-900">Setup</h2>
             <p className="text-gray-600 mt-1">Manage watchlist items, alerts, and schedules</p>
           </div>
           <div className="flex items-center gap-4">
@@ -2647,7 +2647,7 @@ export default function AutomationPage() {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Strategy Settings</h3>
               <p className="text-sm text-gray-600 mb-6">
-                Defaults used by Find Profits when filtering option chains.
+                Defaults used by xAIProfitBuilder when filtering option chains.
               </p>
 
               {strategySettingsLoading ? (
@@ -2661,7 +2661,7 @@ export default function AutomationPage() {
                     <div className="p-4 rounded-xl border border-gray-200">
                       <p className="font-medium text-gray-900 mb-1">Covered Calls</p>
                       <p className="text-xs text-gray-500 mb-3">
-                        Option chain filters for Find Profits (calls).
+                        Option chain filters for xAIProfitBuilder (calls).
                       </p>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Min Open Interest</label>
                       <input
@@ -2711,7 +2711,7 @@ export default function AutomationPage() {
                     <div className="p-4 rounded-xl border border-gray-200">
                       <p className="font-medium text-gray-900 mb-1">Cash-Secured Puts</p>
                       <p className="text-xs text-gray-500 mb-3">
-                        Option chain filters for Find Profits (puts).
+                        Option chain filters for xAIProfitBuilder (puts).
                       </p>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Min Open Interest</label>
                       <input
@@ -2936,7 +2936,7 @@ export default function AutomationPage() {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Custom message template (optional)</label>
                           <p className="text-xs text-gray-500 mb-1">
-                            Override the template above. Use {"{date}"}, {"{stocks}"}, {"{options}"} as placeholders.
+                            Override the template above. Use {"{date}"}, {"{reportName}"}, {"{account}"}, {"{stocks}"}, {"{options}"} as placeholders.
                           </p>
                           <textarea
                             value={reportForm.customSlackTemplate}
@@ -3005,15 +3005,31 @@ export default function AutomationPage() {
               ) : (
                 <div className="space-y-3">
                   {reportJobs.map((j) => {
-                    const reportName = reportDefinitions.find((d) => d._id === j.reportId)?.name ?? "Unknown report";
+                    const reportDef = reportDefinitions.find((d) => d._id === j.reportId);
+                    const reportName = reportDef?.name ?? "Unknown report";
+                    const template = getReportTemplate(reportDef?.templateId ?? "concise");
+                    const scheduleFriendly = cronToHuman(j.scheduleCron);
+                    const nextRunFriendly = j.nextRunAt
+                      ? new Intl.DateTimeFormat(undefined, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }).format(new Date(j.nextRunAt))
+                      : null;
                     return (
                       <div key={j._id} className="p-4 rounded-xl border border-gray-200 bg-gray-50">
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0">
                             <p className="font-semibold text-gray-900 truncate">{j.name}</p>
                             <p className="text-sm text-gray-600 mt-1">Report: {reportName}</p>
+                            <p className="text-sm text-gray-600 mt-0.5">Template: {template.name}</p>
+                            <p className="text-sm text-gray-600 mt-0.5">
+                              Schedule: {scheduleFriendly}
+                              {nextRunFriendly && (
+                                <span className="text-gray-500"> · Next: {nextRunFriendly}</span>
+                              )}
+                            </p>
                             <p className="text-xs text-gray-500 mt-2">
-                              Cron: <span className="font-mono">{j.scheduleCron}</span> · Channels: {j.channels.join(", ")} · Status: {j.status}
+                              Channels: {j.channels.join(", ")} · Status: {j.status}
                             </p>
                             {j.lastRunAt && (
                               <p className="text-xs text-gray-500 mt-1">Last run: {new Date(j.lastRunAt).toLocaleString()}</p>
@@ -3203,5 +3219,13 @@ export default function AutomationPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function AutomationPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <AutomationContent />
+    </Suspense>
   );
 }

@@ -1,0 +1,44 @@
+{
+  "templates": [
+    {
+      "id": "concise",
+      "name": "Concise",
+      "description": "Short, action-focused alerts",
+      "subjectTemplate": "[{account}] {action} {symbol} - {reason}",
+      "bodyTemplate": "[{account}] {action} {symbol}\n{reason}\nP/L: {profitPercent}% | Price: {currentPrice}",
+      "smsTemplate": "[{account}] {action} {symbol}: {reason} ({profitPercent}%)",
+      "slackTemplate": "*[{account}]* *{action}* `{symbol}` - {reason} | P/L: {profitPercent}%",
+      "xTemplate": "*{action}* `{symbol}` - {reason} | P/L: {profitPercent}%"
+    },
+    {
+      "id": "detailed",
+      "name": "Detailed",
+      "description": "Full context with reasoning and risk info",
+      "subjectTemplate": "[{account}] [{severity}] {action} {symbol} - {strategy} Alert",
+      "bodyTemplate": "[{account}] Position: {symbol} ({strategy})\nAction: {action}\n\nReason: {reason}\n\nMetrics:\n- Current Price: {currentPrice}\n- Entry Price: {entryPrice}\n- P/L: {profitPercent}% ({profitDollars})\n- DTE: {dte} days\n\nRisk Level: {riskLevel}\n{riskWarning}\n\nSuggested Actions:\n{actions}",
+      "smsTemplate": "[{account}] {action} {symbol}: {reason}. P/L {profitPercent}%. DTE {dte}d",
+      "slackTemplate": ":alert: *[{account}]* *{severity}* | *{action}* `{symbol}`\n> {reason}\n• Price: ${currentPrice} | P/L: {profitPercent}%\n• DTE: {dte} days | Risk: {riskLevel}",
+      "xTemplate": ":alert: *{severity}* | *{action}* `{symbol}`\n> {reason}\n• Price: ${currentPrice} | P/L: {profitPercent}%\n• DTE: {dte} days | Risk: {riskLevel}"
+    },
+    {
+      "id": "actionable",
+      "name": "Actionable",
+      "description": "Action + key metrics only",
+      "subjectTemplate": "[{account}] {action}: {symbol} ({profitPercent}% P/L)",
+      "bodyTemplate": "[{account}] ACTION: {action} {symbol}\n\nKey Metrics:\n- P/L: {profitPercent}% ({profitDollars})\n- Current: {currentPrice}\n- DTE: {dte} days\n\nNext Steps: {actions}",
+      "smsTemplate": "[{account}] {action} {symbol} NOW. {profitPercent}% P/L, {dte}d left",
+      "slackTemplate": ":point_right: *[{account}]* *{action}* `{symbol}` | {profitPercent}% P/L | {dte} DTE\n```{actions}```",
+      "xTemplate": ":point_right: *{action}* `{symbol}` | {profitPercent}% P/L | {dte} DTE\n```{actions}```"
+    },
+    {
+      "id": "risk-aware",
+      "name": "Risk-Aware",
+      "description": "Emphasizes risk warnings and protective actions",
+      "subjectTemplate": "[{account}] [{riskLevel} RISK] {action} {symbol}",
+      "bodyTemplate": "[{account}] ⚠️ RISK ALERT: {symbol}\n\nAction: {action}\nRisk Level: {riskLevel}\n\n{riskWarning}\n\nPosition Details:\n- Strategy: {strategy}\n- P/L: {profitPercent}%\n- DTE: {dte} days\n\nProtective Actions:\n{actions}\n\nDisclosure: {disclosure}",
+      "smsTemplate": "[{account}] ⚠️{riskLevel} {action} {symbol}: {reason}",
+      "slackTemplate": ":warning: *[{account}]* *{riskLevel} RISK* | `{symbol}`\n> {riskWarning}\n*Action:* {action}\n*Reason:* {reason}",
+      "xTemplate": ":warning: *{riskLevel} RISK* | `{symbol}`\n> {riskWarning}\n*Action:* {action}\n*Reason:* {reason}"
+    }
+  ]
+}

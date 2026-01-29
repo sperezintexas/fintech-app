@@ -87,7 +87,7 @@ export async function PUT(
           "positions.$.contracts": positionData.contracts,
           "positions.$.premium": positionData.premium,
         },
-      } as any
+      } as Record<string, unknown>
     );
 
     if (result.matchedCount === 0) {
@@ -129,7 +129,7 @@ export async function DELETE(
 
     const result = await db.collection<AccountDoc>("accounts").updateOne(
       { _id: new ObjectId(accountId) },
-      { $pull: { positions: { _id: id } } } as any
+      { $pull: { positions: { _id: id } } } as Record<string, unknown>
     );
 
     if (result.matchedCount === 0) {

@@ -12,7 +12,7 @@ import type {
   RiskLevel,
 } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "@/lib/watchlist-rules";
-import { getMultipleTickerOHLC, getMarketConditions } from "@/lib/yahoo";
+import { getMultipleTickerOHLC, getMultipleTickerPrices, getMarketConditions } from "@/lib/yahoo";
 import type { MarketIndex } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
@@ -313,6 +313,34 @@ export async function POST(request: NextRequest) {
       console.error("Failed to fetch market status:", err);
     }
 
+    // When we have holdings (positions), compute totalValue and totalProfitLoss from them for accuracy
+    let summaryTotalValue = 0;
+    let summaryTotalProfitLoss = 0;
+    if (positionsSource.some((p) => p.type === "stock" || p.type === "option" || p.type === "cash")) {
+      const tickers = [...new Set(positionsSource.filter((p) => p.ticker).map((p) => p.ticker!))];
+      const prices = await getMultipleTickerPrices(tickers);
+      let costBasis = 0;
+      for (const pos of positionsSource) {
+        if (pos.type === "stock" && pos.ticker) {
+          const livePrice = prices.get(pos.ticker);
+          const currentPrice = livePrice?.price ?? pos.currentPrice ?? 0;
+          const shares = pos.shares ?? 0;
+          const avgCost = pos.purchasePrice ?? 0;
+          summaryTotalValue += shares * currentPrice;
+          costBasis += shares * avgCost;
+        } else if (pos.type === "option") {
+          const contracts = pos.contracts ?? 0;
+          const premium = pos.currentPrice ?? pos.premium ?? 0;
+          const entryPremium = pos.premium ?? premium;
+          summaryTotalValue += contracts * premium * 100;
+          costBasis += contracts * entryPremium * 100;
+        } else if (pos.type === "cash") {
+          summaryTotalValue += pos.amount ?? 0;
+        }
+      }
+      summaryTotalProfitLoss = summaryTotalValue - costBasis;
+    }
+
     // Analyze each position
     const positions: PositionAnalysis[] = [];
     let totalValue = 0;
@@ -422,6 +450,10 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(now);
     expiresAt.setDate(expiresAt.getDate() + 30);
 
+    const finalTotalValue = summaryTotalValue > 0 ? summaryTotalValue : totalValue;
+    const finalTotalProfitLoss = summaryTotalValue > 0 ? summaryTotalProfitLoss : totalProfitLoss;
+    const costBasisForPct = finalTotalValue - finalTotalProfitLoss;
+
     const report: Omit<SmartXAIReport, "_id"> = {
       accountId,
       reportDate,
@@ -429,9 +461,9 @@ export async function POST(request: NextRequest) {
       title: `SmartXAI Says - ${now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`,
       summary: {
         totalPositions: positions.length,
-        totalValue,
-        totalProfitLoss,
-        totalProfitLossPercent: totalValue > 0 ? (totalProfitLoss / (totalValue - totalProfitLoss)) * 100 : 0,
+        totalValue: finalTotalValue,
+        totalProfitLoss: finalTotalProfitLoss,
+        totalProfitLossPercent: costBasisForPct > 0 ? (finalTotalProfitLoss / costBasisForPct) * 100 : 0,
         bullishCount: sentimentCounts.bullish,
         neutralCount: sentimentCounts.neutral,
         bearishCount: sentimentCounts.bearish,
@@ -496,7 +528,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         ...report,
-        _id: (report as any)._id.toString(),
+        _id: (report as { _id: ObjectId })._id.toString(),
       });
     }
 

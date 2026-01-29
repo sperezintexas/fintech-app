@@ -1,3 +1,7 @@
+// Editable on disk: config/report-templates.json, config/alert-templates.json
+import reportTemplatesData from "../../config/report-templates.json";
+import alertTemplatesData from "../../config/alert-templates.json";
+
 export type RiskLevel = "low" | "medium" | "high";
 
 export type Strategy = "growth" | "income" | "balanced" | "aggressive";
@@ -80,7 +84,7 @@ export type WatchlistStrategy =
   | "leap-call"
   | "collar";
 
-// Per-account strategy configuration (Configure Automation → Strategy tab)
+// Per-account strategy configuration (Setup → Strategy tab)
 export type StrategyTag = "covered-call" | "cash-secured-put";
 
 export type StrategySettings = {
@@ -225,6 +229,8 @@ export type AlertTemplate = {
   bodyTemplate: string;
   smsTemplate: string; // Short version for SMS (160 chars)
   slackTemplate: string; // Slack block format
+  /** X/Twitter template (no {account}) */
+  xTemplate: string;
 };
 
 export type AlertFrequency = "realtime" | "daily" | "weekly";
@@ -266,45 +272,8 @@ export const ALERT_CHANNEL_COSTS: Record<AlertDeliveryChannel, { perMessage: num
   twitter: { perMessage: 0, description: "Free - X/Twitter integration" },
 };
 
-// Predefined alert templates
-export const ALERT_TEMPLATES: AlertTemplate[] = [
-  {
-    id: "concise",
-    name: "Concise",
-    description: "Short, action-focused alerts",
-    subjectTemplate: "{action} {symbol} - {reason}",
-    bodyTemplate: "{action} {symbol}\n{reason}\nP/L: {profitPercent}% | Price: {currentPrice}",
-    smsTemplate: "{action} {symbol}: {reason} ({profitPercent}%)",
-    slackTemplate: "*{action}* `{symbol}` - {reason} | P/L: {profitPercent}%",
-  },
-  {
-    id: "detailed",
-    name: "Detailed",
-    description: "Full context with reasoning and risk info",
-    subjectTemplate: "[{severity}] {action} {symbol} - {strategy} Alert",
-    bodyTemplate: "Position: {symbol} ({strategy})\nAction: {action}\n\nReason: {reason}\n\nMetrics:\n- Current Price: {currentPrice}\n- Entry Price: {entryPrice}\n- P/L: {profitPercent}% ({profitDollars})\n- DTE: {dte} days\n\nRisk Level: {riskLevel}\n{riskWarning}\n\nSuggested Actions:\n{actions}",
-    smsTemplate: "{action} {symbol}: {reason}. P/L {profitPercent}%. DTE {dte}d",
-    slackTemplate: ":alert: *{severity}* | *{action}* `{symbol}`\n> {reason}\n• Price: ${currentPrice} | P/L: {profitPercent}%\n• DTE: {dte} days | Risk: {riskLevel}",
-  },
-  {
-    id: "actionable",
-    name: "Actionable",
-    description: "Action + key metrics only",
-    subjectTemplate: "{action}: {symbol} ({profitPercent}% P/L)",
-    bodyTemplate: "ACTION: {action} {symbol}\n\nKey Metrics:\n- P/L: {profitPercent}% ({profitDollars})\n- Current: {currentPrice}\n- DTE: {dte} days\n\nNext Steps: {actions}",
-    smsTemplate: "{action} {symbol} NOW. {profitPercent}% P/L, {dte}d left",
-    slackTemplate: ":point_right: *{action}* `{symbol}` | {profitPercent}% P/L | {dte} DTE\n```{actions}```",
-  },
-  {
-    id: "risk-aware",
-    name: "Risk-Aware",
-    description: "Emphasizes risk warnings and protective actions",
-    subjectTemplate: "[{riskLevel} RISK] {action} {symbol}",
-    bodyTemplate: "⚠️ RISK ALERT: {symbol}\n\nAction: {action}\nRisk Level: {riskLevel}\n\n{riskWarning}\n\nPosition Details:\n- Strategy: {strategy}\n- P/L: {profitPercent}%\n- DTE: {dte} days\n\nProtective Actions:\n{actions}\n\nDisclosure: {disclosure}",
-    smsTemplate: "⚠️{riskLevel} {action} {symbol}: {reason}",
-    slackTemplate: ":warning: *{riskLevel} RISK* | `{symbol}`\n> {riskWarning}\n*Action:* {action}\n*Reason:* {reason}",
-  },
-];
+// Alert templates loaded from config/alert-templates.json. Placeholders: {account}, {action}, {symbol}, {reason}, etc.
+export const ALERT_TEMPLATES: AlertTemplate[] = alertTemplatesData.templates as AlertTemplate[];
 
 // SmartXAI Report Types
 export type MarketSentiment = "bullish" | "neutral" | "bearish";
@@ -399,7 +368,7 @@ export type SmartXAIReport = {
 // Custom Report Definitions (user-configured)
 export type ReportDefinitionType = "smartxai" | "portfoliosummary" | "cleanup" | "watchlistreport";
 
-// Report message template (e.g. for watchlist Slack). Placeholders: {date}, {stocks}, {options}
+// Report message template (e.g. for watchlist Slack). Placeholders: {date}, {reportName}, {account}, {stocks}, {options}
 export type ReportTemplateId = "concise" | "detailed" | "actionable" | "risk-aware";
 
 export type ReportTemplate = {
@@ -407,51 +376,12 @@ export type ReportTemplate = {
   name: string;
   description: string;
   slackTemplate: string;
+  /** X/Twitter template (no {account}). Placeholders: {date}, {reportName}, {stocks}, {options} */
+  xTemplate: string;
 };
 
-export const REPORT_TEMPLATES: ReportTemplate[] = [
-  {
-    id: "concise",
-    name: "Concise",
-    description: "Short, punchy watchlist summary",
-    slackTemplate: `📊 Watchlist Alert - {date} Spotting Profit Plays! 💎🤝
-{stocks}
-{options}
-What's your top pick today?
-#stocks #options #trading #TeslaTo1M`,
-  },
-  {
-    id: "detailed",
-    name: "Detailed",
-    description: "Full context with sections and labels",
-    slackTemplate: `📊 *Watchlist Report – {date}*
-_Stocks on watchlist:_
-{stocks}
-
-_Options on watchlist:_
-{options}
-
-Review positions and adjust entries. Full details in the app.`,
-  },
-  {
-    id: "actionable",
-    name: "Actionable",
-    description: "Action-focused with clear next steps",
-    slackTemplate: `📋 Watchlist – {date}
-Stocks: {stocks}
-Options: {options}
-→ Check app for entry/exit signals.`,
-  },
-  {
-    id: "risk-aware",
-    name: "Risk-Aware",
-    description: "Emphasizes risk and due diligence",
-    slackTemplate: `⚠️ Watchlist Update – {date}
-Stocks: {stocks}
-Options: {options}
-Do your own research. Options involve substantial risk.`,
-  },
-];
+// Report templates loaded from config/report-templates.json. Placeholders: {date}, {reportName}, {account}, {stocks}, {options}
+export const REPORT_TEMPLATES: ReportTemplate[] = reportTemplatesData.templates as ReportTemplate[];
 
 /** @deprecated Use REPORT_TEMPLATES or reportDef.templateId / customSlackTemplate */
 export const WATCHLIST_REPORT_TEMPLATE = REPORT_TEMPLATES[0].slackTemplate;
@@ -468,8 +398,10 @@ export type ReportDefinition = {
   type: ReportDefinitionType;
   /** Message template style for Slack (watchlist, etc.). Default: concise */
   templateId?: ReportTemplateId;
-  /** Override: custom Slack message body. Placeholders: {date}, {stocks}, {options} */
+  /** Override: custom Slack message body. Placeholders: {date}, {reportName}, {account}, {stocks}, {options} */
   customSlackTemplate?: string;
+  /** Override: custom X/Twitter message body (no {account}). Placeholders: {date}, {reportName}, {stocks}, {options} */
+  customXTemplate?: string;
   createdAt: string;
   updatedAt: string;
 };

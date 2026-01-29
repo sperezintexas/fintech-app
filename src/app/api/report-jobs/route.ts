@@ -15,11 +15,6 @@ async function upsertAgendaSchedule(jobId: string, cron: string): Promise<void> 
   await agenda.every(cron, "scheduled-report", { jobId });
 }
 
-async function cancelAgendaSchedule(jobId: string): Promise<void> {
-  const agenda = await getAgenda();
-  await agenda.cancel({ name: "scheduled-report", "data.jobId": jobId });
-}
-
 // GET /api/report-jobs?accountId=...
 export async function GET(request: NextRequest) {
   try {
@@ -37,11 +32,25 @@ export async function GET(request: NextRequest) {
       .sort({ createdAt: -1 })
       .toArray();
 
+    const agenda = await getAgenda();
+    const scheduledReports = await agenda.jobs({ name: "scheduled-report" });
+    const nextRunByJobId = new Map<string, string>();
+    for (const job of scheduledReports) {
+      const jobId = (job.attrs.data as { jobId?: string })?.jobId;
+      if (jobId && job.attrs.nextRunAt) {
+        nextRunByJobId.set(jobId, job.attrs.nextRunAt.toISOString());
+      }
+    }
+
     return NextResponse.json(
-      jobs.map((j) => ({
-        ...j,
-        _id: j._id.toString(),
-      }))
+      jobs.map((j) => {
+        const id = j._id.toString();
+        return {
+          ...j,
+          _id: id,
+          nextRunAt: nextRunByJobId.get(id) ?? j.nextRunAt ?? undefined,
+        };
+      })
     );
   } catch (error) {
     console.error("Failed to fetch report jobs:", error);

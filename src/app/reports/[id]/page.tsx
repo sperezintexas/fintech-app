@@ -4,13 +4,51 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
-import type { SmartXAIReport, MarketSentiment } from "@/types/portfolio";
+import type { SmartXAIReport, MarketSentiment, MarketIndex, PositionAnalysis } from "@/types/portfolio";
+
+type PortfolioSummaryReport = {
+  reportType: "portfoliosummary";
+  title: string;
+  reportDateTime: string;
+  accounts: Array<{
+    name: string;
+    broker?: string;
+    riskLevel: string;
+    strategy?: string;
+    totalValue: number;
+    dailyChange?: number;
+    dailyChangePercent?: number;
+    weekChange?: number;
+    weekChangePercent?: number;
+    positions: Array<{
+      symbol: string;
+      shares?: number;
+      avgCost: number;
+      currentPrice: number;
+      dailyChangePercent: number;
+      unrealizedPnLPercent: number;
+    }>;
+    optionsActivity?: string;
+    recommendation?: string;
+  }>;
+  marketSnapshot: {
+    SPY: { price: number; changePercent: number };
+    QQQ: { price: number; changePercent: number };
+    VIX: { price: number; level: string };
+    TSLA: { price: number; changePercent: number };
+  };
+  goalsProgress: {
+    merrill: { target: number; targetDate: string; progressPercent: number; cagrNeeded: number };
+    fidelity: { targetDate: string; trajectory: string };
+  };
+};
+
+type ReportState = (SmartXAIReport & { reportType?: string }) | PortfolioSummaryReport | null;
 
 export default function ReportPage() {
   const params = useParams();
   const reportId = params.id as string;
-
-  const [report, setReport] = useState<(SmartXAIReport & { reportType?: string }) | any>(null);
+  const [report, setReport] = useState<ReportState>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -21,7 +59,7 @@ export default function ReportPage() {
         let res = await fetch(`/api/reports/smartxai?id=${reportId}`);
         if (res.ok) {
           const data = await res.json();
-          setReport({ ...data, reportType: "smartxai" } as any);
+          setReport({ ...data, reportType: "smartxai" } as ReportState);
           setLoading(false);
           return;
         }
@@ -31,7 +69,7 @@ export default function ReportPage() {
         if (res.ok) {
           const portfolioReport = await res.json();
           if (portfolioReport && !portfolioReport.error) {
-            setReport({ ...portfolioReport, reportType: "portfoliosummary" } as any);
+            setReport({ ...portfolioReport, reportType: "portfoliosummary" } as PortfolioSummaryReport);
             setLoading(false);
             return;
           }
@@ -104,7 +142,7 @@ export default function ReportPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Report Not Found</h1>
           <Link href="/automation" className="text-blue-600 hover:text-blue-800">
-            Back to Configure Automation
+            Back to Setup
           </Link>
         </div>
       </div>
@@ -113,6 +151,7 @@ export default function ReportPage() {
 
   // Render PortfolioSummary report
   if (report.reportType === "portfoliosummary") {
+    const portfolioReport = report as PortfolioSummaryReport;
     const formatCurrency = (value: number) =>
       new Intl.NumberFormat("en-US", {
         style: "currency",
@@ -129,13 +168,13 @@ export default function ReportPage() {
         <AppHeader />
         <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-6">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">{report.title}</h2>
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">{portfolioReport.title}</h2>
             <p className="text-gray-600 mb-6">
-              Generated: {new Date(report.reportDateTime).toLocaleString()}
+              Generated: {new Date(portfolioReport.reportDateTime).toLocaleString()}
             </p>
 
             <div className="space-y-6">
-              {report.accounts.map((acc: any, idx: number) => (
+              {portfolioReport.accounts.map((acc, idx: number) => (
                 <div key={idx} className="border-t border-gray-200 pt-6 first:border-t-0 first:pt-0">
                   <h3 className="text-xl font-semibold text-gray-900 mb-3">
                     {acc.broker || acc.name} ({acc.riskLevel === "low" || acc.riskLevel === "medium" ? "Moderate" : "Aggressive"} – {acc.strategy || "Core"})
@@ -148,10 +187,10 @@ export default function ReportPage() {
                       </p>
                     )}
                     <p>
-                      • Portfolio Change:     Today: {formatCurrency(acc.dailyChange)} ({formatPercent(acc.dailyChangePercent)})    Week: {formatCurrency(acc.weekChange || 0)} ({formatPercent(acc.weekChangePercent || 0)})
+                      • Portfolio Change:     Today: {formatCurrency(acc.dailyChange ?? 0)} ({formatPercent(acc.dailyChangePercent ?? 0)})    Week: {formatCurrency(acc.weekChange ?? 0)} ({formatPercent(acc.weekChangePercent ?? 0)})
                     </p>
-                    {acc.optionsActivity && <p>• Options Activity:     {acc.optionsActivity}</p>}
-                    {acc.recommendation && <p>• Recommendation:       {acc.recommendation}</p>}
+                    {acc.optionsActivity != null && <p>• Options Activity:     {acc.optionsActivity}</p>}
+                    {acc.recommendation != null && <p>• Recommendation:       {acc.recommendation}</p>}
                   </div>
                 </div>
               ))}
@@ -159,10 +198,10 @@ export default function ReportPage() {
               <div className="border-t border-gray-200 pt-6">
                 <h3 className="text-xl font-semibold text-gray-900 mb-3">Market Snapshot</h3>
                 <div className="space-y-2 text-sm font-mono">
-                  <p>• SPY:      {formatCurrency(report.marketSnapshot.SPY.price)} ({formatPercent(report.marketSnapshot.SPY.changePercent)})</p>
-                  <p>• QQQ:      {formatCurrency(report.marketSnapshot.QQQ.price)} ({formatPercent(report.marketSnapshot.QQQ.changePercent)})</p>
-                  <p>• VIX:      {report.marketSnapshot.VIX.price.toFixed(1)} (fear level: {report.marketSnapshot.VIX.level})</p>
-                  <p>• TSLA:     {formatCurrency(report.marketSnapshot.TSLA.price)} ({formatPercent(report.marketSnapshot.TSLA.changePercent)})</p>
+                  <p>• SPY:      {formatCurrency(portfolioReport.marketSnapshot.SPY.price)} ({formatPercent(portfolioReport.marketSnapshot.SPY.changePercent)})</p>
+                  <p>• QQQ:      {formatCurrency(portfolioReport.marketSnapshot.QQQ.price)} ({formatPercent(portfolioReport.marketSnapshot.QQQ.changePercent)})</p>
+                  <p>• VIX:      {portfolioReport.marketSnapshot.VIX.price.toFixed(1)} (fear level: {portfolioReport.marketSnapshot.VIX.level})</p>
+                  <p>• TSLA:     {formatCurrency(portfolioReport.marketSnapshot.TSLA.price)} ({formatPercent(portfolioReport.marketSnapshot.TSLA.changePercent)})</p>
                 </div>
               </div>
 
@@ -170,10 +209,10 @@ export default function ReportPage() {
                 <h3 className="text-xl font-semibold text-gray-900 mb-3">Progress Toward Goals</h3>
                 <div className="space-y-2 text-sm font-mono">
                   <p>
-                    • Merrill → {formatCurrency(report.goalsProgress.merrill.target)} balanced by {report.goalsProgress.merrill.targetDate}: ~{report.goalsProgress.merrill.progressPercent.toFixed(1)}% of way (assuming {Math.round(report.goalsProgress.merrill.cagrNeeded)}-{Math.ceil(report.goalsProgress.merrill.cagrNeeded * 1.4)}% CAGR needed)
+                    • Merrill → {formatCurrency(portfolioReport.goalsProgress.merrill.target)} balanced by {portfolioReport.goalsProgress.merrill.targetDate}: ~{portfolioReport.goalsProgress.merrill.progressPercent.toFixed(1)}% of way (assuming {Math.round(portfolioReport.goalsProgress.merrill.cagrNeeded)}-{Math.ceil(portfolioReport.goalsProgress.merrill.cagrNeeded * 1.4)}% CAGR needed)
                   </p>
                   <p>
-                    • Fidelity → max growth by {report.goalsProgress.fidelity.targetDate}: current trajectory [{report.goalsProgress.fidelity.trajectory}]
+                    • Fidelity → max growth by {portfolioReport.goalsProgress.fidelity.targetDate}: current trajectory [{portfolioReport.goalsProgress.fidelity.trajectory}]
                   </p>
                 </div>
               </div>
@@ -194,7 +233,7 @@ export default function ReportPage() {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
-              Back to Configure Automation
+              Back to Setup
             </Link>
           </div>
         </main>
@@ -202,6 +241,7 @@ export default function ReportPage() {
     );
   }
 
+  const smartReport = report as SmartXAIReport;
   return (
     <div className="min-h-screen bg-gray-50">
       <AppHeader />
@@ -212,14 +252,14 @@ export default function ReportPage() {
         <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl shadow-sm border border-indigo-200 p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-3xl font-bold text-indigo-900 mb-2">{report.title}</h2>
+              <h2 className="text-3xl font-bold text-indigo-900 mb-2">{smartReport.title}</h2>
               <p className="text-indigo-700">
-                Generated: {new Date(report.reportDateTime).toLocaleString()}
+                Generated: {new Date(smartReport.reportDateTime).toLocaleString()}
               </p>
             </div>
-            <div className={`px-4 py-2 rounded-full border-2 ${getSentimentColor(report.marketOverview.overallSentiment)}`}>
+            <div className={`px-4 py-2 rounded-full border-2 ${getSentimentColor(smartReport.marketOverview.overallSentiment)}`}>
               <span className="font-semibold">
-                {report.marketOverview.overallSentiment.toUpperCase()} Market
+                {smartReport.marketOverview.overallSentiment.toUpperCase()} Market
               </span>
             </div>
           </div>
@@ -228,22 +268,22 @@ export default function ReportPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
             <div className="bg-white/60 rounded-lg p-4">
               <p className="text-xs text-gray-600 mb-1">Total Positions</p>
-              <p className="text-2xl font-bold text-gray-900">{report.summary.totalPositions}</p>
+              <p className="text-2xl font-bold text-gray-900">{smartReport.summary.totalPositions}</p>
             </div>
             <div className="bg-white/60 rounded-lg p-4">
               <p className="text-xs text-gray-600 mb-1">Total Value</p>
-              <p className="text-2xl font-bold text-gray-900">{formatCurrency(report.summary.totalValue)}</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(smartReport.summary.totalValue)}</p>
             </div>
             <div className="bg-white/60 rounded-lg p-4">
               <p className="text-xs text-gray-600 mb-1">Total P/L</p>
-              <p className={`text-2xl font-bold ${report.summary.totalProfitLoss >= 0 ? "text-green-600" : "text-red-600"}`}>
-                {formatCurrency(report.summary.totalProfitLoss)}
+              <p className={`text-2xl font-bold ${smartReport.summary.totalProfitLoss >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {formatCurrency(smartReport.summary.totalProfitLoss)}
               </p>
             </div>
             <div className="bg-white/60 rounded-lg p-4">
               <p className="text-xs text-gray-600 mb-1">P/L %</p>
-              <p className={`text-2xl font-bold ${report.summary.totalProfitLossPercent >= 0 ? "text-green-600" : "text-red-600"}`}>
-                {formatPercent(report.summary.totalProfitLossPercent)}
+              <p className={`text-2xl font-bold ${smartReport.summary.totalProfitLossPercent >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {formatPercent(smartReport.summary.totalProfitLossPercent)}
               </p>
             </div>
           </div>
@@ -252,23 +292,23 @@ export default function ReportPage() {
           <div className="mt-4 flex items-center gap-4 text-sm">
             <span className="text-gray-600">Sentiment:</span>
             <span className="px-2 py-1 rounded bg-green-100 text-green-800">
-              {report.summary.bullishCount} Bullish
+              {smartReport.summary.bullishCount} Bullish
             </span>
             <span className="px-2 py-1 rounded bg-gray-100 text-gray-800">
-              {report.summary.neutralCount} Neutral
+              {smartReport.summary.neutralCount} Neutral
             </span>
             <span className="px-2 py-1 rounded bg-red-100 text-red-800">
-              {report.summary.bearishCount} Bearish
+              {smartReport.summary.bearishCount} Bearish
             </span>
           </div>
         </div>
 
         {/* Market Overview */}
-            {report.marketOverview.indices.length > 0 && (
+            {smartReport.marketOverview.indices.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Market Overview</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {report.marketOverview.indices.map((index: any) => (
+              {smartReport.marketOverview.indices.map((index: MarketIndex) => (
                 <div key={index.symbol} className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-600 mb-1">{index.name}</p>
                   <p className="font-bold text-gray-900">{formatCurrency(index.price)}</p>
@@ -284,10 +324,10 @@ export default function ReportPage() {
         {/* Position Reports */}
         <div className="space-y-4">
           <h3 className="text-xl font-bold text-gray-900">
-            Position Analysis ({report.positions.length})
+            Position Analysis ({smartReport.positions.length})
           </h3>
 
-          {report.positions.map((position: any) => (
+          {smartReport.positions.map((position: PositionAnalysis) => (
             <div
               key={position.watchlistItemId}
               className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
@@ -403,7 +443,7 @@ export default function ReportPage() {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            Back to Configure Automation
+            Back to Setup
           </Link>
         </div>
       </main>

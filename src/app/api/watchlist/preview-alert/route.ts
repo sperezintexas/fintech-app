@@ -31,9 +31,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Watchlist item not found" }, { status: 404 });
     }
 
+    const itemDocWithId = itemDoc as { _id: ObjectId } & Record<string, unknown>;
     const item = {
-      ...(itemDoc as any),
-      _id: (itemDoc as any)._id.toString(),
+      ...itemDocWithId,
+      _id: itemDocWithId._id.toString(),
     } as WatchlistItem;
 
     // Fetch account for risk level
@@ -107,6 +108,7 @@ export async function POST(request: NextRequest) {
       item,
       riskLevel,
       template,
+      accountName: (account as { name?: string })?.name,
     });
 
     return NextResponse.json({

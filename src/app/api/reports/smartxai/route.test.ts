@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST, GET } from "./route";
 import { getMultipleTickerOHLC, getMarketConditions } from "@/lib/yahoo";
 import { getDb } from "@/lib/mongodb";
-import { analyzeWatchlistItem } from "@/lib/watchlist-rules";
 import { NextRequest } from "next/server";
 import { ObjectId } from "mongodb";
 
@@ -131,7 +130,7 @@ describe("POST /api/reports/smartxai", () => {
       suggestedActions: [],
     });
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
     vi.mocked(getMultipleTickerOHLC).mockResolvedValue(mockMarketData);
     vi.mocked(getMarketConditions).mockResolvedValue(mockMarketConditions);
 
@@ -178,7 +177,7 @@ describe("POST /api/reports/smartxai", () => {
       }),
     };
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
 
     const request = new NextRequest("http://localhost/api/reports/smartxai", {
       method: "POST",
@@ -221,7 +220,7 @@ describe("POST /api/reports/smartxai", () => {
       }),
     };
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
 
     const request = new NextRequest("http://localhost/api/reports/smartxai", {
       method: "POST",
@@ -261,7 +260,7 @@ describe("GET /api/reports/smartxai", () => {
       }),
     };
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
 
     const request = new NextRequest(
       `http://localhost/api/reports/smartxai?id=${reportId}`
@@ -287,7 +286,7 @@ describe("GET /api/reports/smartxai", () => {
       }),
     };
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
 
     const request = new NextRequest(
       `http://localhost/api/reports/smartxai?id=${reportId}`
@@ -328,7 +327,7 @@ describe("GET /api/reports/smartxai", () => {
       }),
     };
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
 
     const request = new NextRequest(
       `http://localhost/api/reports/smartxai?accountId=${accountId}`

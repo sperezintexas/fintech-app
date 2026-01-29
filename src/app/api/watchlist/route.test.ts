@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NextRequest } from "next/server";
 import { POST } from "./route";
 import { getDb } from "@/lib/mongodb";
 import { getRiskDisclosure } from "@/lib/watchlist-rules";
@@ -17,7 +18,8 @@ describe("POST /api/watchlist", () => {
     vi.mocked(getRiskDisclosure).mockReturnValue({
       description: "risk desc",
       risks: ["r1", "r2"],
-    } as any);
+      maxLossDesc: "Max loss description",
+    });
   });
 
   it("adds a stock watchlist item", async () => {
@@ -37,7 +39,7 @@ describe("POST /api/watchlist", () => {
       }),
     };
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
 
     const request = {
       json: async () => ({
@@ -49,7 +51,7 @@ describe("POST /api/watchlist", () => {
         quantity: 10,
         entryPrice: 150,
       }),
-    } as any;
+    } as unknown as NextRequest;
 
     const res = await POST(request);
     const data = await res.json();
@@ -81,7 +83,7 @@ describe("POST /api/watchlist", () => {
       }),
     };
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
 
     const request = {
       json: async () => ({
@@ -96,7 +98,7 @@ describe("POST /api/watchlist", () => {
         expirationDate: "2026-06-20",
         entryPremium: 5,
       }),
-    } as any;
+    } as unknown as NextRequest;
 
     const res = await POST(request);
     const data = await res.json();
@@ -115,7 +117,7 @@ describe("POST /api/watchlist", () => {
   it("validates required fields", async () => {
     const request = {
       json: async () => ({ symbol: "AAPL" }),
-    } as any;
+    } as unknown as NextRequest;
 
     const res = await POST(request);
     expect(res.status).toBe(400);

@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import Link from "next/link";
-import { Account, RiskLevel } from "@/types/portfolio";
+import { useState, useEffect, useMemo } from "react";
+import { Account, RiskLevel, StrategySettings } from "@/types/portfolio";
 import { AppHeader } from "@/components/AppHeader";
 
 type Strategy = {
@@ -503,7 +502,7 @@ export default function FindProfitsPage() {
   const [watchlistSuccess, setWatchlistSuccess] = useState<string | null>(null);
   const [watchlistError, setWatchlistError] = useState("");
 
-  // Strategy thresholds (configured in Configure Automation → Strategy)
+  // Strategy thresholds (configured in Setup → Strategy)
   const [minOiThresholds, setMinOiThresholds] = useState<{
     coveredCall: number;
     cashSecuredPut: number;
@@ -545,12 +544,13 @@ export default function FindProfitsPage() {
           `/api/strategy-settings?accountId=${encodeURIComponent(selectedAccountId)}`,
           { cache: "no-store" }
         );
-        const data = (await res.json()) as any;
+        const data = (await res.json()) as StrategySettings | { error?: string };
         if (!res.ok) return;
-        const ccOi = Number(data?.thresholds?.["covered-call"]?.minOpenInterest);
-        const cspOi = Number(data?.thresholds?.["cash-secured-put"]?.minOpenInterest);
-        const ccVol = Number(data?.thresholds?.["covered-call"]?.minVolume);
-        const cspVol = Number(data?.thresholds?.["cash-secured-put"]?.minVolume);
+        const settings = "thresholds" in data ? data : null;
+        const ccOi = Number(settings?.thresholds?.["covered-call"]?.minOpenInterest);
+        const cspOi = Number(settings?.thresholds?.["cash-secured-put"]?.minOpenInterest);
+        const ccVol = Number(settings?.thresholds?.["covered-call"]?.minVolume);
+        const cspVol = Number(settings?.thresholds?.["cash-secured-put"]?.minVolume);
         setMinOiThresholds({
           coveredCall: Number.isFinite(ccOi) ? ccOi : 500,
           cashSecuredPut: Number.isFinite(cspOi) ? cspOi : 500,
@@ -559,8 +559,8 @@ export default function FindProfitsPage() {
           coveredCall: Number.isFinite(ccVol) ? ccVol : 0,
           cashSecuredPut: Number.isFinite(cspVol) ? cspVol : 0,
         });
-        const ccAssign = Number(data?.thresholds?.["covered-call"]?.maxAssignmentProbability);
-        const cspAssign = Number(data?.thresholds?.["cash-secured-put"]?.maxAssignmentProbability);
+        const ccAssign = Number(settings?.thresholds?.["covered-call"]?.maxAssignmentProbability);
+        const cspAssign = Number(settings?.thresholds?.["cash-secured-put"]?.maxAssignmentProbability);
         setMaxAssignProbThresholds({
           coveredCall: Number.isFinite(ccAssign) ? ccAssign : 100,
           cashSecuredPut: Number.isFinite(cspAssign) ? cspAssign : 100,
@@ -925,7 +925,7 @@ export default function FindProfitsPage() {
           strikePrice: selectedOption.strike_price,
           expirationDate: selectedOption.expiration_date,
           entryPremium: selectedOption.premium,
-          notes: `Added from Find Profits • ${userOutlook || "unknown"} outlook • ${tickerData.symbol} ${selectedOption.expiration_date} ${selectedOption.contract_type.toUpperCase()} $${selectedOption.strike_price} • est prem $${selectedOption.premium.toFixed(2)}`,
+          notes: `Added from xAIProfitBuilder • ${userOutlook || "unknown"} outlook • ${tickerData.symbol} ${selectedOption.expiration_date} ${selectedOption.contract_type.toUpperCase()} $${selectedOption.strike_price} • est prem $${selectedOption.premium.toFixed(2)}`,
         }),
       });
 
@@ -1047,7 +1047,7 @@ export default function FindProfitsPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900">Find Profits</h2>
+          <h2 className="text-3xl font-bold text-gray-900">xAIProfitBuilder</h2>
           <p className="text-gray-600 mt-1">Select a strategy and analyze opportunities based on your risk profile</p>
         </div>
 

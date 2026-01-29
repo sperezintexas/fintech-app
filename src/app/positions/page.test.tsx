@@ -29,17 +29,13 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert
-    expect(screen.getByText("AAPL")).toBeInTheDocument();
-    expect(screen.getByText("Stock")).toBeInTheDocument();
-    // Shares: 10
-    expect(screen.getByText("10.000")).toBeInTheDocument();
-    // Last Price: $175.00
-    expect(screen.getByText("$175.00")).toBeInTheDocument();
-    // Total Cost: $1,500.00 (10 * 150)
-    expect(screen.getByText("$1,500.00")).toBeInTheDocument();
-    // Market Value: $1,750.00 (10 * 175)
-    expect(screen.getByText("$1,750.00")).toBeInTheDocument();
+    // Assert (PositionList renders desktop + mobile views, so use getAllByText)
+    expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Stock").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("10.000").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$175.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$1,500.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$1,750.00").length).toBeGreaterThan(0);
   });
 
   it("should display positions with correct calculations for option positions", () => {
@@ -67,17 +63,13 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert
-    expect(screen.getByText("TSLA")).toBeInTheDocument();
-    expect(screen.getByText("Option")).toBeInTheDocument();
-    // Shares: 200 (2 contracts * 100)
-    expect(screen.getByText("200.000")).toBeInTheDocument();
-    // Last Price: $6.00
-    expect(screen.getByText("$6.00")).toBeInTheDocument();
-    // Total Cost: $1,000.00 (2 * 5 * 100)
-    expect(screen.getByText("$1,000.00")).toBeInTheDocument();
-    // Market Value: $1,200.00 (2 * 6 * 100)
-    expect(screen.getByText("$1,200.00")).toBeInTheDocument();
+    // Assert (options display formatted symbol e.g. TSLA260320C00250000)
+    expect(screen.getAllByText(/TSLA/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Option").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("200.000").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$6.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$1,000.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$1,200.00").length).toBeGreaterThan(0);
   });
 
   it("should display positions with correct calculations for cash positions", () => {
@@ -102,10 +94,9 @@ describe("PositionList - Position Calculations", () => {
     );
 
     // Assert
-    expect(screen.getByText("CASH")).toBeInTheDocument();
-    expect(screen.getByText("Cash")).toBeInTheDocument();
-    // Shares: — (not applicable for cash)
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getAllByText("CASH").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cash").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
     // Last Price, Total Cost, Market Value: $5,000.00
     expect(screen.getAllByText("$5,000.00").length).toBeGreaterThanOrEqual(2);
   });
@@ -151,15 +142,14 @@ describe("PositionList - Position Calculations", () => {
     );
 
     // Assert
-    // Check all position types are displayed
-    expect(screen.getByText("Stock")).toBeInTheDocument();
-    expect(screen.getByText("Option")).toBeInTheDocument();
-    expect(screen.getByText("Cash")).toBeInTheDocument();
+    expect(screen.getAllByText("Stock").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Option").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cash").length).toBeGreaterThan(0);
 
-    // Check all symbols
-    expect(screen.getByText("AAPL")).toBeInTheDocument();
-    expect(screen.getByText("TSLA")).toBeInTheDocument();
-    expect(screen.getByText("CASH")).toBeInTheDocument();
+    // Check all symbols (options use formatted symbol containing ticker)
+    expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/TSLA/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("CASH").length).toBeGreaterThan(0);
   });
 
   it("should display empty state when no positions exist", () => {
@@ -205,10 +195,8 @@ describe("PositionList - Position Calculations", () => {
     );
 
     // Assert
-    // Last Price should fallback to purchase price: $150.00
-    expect(screen.getByText("$150.00")).toBeInTheDocument();
-    // Total Cost and Market Value: 10 * 150 = $1,500.00
-    expect(screen.getAllByText("$1,500.00").length).toBe(2);
+    expect(screen.getAllByText("$150.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$1,500.00").length).toBeGreaterThanOrEqual(2);
   });
 
   it("should handle missing current price by using premium for options", () => {
@@ -237,10 +225,8 @@ describe("PositionList - Position Calculations", () => {
     );
 
     // Assert
-    // Last Price should fallback to premium: $5.00
-    expect(screen.getByText("$5.00")).toBeInTheDocument();
-    // Total Cost and Market Value: 2 * 5 * 100 = $1,000.00
-    expect(screen.getAllByText("$1,000.00").length).toBe(2);
+    expect(screen.getAllByText("$5.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$1,000.00").length).toBeGreaterThanOrEqual(2);
   });
 
   it("should calculate total cost correctly for stock positions", () => {
@@ -266,10 +252,8 @@ describe("PositionList - Position Calculations", () => {
     );
 
     // Assert
-    // Total Cost: 25 * 100 = $2,500.00
-    expect(screen.getByText("$2,500.00")).toBeInTheDocument();
-    // Market Value: 25 * 120 = $3,000.00
-    expect(screen.getByText("$3,000.00")).toBeInTheDocument();
+    expect(screen.getAllByText("$2,500.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$3,000.00").length).toBeGreaterThan(0);
   });
 
   it("should calculate option positions with contract multiplier correctly", () => {
@@ -298,11 +282,8 @@ describe("PositionList - Position Calculations", () => {
     );
 
     // Assert
-    // Shares: 5 * 100 = 500
-    expect(screen.getByText("500.000")).toBeInTheDocument();
-    // Total Cost: 5 * 10 * 100 = $5,000.00
-    expect(screen.getByText("$5,000.00")).toBeInTheDocument();
-    // Market Value: 5 * 12 * 100 = $6,000.00
-    expect(screen.getByText("$6,000.00")).toBeInTheDocument();
+    expect(screen.getAllByText("500.000").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$5,000.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$6,000.00").length).toBeGreaterThan(0);
   });
 });

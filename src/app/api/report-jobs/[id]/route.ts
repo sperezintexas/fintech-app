@@ -91,7 +91,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Report job not found" }, { status: 404 });
     }
 
-    const updated = (await db.collection("reportJobs").findOne({ _id: new ObjectId(id) })) as any;
+    const updated = (await db.collection("reportJobs").findOne({ _id: new ObjectId(id) })) as {
+  _id: ObjectId;
+  status?: string;
+  scheduleCron?: string;
+} | null;
 
     // Sync agenda schedule
     const status = (updated?.status ?? "paused") as "active" | "paused";

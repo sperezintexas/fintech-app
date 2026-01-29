@@ -33,7 +33,8 @@ export async function sendAlertAsPush(
   subscription: PushSubscription,
   scheduledAlert: ScheduledAlert,
   item: WatchlistItem,
-  riskLevel: RiskLevel
+  riskLevel: RiskLevel,
+  accountName?: string
 ): Promise<boolean> {
   const template = getTemplate(scheduledAlert.templateId);
   const formatted = formatAlert({
@@ -41,6 +42,7 @@ export async function sendAlertAsPush(
     item,
     riskLevel,
     template,
+    accountName,
   });
 
   return sendPushNotification(

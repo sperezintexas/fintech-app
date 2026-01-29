@@ -13,8 +13,8 @@ const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", isActive: (p) => p === "/" },
   { href: "/accounts", label: "Accounts", isActive: (p) => p.startsWith("/accounts") },
   { href: "/holdings", label: "Holdings", isActive: (p) => p.startsWith("/holdings") || p.startsWith("/positions") },
-  { href: "/find-profits", label: "Find Profits", isActive: (p) => p.startsWith("/find-profits") },
-  { href: "/automation", label: "Configure Automation", isActive: (p) => p.startsWith("/automation") },
+  { href: "/find-profits", label: "xAIProfitBuilder", isActive: (p) => p.startsWith("/find-profits") },
+  { href: "/automation", label: "Setup", isActive: (p) => p.startsWith("/automation") },
 ];
 
 export function AppHeader() {
@@ -26,16 +26,13 @@ export function AppHeader() {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                  />
-                </svg>
-              </div>
+              <img
+                src="/icon.svg"
+                alt="myInvestments"
+                width={40}
+                height={40}
+                className="w-10 h-10 rounded-xl"
+              />
               <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">
                 myInvestments
               </h1>

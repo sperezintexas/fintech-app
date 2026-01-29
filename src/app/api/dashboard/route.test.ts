@@ -64,7 +64,7 @@ describe("GET /api/dashboard", () => {
       }),
     };
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
     vi.mocked(getMultipleTickerPrices).mockResolvedValue(mockPrices);
 
     // Act
@@ -102,7 +102,7 @@ describe("GET /api/dashboard", () => {
       }),
     };
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
     vi.mocked(getMultipleTickerPrices).mockResolvedValue(new Map());
 
     // Act
@@ -161,7 +161,7 @@ describe("GET /api/dashboard", () => {
       }),
     };
 
-    vi.mocked(getDb).mockResolvedValue(mockDb as any);
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
     vi.mocked(getMultipleTickerPrices).mockResolvedValue(new Map());
 
     // Act

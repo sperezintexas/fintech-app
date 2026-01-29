@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
       for (const opt of optionPositions) {
         const contracts = opt.contracts || 0;
         const premium = opt.currentPrice || opt.premium || 0;
-        const entryPremium = opt.premium || premium;
+        const _entryPremium = opt.premium || premium;
         const positionValue = contracts * premium * 100;
         accountValue += positionValue;
         // Options daily change is harder to calculate without greeks, so we skip it for now
@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Save report
-    const result = await db.collection("portfolioSummaryReports").insertOne(report as any);
+    const result = await db.collection("portfolioSummaryReports").insertOne(report as Record<string, unknown>);
 
     return NextResponse.json({
       success: true,
@@ -355,7 +355,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         ...report,
-        _id: (report as any)._id.toString(),
+        _id: (report as { _id: ObjectId })._id.toString(),
       });
     }
 
@@ -373,7 +373,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       reports.map((r) => ({
         ...r,
-        _id: (r as any)._id.toString(),
+        _id: (r as { _id: ObjectId })._id.toString(),
       }))
     );
   } catch (error) {

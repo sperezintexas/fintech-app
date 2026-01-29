@@ -1,4 +1,5 @@
 import Agenda, { Job } from "agenda";
+import { NextRequest } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "./mongodb";
 import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, ReportJob, ReportDefinition } from "@/types/portfolio";
@@ -95,6 +96,84 @@ function defineJobs(agenda: Agenda) {
   });
 }
 
+/** Build concise per-item watchlist block (stocks + options) for Slack. */
+async function buildWatchlistConciseBlock(
+  accountId: string
+): Promise<{ stocksBlock: string; optionsBlock: string }> {
+  const db = await getDb();
+  const rawItems = (await db
+    .collection("watchlist")
+    .find({ accountId })
+    .toArray()) as (WatchlistItem & { _id: ObjectId })[];
+  const seenStocks = new Set<string>();
+  const seenOptions = new Set<string>();
+  const stocks = rawItems
+    .filter((i) => i.type === "stock")
+    .filter((i) => {
+      const key = (i.underlyingSymbol || i.symbol).toUpperCase();
+      if (seenStocks.has(key)) return false;
+      seenStocks.add(key);
+      return true;
+    });
+  const options = rawItems
+    .filter((i) => i.type === "covered-call" || i.type === "csp" || i.type === "call" || i.type === "put")
+    .filter((i) => {
+      const key = i.symbol;
+      if (seenOptions.has(key)) return false;
+      seenOptions.add(key);
+      return true;
+    });
+
+  const underlyingSymbols = [
+    ...stocks.map((s) => (s.underlyingSymbol || s.symbol).toUpperCase()),
+    ...options.map((o) => (o.underlyingSymbol || o.symbol.replace(/\d+[CP]\d+$/, "")).toUpperCase()),
+  ];
+  const uniqueSymbols = Array.from(new Set(underlyingSymbols));
+  const priceRsiMap = await getBatchPriceAndRSI(uniqueSymbols);
+
+  const rsiSentiment = (rsi: number | null): string => {
+    if (rsi == null) return "";
+    if (rsi < 30) return "Oversold";
+    if (rsi < 50) return "Bearish";
+    if (rsi <= 70) return "Bullish📈";
+    return "Overbought⚠️";
+  };
+
+  const rationale = (item: WatchlistItem & { _id: ObjectId }, rsi: number | null): string => {
+    const isOption = ["covered-call", "csp", "call", "put"].includes(item.type);
+    if (isOption) {
+      if (item.type === "covered-call") return "Option: CC income";
+      if (item.type === "csp" || item.type === "put") return "Option: CSP entry";
+      return "Option: directional play";
+    }
+    if (rsi != null && rsi < 35) return "Stock: Buy dips";
+    if (rsi != null && rsi > 65) return "Option: Consider CC for income";
+    return "Stock: Buy & hold";
+  };
+
+  const formatLine = (item: WatchlistItem & { _id: ObjectId }, displaySymbol: string): string => {
+    const underlying = (item.underlyingSymbol || item.symbol.replace(/\d+[CP]\d+$/, "")).toUpperCase();
+    const data = priceRsiMap.get(underlying);
+    if (!data) return `• $${displaySymbol}`;
+    const emoji = data.changePercent >= 0 ? "🟢" : "🔴";
+    const sign = data.changePercent >= 0 ? "+" : "";
+    const rsiStr = data.rsi != null ? ` RSI:${data.rsi} ${rsiSentiment(data.rsi)}` : "";
+    const rat = rationale(item, data.rsi);
+    return `${emoji} $${displaySymbol}: $${data.price.toFixed(2)} (${sign}${data.changePercent.toFixed(1)}%)${rsiStr} ${rat}`;
+  };
+
+  const stocksBlock =
+    stocks.length > 0
+      ? stocks.map((s) => formatLine(s, s.symbol)).join("\n")
+      : "_No stocks on watchlist_";
+  const optionsBlock =
+    options.length > 0
+      ? options.map((o) => formatLine(o, o.symbol)).join("\n")
+      : "No options";
+
+  return { stocksBlock, optionsBlock };
+}
+
 /** Execute a report job synchronously (used by Run Now and scheduled runs). Returns { success, error? }. */
 export async function executeReportJob(jobId: string): Promise<{ success: boolean; error?: string }> {
   try {
@@ -110,17 +189,30 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
 
     // Generate report output (SmartXAI or PortfolioSummary)
     let title = reportDef.name;
-    let bodyText = reportDef.description ? `${reportDef.description}\n\n` : "";
+    let bodyText = "";
     let reportLink: string | null = null;
+    let xTitle: string | null = null;
+    let xBodyText: string | null = null;
 
     if (reportDef.type === "smartxai") {
       try {
         const { POST: generateSmartXAI } = await import("@/app/api/reports/smartxai/route");
-        const res = await generateSmartXAI({ json: async () => ({ accountId: reportDef.accountId }) } as any);
-        const payload = (await res.json()) as { success?: boolean; report?: { _id: string; title: string; summary: any } };
+        const res = await generateSmartXAI({ json: async () => ({ accountId: reportDef.accountId }) } as unknown as NextRequest);
+        const payload = (await res.json()) as {
+          success?: boolean;
+          report?: { _id: string; title: string; summary: Record<string, unknown> };
+        };
 
         if (payload.success && payload.report) {
-          title = payload.report.title;
+          const accountId = reportDef.accountId ?? reportJob.accountId;
+          const accountDoc = accountId
+            ? await db.collection("accounts").findOne({ _id: new ObjectId(accountId) })
+            : null;
+          const accountName = (accountDoc as { name?: string } | null)?.name ?? "Account";
+
+          const reportTitle = payload.report.title;
+          title = `${reportTitle} – ${reportDef.name} – ${accountName}`;
+          xTitle = `${reportTitle} – ${reportDef.name}`;
           reportLink = `/reports/${payload.report._id}`;
           const summary = payload.report.summary;
           bodyText += [
@@ -130,6 +222,15 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
             `- P/L: $${Number(summary.totalProfitLoss).toFixed(2)} (${Number(summary.totalProfitLossPercent).toFixed(2)}%)`,
             `- Sentiment: bullish ${summary.bullishCount} / neutral ${summary.neutralCount} / bearish ${summary.bearishCount}`,
           ].join("\n");
+
+          if (accountId) {
+            try {
+              const { stocksBlock, optionsBlock } = await buildWatchlistConciseBlock(accountId);
+              bodyText += `\n\nWatchlist (concise):\n${stocksBlock}\n${optionsBlock}`;
+            } catch (e) {
+              console.error("Failed to append watchlist concise block:", e);
+            }
+          }
         } else {
           bodyText += `Failed to generate SmartXAI report.`;
         }
@@ -140,7 +241,7 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
     } else if (reportDef.type === "portfoliosummary") {
       try {
         const { POST: generatePortfolioSummary } = await import("@/app/api/reports/portfoliosummary/route");
-        const res = await generatePortfolioSummary({ json: async () => ({ accountId: reportDef.accountId }) } as any);
+        const res = await generatePortfolioSummary({ json: async () => ({ accountId: reportDef.accountId }) } as unknown as NextRequest);
         const payload = (await res.json()) as {
           success?: boolean;
           report?: {
@@ -183,12 +284,12 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
         };
 
         if (payload.success && payload.report) {
-          title = payload.report.title;
-          reportLink = `/reports/${payload.report._id}`;
           const r = payload.report;
+          title = `📈 ${r.title}`;
+          reportLink = `/reports/${payload.report._id}`;
 
-          // Format report in the specified style
-          const lines: string[] = [r.title, ""];
+          // Format report (no duplicate title - it's in Slack header)
+          const lines: string[] = [];
 
           // Account summaries
           for (const acc of r.accounts) {
@@ -240,17 +341,27 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
             lines.push("");
           }
 
-          // Market Snapshot
-          lines.push("Market Snapshot");
+          // Market Snapshot 📊
           const m = r.marketSnapshot;
-          lines.push(`• SPY:      $${m.SPY.price.toFixed(2)} (${m.SPY.changePercent >= 0 ? "+" : ""}${m.SPY.changePercent.toFixed(2)}%)`);
-          lines.push(`• QQQ:      $${m.QQQ.price.toFixed(2)} (${m.QQQ.changePercent >= 0 ? "+" : ""}${m.QQQ.changePercent.toFixed(2)}%)`);
-          lines.push(`• VIX:      ${m.VIX.price.toFixed(1)} (fear level: ${m.VIX.level})`);
-          lines.push(`• TSLA:     $${m.TSLA.price.toFixed(2)} (${m.TSLA.changePercent >= 0 ? "+" : ""}${m.TSLA.changePercent.toFixed(2)}%)`);
+          const spyDir = m.SPY.changePercent >= 0 ? "🔼" : "🔻";
+          const qqqDir = m.QQQ.changePercent >= 0 ? "🔼" : "🔻";
+          const tslaDir = m.TSLA.changePercent >= 0 ? "🔼" : "🔻";
+          const vixLabel =
+            m.VIX.level === "low"
+              ? "Low fear"
+              : m.VIX.level === "moderate"
+                ? "Moderate fear"
+                : "Elevated fear";
+          lines.push("Market Snapshot 📊");
+          lines.push("");
+          lines.push(`SPY: $${m.SPY.price.toFixed(2)} (${m.SPY.changePercent >= 0 ? "+" : ""}${m.SPY.changePercent.toFixed(2)}%) ${spyDir}`);
+          lines.push(`QQQ: $${m.QQQ.price.toFixed(2)} (${m.QQQ.changePercent >= 0 ? "+" : ""}${m.QQQ.changePercent.toFixed(2)}%) ${qqqDir}`);
+          lines.push(`VIX: ${m.VIX.price.toFixed(1)} (${vixLabel}) ⚠️`);
+          lines.push(`TSLA: $${m.TSLA.price.toFixed(2)} (${m.TSLA.changePercent >= 0 ? "+" : ""}${m.TSLA.changePercent.toFixed(2)}%) ${tslaDir}`);
           lines.push("");
 
-          // Progress Toward Goals
-          lines.push("Progress Toward Goals");
+          // Goal Progress 🎯
+          lines.push("Goal Progress 🎯");
           const g = r.goalsProgress;
           lines.push(
             `• Merrill → $${g.merrill.target.toLocaleString()} balanced by ${g.merrill.targetDate}: ~${g.merrill.progressPercent.toFixed(1)}% of way (assuming ${g.merrill.cagrNeeded.toFixed(0)}-${Math.ceil(g.merrill.cagrNeeded * 1.4)}% CAGR needed)`
@@ -278,72 +389,26 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
           bodyText = "Watchlist report: no account configured.";
           title = reportDef.name;
         } else {
-          const watchlistItems = (await db
-            .collection("watchlist")
-            .find({ accountId })
-            .toArray()) as (WatchlistItem & { _id: ObjectId })[];
-          const stocks = watchlistItems.filter((i) => i.type === "stock");
-          const options = watchlistItems.filter(
-            (i) => i.type === "covered-call" || i.type === "csp" || i.type === "call" || i.type === "put"
-          );
-
-          const underlyingSymbols = [
-            ...stocks.map((s) => (s.underlyingSymbol || s.symbol).toUpperCase()),
-            ...options.map((o) => (o.underlyingSymbol || o.symbol.replace(/\d+[CP]\d+$/, "")).toUpperCase()),
-          ];
-          const uniqueSymbols = Array.from(new Set(underlyingSymbols));
-          const priceRsiMap = await getBatchPriceAndRSI(uniqueSymbols);
-
-          const rsiSentiment = (rsi: number | null): string => {
-            if (rsi == null) return "";
-            if (rsi < 30) return "Oversold";
-            if (rsi < 50) return "Bearish";
-            if (rsi <= 70) return "Bullish📈";
-            return "Overbought⚠️";
-          };
-
-          const rationale = (item: WatchlistItem & { _id: ObjectId }, rsi: number | null): string => {
-            const isOption = ["covered-call", "csp", "call", "put"].includes(item.type);
-            if (isOption) {
-              if (item.type === "covered-call") return "Option: CC income";
-              if (item.type === "csp" || item.type === "put") return "Option: CSP entry";
-              return "Option: directional play";
-            }
-            if (rsi != null && rsi < 35) return "Stock: Buy dips";
-            if (rsi != null && rsi > 65) return "Option: Consider CC for income";
-            return "Stock: Buy & hold";
-          };
-
-          const formatLine = (
-            item: WatchlistItem & { _id: ObjectId },
-            displaySymbol: string
-          ): string => {
-            const underlying = (item.underlyingSymbol || item.symbol.replace(/\d+[CP]\d+$/, "")).toUpperCase();
-            const data = priceRsiMap.get(underlying);
-            if (!data) return `• $${displaySymbol}`;
-            const emoji = data.changePercent >= 0 ? "🟢" : "🔴";
-            const sign = data.changePercent >= 0 ? "+" : "";
-            const rsiStr = data.rsi != null ? ` RSI:${data.rsi} ${rsiSentiment(data.rsi)}` : "";
-            const rat = rationale(item, data.rsi);
-            return `${emoji} $${displaySymbol}: $${data.price.toFixed(2)} (${sign}${data.changePercent.toFixed(1)}%)${rsiStr} ${rat}`;
-          };
-
-          const stocksBlock =
-            stocks.length > 0
-              ? stocks.map((s) => formatLine(s, s.symbol)).join("\n")
-              : "_No stocks on watchlist_";
-          const optionsBlock =
-            options.length > 0
-              ? options.map((o) => formatLine(o, o.symbol)).join("\n")
-              : "No options";
+          const accountDoc = await db.collection("accounts").findOne({ _id: new ObjectId(accountId) });
+          const accountName = (accountDoc as { name?: string } | null)?.name ?? "Account";
+          const { stocksBlock, optionsBlock } = await buildWatchlistConciseBlock(accountId);
 
           const d = new Date();
           const dateStr = `${d.toISOString().slice(0, 10)} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-          const templateStr =
-            reportDef.customSlackTemplate ??
-            getReportTemplate(reportDef.templateId ?? "concise").slackTemplate;
-          const body = templateStr
+          const template = getReportTemplate(reportDef.templateId ?? "concise");
+          const slackTemplate =
+            reportDef.customSlackTemplate ?? template.slackTemplate;
+          const xTemplate =
+            reportDef.customXTemplate ?? template.xTemplate;
+          const body = slackTemplate
             .replace(/\{date\}/g, dateStr)
+            .replace(/\{reportName\}/g, reportDef.name)
+            .replace(/\{account\}/g, accountName)
+            .replace(/\{stocks\}/g, stocksBlock)
+            .replace(/\{options\}/g, optionsBlock);
+          xBodyText = xTemplate
+            .replace(/\{date\}/g, dateStr)
+            .replace(/\{reportName\}/g, reportDef.name)
             .replace(/\{stocks\}/g, stocksBlock)
             .replace(/\{options\}/g, optionsBlock);
           title = reportDef.name;
@@ -443,8 +508,10 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
 
     if (reportJob.channels.includes("twitter") && twitterConfig?.target) {
       try {
+        const tweetTitle = xTitle ?? title;
+        const tweetBody = xBodyText ?? bodyText;
         const tweetText = truncateForX(
-          `${title}\n\n${bodyText}${reportLink ? `\n\n${reportLink}` : ""}`,
+          `${tweetTitle}\n\n${tweetBody}${reportLink ? `\n\n${reportLink}` : ""}`,
           280
         );
         await postToXTweet(tweetText);
@@ -467,13 +534,6 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
     console.error("executeReportJob failed:", e);
     return { success: false, error: msg };
   }
-}
-
-// Fetch market data using grouped daily (single API call)
-async function fetchGroupedDaily(): Promise<Map<string, { close: number; open: number }>> {
-  // This function is kept for compatibility but is no longer used
-  // The actual implementation now uses getMultipleTickerOHLC from yahoo.ts
-  return new Map();
 }
 
 // Estimate option price based on underlying movement
@@ -593,7 +653,7 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
 
       // Update watchlist item with current data
       await db.collection("watchlist").updateOne(
-        { _id: item._id as any },
+        { _id: new ObjectId(item._id) },
         {
           $set: {
             currentPrice,

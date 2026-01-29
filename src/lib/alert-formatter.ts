@@ -16,6 +16,8 @@ export type AlertContext = {
   item: WatchlistItem;
   riskLevel: RiskLevel;
   template: AlertTemplate;
+  /** Account name for template placeholder {account} */
+  accountName?: string;
 };
 
 export type FormattedAlert = {
@@ -23,10 +25,13 @@ export type FormattedAlert = {
   body: string;
   sms: string;
   slack: string;
+  /** X/Twitter format (no account) */
+  x: string;
 };
 
 // Variable replacements for templates
 type TemplateVariables = {
+  account: string;
   symbol: string;
   action: string;
   reason: string;
@@ -44,7 +49,7 @@ type TemplateVariables = {
 };
 
 function getTemplateVariables(context: AlertContext): TemplateVariables {
-  const { alert, item, riskLevel } = context;
+  const { alert, item, riskLevel, accountName } = context;
 
   // Calculate profit/loss
   const profitDollars = alert.details.priceChange * (item.quantity * 100);
@@ -74,6 +79,7 @@ function getTemplateVariables(context: AlertContext): TemplateVariables {
   };
 
   return {
+    account: accountName ?? "Account",
     symbol: alert.symbol,
     action: alert.recommendation,
     reason: alert.reason,
@@ -102,12 +108,14 @@ function replaceVariables(template: string, variables: TemplateVariables): strin
 export function formatAlert(context: AlertContext): FormattedAlert {
   const variables = getTemplateVariables(context);
   const { template } = context;
+  const xTemplate = "xTemplate" in template && typeof template.xTemplate === "string" ? template.xTemplate : template.slackTemplate.replace(/\*?\[?\{account\}\]?\*?\s*/g, "");
 
   return {
     subject: replaceVariables(template.subjectTemplate, variables),
     body: replaceVariables(template.bodyTemplate, variables),
     sms: truncateSms(replaceVariables(template.smsTemplate, variables)),
     slack: replaceVariables(template.slackTemplate, variables),
+    x: replaceVariables(xTemplate, variables),
   };
 }
 
@@ -131,6 +139,7 @@ export function previewAlertFormat(
 
   // Sample data for preview
   const sampleVariables: TemplateVariables = {
+    account: "Merrill",
     symbol: "TSLA260227P00380000",
     action: "BTC",
     reason: "85% profit captured, consider closing",
@@ -147,6 +156,8 @@ export function previewAlertFormat(
     disclosure: "Options involve risk and are not suitable for all investors.",
   };
 
+  const xTemplate = "xTemplate" in template && typeof template.xTemplate === "string" ? template.xTemplate : template.slackTemplate.replace(/\*?\[?\{account\}\]?\*?\s*/g, "");
+
   switch (channel) {
     case "email":
       return `Subject: ${replaceVariables(template.subjectTemplate, sampleVariables)}\n\n${replaceVariables(template.bodyTemplate, sampleVariables)}`;
@@ -154,6 +165,8 @@ export function previewAlertFormat(
       return truncateSms(replaceVariables(template.smsTemplate, sampleVariables));
     case "slack":
       return replaceVariables(template.slackTemplate, sampleVariables);
+    case "twitter":
+      return replaceVariables(xTemplate, sampleVariables);
     case "push":
       return replaceVariables(template.subjectTemplate, sampleVariables);
     default:

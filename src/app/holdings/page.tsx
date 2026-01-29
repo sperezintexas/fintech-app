@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Account, Position } from "@/types/portfolio";
@@ -10,7 +10,7 @@ import { PositionList } from "@/components/PositionList";
 
 const POLL_INTERVAL_MS = 30_000;
 
-export default function HoldingsPage() {
+function HoldingsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const urlAccountId = searchParams.get("accountId");
@@ -286,5 +286,13 @@ export default function HoldingsPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function HoldingsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <HoldingsContent />
+    </Suspense>
   );
 }

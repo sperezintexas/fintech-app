@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     const result = await db.collection<AccountDoc>("accounts").updateOne(
       { _id: new ObjectId(accountId) },
-      { $push: { positions: newPosition } } as any
+      { $push: { positions: newPosition } } as Record<string, unknown>
     );
 
     if (result.matchedCount === 0) {

@@ -51,4 +51,19 @@ ok now i want a new job types;
 
 01/29/26
 
-on the CSP page please
+on the portfolio summary report , i chose the risk aware tempalte and i see this example in slack
+
+Portfolio Update — January 29, 2026....the date is displayed twice, can u make it more like this type of format
+
+add a app icon to the title
+
+and update report with these type of icons
+
+Market Snapshot 📊
+
+SPY: $695.42 (-0.01%) 🔻
+QQQ: $633.22 (+0.33%) 🔼
+VIX: 16.8 (Moderate fear) ⚠️
+TSLA: $431.46 (+0.13%) 🔼
+
+Goal Progress 🎯

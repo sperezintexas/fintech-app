@@ -187,7 +187,6 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, ac
             {positions.map((position) => {
               const values = calculatePositionValues(position);
               const isStock = position.type === "stock";
-              const isCash = position.type === "cash";
               const isOption = position.type === "option";
               const dte = isOption ? calculateDTE(position.expiration) : null;
               const hasChange = position.dailyChangePercent != null;
@@ -309,7 +308,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, ac
                         <button
                           onClick={() => onAddToWatchlist(position)}
                           className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                          title="Add to Configure Automation / Alert"
+                          title="Add to Setup / Alert"
                         >
                           <svg
                             className="w-4 h-4"
@@ -378,7 +377,6 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, ac
         {positions.map((position) => {
           const values = calculatePositionValues(position);
           const isStock = position.type === "stock";
-          const isCash = position.type === "cash";
           const isOption = position.type === "option";
           const dte = isOption ? calculateDTE(position.expiration) : null;
           const hasChange = position.dailyChangePercent != null;
@@ -446,7 +444,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, ac
                     <button
                       onClick={() => onAddToWatchlist(position)}
                       className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                      title="Add to Configure Automation / Alert"
+                      title="Add to Setup / Alert"
                     >
                       <svg
                         className="w-4 h-4"

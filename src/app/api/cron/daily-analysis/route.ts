@@ -26,13 +26,6 @@ function verifyCronRequest(request: NextRequest): boolean {
   return false;
 }
 
-// Fetch market data using grouped daily (single API call for all)
-async function fetchGroupedDaily(): Promise<Map<string, { close: number; open: number }>> {
-  // This function is kept for compatibility but now uses Yahoo Finance
-  // The actual implementation uses getMultipleTickerOHLC which is called directly
-  return new Map();
-}
-
 // Estimate option price
 function estimateOptionPrice(
   stockPrice: number,
