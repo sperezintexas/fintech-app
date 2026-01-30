@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import type {
@@ -2510,6 +2511,16 @@ function AutomationContent() {
                   </svg>
                   Refresh Status
                 </button>
+                <Link
+                  href="/health"
+                  className="inline-flex items-center gap-2 px-4 py-2 min-h-[44px] border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 active:bg-gray-100"
+                  aria-label="View system health status"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Health Status
+                </Link>
               </div>
 
               {/* Status Message */}

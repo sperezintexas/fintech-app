@@ -30,6 +30,8 @@ RUN npm run build
 FROM base AS runner
 ENV NODE_ENV=production
 
+RUN apk add --no-cache wget
+
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
@@ -49,5 +51,6 @@ USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV NODE_OPTIONS="--no-deprecation"
 
 CMD ["node", "server.js"]

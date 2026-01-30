@@ -4,9 +4,9 @@
   "description": "Investment portfolio manager with real-time market data",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "NODE_OPTIONS='--no-deprecation' next dev",
+    "build": "NODE_OPTIONS='--no-deprecation' next build",
+    "start": "NODE_OPTIONS='--no-deprecation' next start",
     "lint": "eslint src",
     "test": "vitest run",
     "test:watch": "vitest",
