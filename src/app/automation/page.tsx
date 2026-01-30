@@ -838,7 +838,7 @@ function AutomationContent() {
       });
       const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
       if (res.ok && data.success) {
-        setSchedulerMessage(data.message ?? "Report sent to Slack.");
+        setSchedulerMessage(data.message ?? "Report sent successfully.");
         setTimeout(() => setSchedulerMessage(""), 5000);
       } else {
         setSchedulerMessage(`Error: ${data.error ?? "Failed to run job"}`);

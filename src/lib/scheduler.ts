@@ -6,7 +6,7 @@ import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, Re
 import { getReportTemplate } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
 import { getMultipleTickerOHLC, getBatchPriceAndRSI } from "./yahoo";
-import { postToXTweet, truncateForX } from "./x";
+import { postToXThread } from "./x";
 
 // Removed - using Yahoo Finance
 // Removed - using Yahoo Finance
@@ -174,13 +174,21 @@ async function buildWatchlistConciseBlock(
   return { stocksBlock, optionsBlock };
 }
 
-/** Execute a report job synchronously (used by Run Now and scheduled runs). Returns { success, error? }. */
-export async function executeReportJob(jobId: string): Promise<{ success: boolean; error?: string }> {
+/** Execute a report job synchronously (used by Run Now and scheduled runs). Returns { success, error?, deliveredChannels?, failedChannels? }. */
+export async function executeReportJob(jobId: string): Promise<{
+  success: boolean;
+  error?: string;
+  deliveredChannels?: string[];
+  failedChannels?: { channel: string; error: string }[];
+}> {
   try {
     const db = await getDb();
     const reportJob = (await db.collection("reportJobs").findOne({ _id: new ObjectId(jobId) })) as (ReportJob & { _id: ObjectId }) | null;
     if (!reportJob) return { success: false, error: "Report job not found" };
     if (reportJob.status !== "active") return { success: false, error: "Report job is paused" };
+
+    const deliveredChannels: string[] = [];
+    const failedChannels: { channel: string; error: string }[] = [];
 
     const reportDef = (await db
       .collection("reportDefinitions")
@@ -499,6 +507,7 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
           const errBody = await slackRes.text();
           return { success: false, error: `Slack webhook failed (${slackRes.status}): ${errBody.slice(0, 200)}` };
         }
+        deliveredChannels.push("Slack");
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error("Failed to post report to Slack:", e);
@@ -510,13 +519,13 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
       try {
         const tweetTitle = xTitle ?? title;
         const tweetBody = xBodyText ?? bodyText;
-        const tweetText = truncateForX(
-          `${tweetTitle}\n\n${tweetBody}${reportLink ? `\n\n${reportLink}` : ""}`,
-          280
-        );
-        await postToXTweet(tweetText);
+        const fullText = `${tweetTitle}\n\n${tweetBody}${reportLink ? `\n\n${reportLink}` : ""}`;
+        await postToXThread(fullText);
+        deliveredChannels.push("X");
       } catch (e) {
-        console.error("Failed to post report to X:", e);
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("Failed to post report to X:", msg);
+        failedChannels.push({ channel: "X", error: msg });
       }
     }
 
@@ -528,7 +537,7 @@ export async function executeReportJob(jobId: string): Promise<{ success: boolea
       { _id: new ObjectId(jobId) },
       { $set: { lastRunAt: new Date().toISOString(), updatedAt: new Date().toISOString() } }
     );
-    return { success: true };
+    return { success: true, deliveredChannels, failedChannels: failedChannels.length ? failedChannels : undefined };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("executeReportJob failed:", e);

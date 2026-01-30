@@ -333,19 +333,40 @@ type YahooOptionGroup = {
   puts: YahooCallOrPut[];
 };
 
+// Normalize Date to YYYY-MM-DD (UTC) for comparison - handles midnight vs 4pm ET expirations
+function toDateString(d: Date): string {
+  const x = d instanceof Date ? d : new Date(d);
+  const y = x.getUTCFullYear();
+  const m = String(x.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(x.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+const OPTIONS_LOG = "[options]";
+
 // Find expiration group matching YYYY-MM-DD from options array; fallback to closest by date.
 // Prefer future expirations when requested date is ahead (avoids showing Jan 30 when user picked 4w = Feb 27).
 function findExpirationGroup(options: YahooOptionGroup[], expTarget: string): YahooOptionGroup {
+  const availableDates = options.map((g) => {
+    const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
+    return toDateString(d);
+  });
+  console.log(`${OPTIONS_LOG} findExpirationGroup: requested=${expTarget} available=${availableDates.join(", ")}`);
+
   const exact = options.find((g) => {
     const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
-    return d.toISOString().slice(0, 10) === expTarget;
+    return toDateString(d) === expTarget;
   });
-  if (exact) return exact;
+  if (exact) {
+    console.log(`${OPTIONS_LOG} findExpirationGroup: exact match found`);
+    return exact;
+  }
   const targetTime = new Date(expTarget + "T12:00:00Z").getTime();
   const future = options.filter((g) => {
     const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
     return d.getTime() >= targetTime;
   });
+  console.log(`${OPTIONS_LOG} findExpirationGroup: no exact match, future count=${future.length}`);
   // Prefer nearest future expiration when user requested a future date
   if (future.length > 0) {
     let best = future[0];
@@ -358,6 +379,7 @@ function findExpirationGroup(options: YahooOptionGroup[], expTarget: string): Ya
         best = g;
       }
     }
+    console.log(`${OPTIONS_LOG} findExpirationGroup: picked nearest future=${toDateString(best.expirationDate instanceof Date ? best.expirationDate : new Date(best.expirationDate))}`);
     return best;
   }
   // Fallback: closest overall (all expirations are in the past)
@@ -371,10 +393,14 @@ function findExpirationGroup(options: YahooOptionGroup[], expTarget: string): Ya
       closest = g;
     }
   }
+  const closestStr = toDateString(closest.expirationDate instanceof Date ? closest.expirationDate : new Date(closest.expirationDate));
+  console.log(`${OPTIONS_LOG} findExpirationGroup: no future expirations, picked closest=${closestStr}`);
   return closest;
 }
 
 // Try to fetch live options from Yahoo Finance; returns null on failure or empty data
+// Always fetches full chain first so we pick from Yahoo's actual expiration dates (avoids
+// Yahoo's "date" param returning "nearest" which can be wrong, e.g. Jan 30 when user asked Feb 6).
 async function fetchFromYahooOptions(
   underlying: string,
   expiration: string,
@@ -392,40 +418,46 @@ async function fetchFromYahooOptions(
   };
 
   try {
-    const targetTime = new Date(expTarget + "T12:00:00Z").getTime();
-    const DAY_MS = 24 * 60 * 60 * 1000;
-
-    const isAcceptable = (g: YahooOptionGroup) => {
-      const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
-      const actualTime = d.getTime();
-      // Reject if Yahoo returned an expiration >7 days before what we requested
-      if (actualTime < targetTime - 7 * DAY_MS) return false;
-      return true;
-    };
-
-    // 1. Try WITH date first - Yahoo may return requested expiration or "nearest"
-    const unixSec = Math.floor(new Date(expTarget + "T00:00:00Z").getTime() / 1000);
-    let result = await yahooFinance.options(underlying, { date: unixSec });
-    let group = parseResult(result);
-
-    // 2. If Yahoo returned a past expiration (e.g. Jan 30 when we asked Mar 6), use full chain
-    if (group && !isAcceptable(group)) {
-      group = null;
-    }
-
-    // 3. If empty or unacceptable, try without date (full chain) and pick nearest future
-    if (!group || ((group.calls?.length ?? 0) === 0 && (group.puts?.length ?? 0) === 0)) {
-      result = await yahooFinance.options(underlying);
-      const g2 = parseResult(result);
-      if (g2 && ((g2.calls?.length ?? 0) > 0 || (g2.puts?.length ?? 0) > 0) && isAcceptable(g2)) {
-        group = g2;
-      } else if (g2 && ((g2.calls?.length ?? 0) > 0 || (g2.puts?.length ?? 0) > 0)) {
-        // Full chain has data but g2 might be past - use it anyway if no acceptable alternative
-        group = g2;
+    // 1. Fetch full chain first (no date) - Yahoo returns expirationDates + options (may be single nearest)
+    console.log(`${OPTIONS_LOG} fetchFromYahooOptions: underlying=${underlying} requested=${expTarget}`);
+    let result = await yahooFinance.options(underlying);
+    const rawExpDates = (result as { expirationDates?: (Date | string)[] }).expirationDates ?? [];
+    let rawOptions = (result as { options?: YahooOptionGroup[] }).options ?? [];
+    const expDateStrs = rawExpDates.map((d) => toDateString(d instanceof Date ? d : new Date(d)));
+    console.log(`${OPTIONS_LOG} Yahoo (no date): options.length=${rawOptions.length} expirationDates.length=${rawExpDates.length}`);
+    let group: YahooOptionGroup | null = null;
+    // Yahoo returns options.length=1 (nearest only) but expirationDates has all - use expirationDates to pick best, then re-fetch
+    if (rawOptions.length <= 1 && expDateStrs.length > 0) {
+      const targetTime = new Date(expTarget + "T12:00:00Z").getTime();
+      const future = expDateStrs.filter((s) => new Date(s + "T12:00:00Z").getTime() >= targetTime);
+      const bestDate =
+        future.length > 0
+          ? future.reduce((a, b) =>
+              Math.abs(new Date(a + "T12:00:00Z").getTime() - targetTime) <
+              Math.abs(new Date(b + "T12:00:00Z").getTime() - targetTime)
+                ? a
+                : b
+            )
+          : expDateStrs.reduce((a, b) =>
+              Math.abs(new Date(a + "T12:00:00Z").getTime() - targetTime) <
+              Math.abs(new Date(b + "T12:00:00Z").getTime() - targetTime)
+                ? a
+                : b
+            );
+      console.log(`${OPTIONS_LOG} Single option group from Yahoo, re-fetching with best date=${bestDate} (from ${expDateStrs.length} expirationDates)`);
+      result = await yahooFinance.options(underlying, { date: new Date(bestDate + "T12:00:00Z") });
+      rawOptions = (result as { options?: YahooOptionGroup[] }).options ?? [];
+      group = rawOptions?.[0] ?? null;
+      if (group) {
+        const gd = toDateString(group.expirationDate instanceof Date ? group.expirationDate : new Date(group.expirationDate));
+        console.log(`${OPTIONS_LOG} Re-fetched: got expiration=${gd}`);
       }
+    } else if (rawOptions.length > 1) {
+      group = findExpirationGroup(rawOptions, expTarget);
+    } else {
+      group = parseResult(result);
     }
-
-    if (!group) return null;
+    if (!group || ((group.calls?.length ?? 0) === 0 && (group.puts?.length ?? 0) === 0)) return null;
     const calls = group.calls ?? [];
     const puts = group.puts ?? [];
     if (calls.length === 0 && puts.length === 0) return null;
@@ -485,7 +517,8 @@ async function fetchFromYahooOptions(
         : expiration;
 
     return { optionChain, actualExpiration };
-  } catch {
+  } catch (e) {
+    console.error(`${OPTIONS_LOG} fetchFromYahooOptions failed:`, e);
     return null;
   }
 }
@@ -496,6 +529,7 @@ export async function GET(request: NextRequest) {
     const underlying = searchParams.get("underlying")?.toUpperCase();
     const expiration = searchParams.get("expiration");
     const targetStrike = parseFloat(searchParams.get("strike") || "0");
+    console.log(`${OPTIONS_LOG} GET request: underlying=${underlying} expiration=${expiration} strike=${targetStrike}`);
 
     if (!underlying) {
       return NextResponse.json(
@@ -531,6 +565,8 @@ export async function GET(request: NextRequest) {
     const yahooResult = await fetchFromYahooOptions(underlying, expiration, stockPrice, daysToExp);
 
     if (yahooResult && yahooResult.optionChain.length > 0) {
+      const isClosest = yahooResult.actualExpiration !== expiration;
+      console.log(`${OPTIONS_LOG} returning: actualExpiration=${yahooResult.actualExpiration} requested=${expiration} isClosest=${isClosest}`);
       return NextResponse.json({
         underlying,
         expiration: yahooResult.actualExpiration,

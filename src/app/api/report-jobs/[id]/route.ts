@@ -38,7 +38,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 400 }
       );
     }
-    return NextResponse.json({ success: true, message: "Report sent to Slack" });
+    const channels = result.deliveredChannels ?? [];
+    const failed = result.failedChannels ?? [];
+    let message =
+      channels.length === 0
+        ? "Report sent successfully"
+        : channels.length === 1
+          ? `Report sent to ${channels[0]}`
+          : channels.length === 2
+            ? `Report sent to ${channels[0]} and ${channels[1]}`
+            : `Report sent to ${channels.slice(0, -1).join(", ")}, and ${channels[channels.length - 1]}`;
+    if (failed.length > 0) {
+      const failedStr = failed.map((f) => `${f.channel}: ${f.error}`).join("; ");
+      message += `. ${failedStr}`;
+    }
+    return NextResponse.json({ success: true, message });
   } catch (error) {
     console.error("Run report job failed:", error);
     return NextResponse.json(

@@ -424,6 +424,7 @@ function generateStrikeOptions(basePrice: number, smaData: SMAData | null): numb
 }
 
 // Generate expiration date options (1-52 weeks)
+// Uses local date for YYYY-MM-DD to avoid timezone shift (toISOString uses UTC)
 function generateExpirationOptions(): { weeks: number; date: string; label: string }[] {
   const options = [];
   const today = new Date();
@@ -436,7 +437,10 @@ function generateExpirationOptions(): { weeks: number; date: string; label: stri
     const daysToFriday = (5 - dayOfWeek + 7) % 7;
     expDate.setDate(expDate.getDate() + daysToFriday);
 
-    const dateStr = expDate.toISOString().split("T")[0];
+    const y = expDate.getFullYear();
+    const m = String(expDate.getMonth() + 1).padStart(2, "0");
+    const d = String(expDate.getDate()).padStart(2, "0");
+    const dateStr = `${y}-${m}-${d}`;
     const label = `${weeks}w - ${expDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
 
     options.push({ weeks, date: dateStr, label });
@@ -968,6 +972,7 @@ export default function FindProfitsPage() {
         strike: centerStrike.toString(),
         expiration: expOption.date,
       });
+      console.log("[find-profits] Load option chain: weeks=", buildExpirationWeeks, "date=", expOption.date, "label=", expOption.label);
       const res = await fetch(`/api/options?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) {

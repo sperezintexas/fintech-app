@@ -118,6 +118,8 @@ The app includes an **Agenda.js** scheduler backed by MongoDB for persistent job
    - `cleanup-alerts`: 2:00 AM Sunday (removes old alerts)
 3. Jobs persist in MongoDB and survive app restarts
 
+**Deployment note:** Agenda requires a **persistent process** (it polls MongoDB every minute). Report jobs and scheduled jobs will not run on Vercel/serverless—use a platform with a long-running process (Railway, Render, Fly.io, Docker, VPS) and run `npm run start`.
+
 **API Endpoints:**
 ```bash
 # Get scheduler status

@@ -126,14 +126,12 @@ describe("GET /api/options", () => {
     expect(data.note).not.toContain("closest to requested");
   });
 
-  it("rejects Jan 30 from with-date when user asked Mar 6, uses full chain for Mar 6", async () => {
+  it("picks Mar 6 from full chain when user asked Mar 6 (no date param - full chain first)", async () => {
     const requestedExp = "2026-03-06";
     const jan30 = makeYahooOptionGroup(new Date("2026-01-30T12:00:00Z"));
     const mar6 = makeYahooOptionGroup(new Date("2026-03-06T12:00:00Z"));
 
-    // First call (with date): Yahoo returns Jan 30 - we reject it
-    mockOptions.mockResolvedValueOnce({ options: [jan30] });
-    // Second call (without date): full chain has Mar 6 - we pick it
+    // Single call (full chain, no date param) - we pick Mar 6 from findExpirationGroup
     mockOptions.mockResolvedValueOnce({ options: [jan30, mar6] });
 
     const req = new Request(
@@ -145,7 +143,7 @@ describe("GET /api/options", () => {
     expect(res.status).toBe(200);
     expect(data.expiration).toBe("2026-03-06");
     expect(data.requestedExpiration).toBe("2026-03-06");
-    expect(mockOptions).toHaveBeenCalledTimes(2);
+    expect(mockOptions).toHaveBeenCalledTimes(1);
   });
 
   it("picks nearest future expiration over past when no exact match", async () => {
