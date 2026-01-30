@@ -1,0 +1,39 @@
+---
+alwaysApply: false
+---
+# Smart Grok Chat Reasoning Service Guidelines
+
+You are implementing a "Smart Grok Chat" feature in the myInvestments app: a real-time chat interface powered by Grok-like reasoning (via xAI API or simulated logic) for investment advice, portfolio analysis, and queries. Integrate tools for Yahoo Finance data fetching. Focus on server-side logic where possible, using Next.js App Router conventions.
+
+## Core Requirements
+- **Chat Interface**: Build in `/app/chat/` route with `page.tsx` (Server Component base), client-side interactivity for messaging via `'use client'`.
+- **Reasoning Engine**: Simulate Grok-style chain-of-thought internally (hidden from user unless requested). Use tools to fetch data, then reason step-by-step on investments (e.g., risk assessment, strategy recommendations).
+- **Integration**: Tie into existing portfolio data from MongoDB. Fetch real-time data via Yahoo Finance API in `/lib/yahoo-finance.ts` (extend if needed).
+- **Security**: Validate user inputs, rate-limit queries, anonymize sensitive data.
+
+## Required Tools
+1. **Yahoo Finance Market News & Outlook Tool**
+   - Fetch current market news, summaries, and outlook (e.g., trends, indices performance).
+   - Implementation: Extend `/lib/yahoo-finance.ts` with async function `getMarketNewsAndOutlook(options: { limit?: number; region?: string })`.
+   - Use yfinance or yahooquery library (install if missing: assume `npm i yahoo-finance2` or similar).
+   - Return structured data: { news: [{ title, link, summary, date }], outlook: { summary, sentiment } }.
+   - Cache results for 5-15 mins via Next.js caching.
+
+2. **Yahoo Finance Stock & Option Prices Tool**
+   - Fetch real-time quotes for stocks and options (price, volume, change, chains for options).
+   - Implementation: Async function `getStockAndOptionPrices(symbol: string, options?: { includeOptions?: boolean; expiration?: Date })` in `/lib/yahoo-finance.ts`.
+   - Handle errors: Fallback to cached data or notify user.
+   - Return: { stock: { price, change, volume }, options?: { calls: [...], puts: [...] } }.
+
+## Implementation Flow
+- **UI**: Chat component in `/components/ChatInterface.tsx` with message history, input, and tool result displays.
+- **Backend**: Server Action in `/app/api/chat/route.ts` for processing queries: Parse input, call tools if needed, generate reasoned response.
+- **Tool Calling**: Use a simple tool router in reasoning step—e.g., if query mentions "price of AAPL", invoke price tool.
+- **Response Format**: JSON for API, rendered as markdown in UI with citations to tools/data sources.
+
+## Testing & Validation
+- Add unit tests in `__tests__/lib/yahoo-finance.test.ts` for tool functions (mock API responses).
+- Integration tests for chat flow.
+- After code: Run `npm test`, `npm run typecheck`, simulate Yahoo API calls.
+
+Deliver complete, working code in one shot: Tools first, then chat route/integration.

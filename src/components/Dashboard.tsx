@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 import { PortfolioCard } from "./PortfolioCard";
@@ -220,15 +221,18 @@ export function Dashboard() {
               : "—"}
           </p>
         </div>
-        <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+        <Link
+          href="/accounts"
+          className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm hover:border-blue-200 hover:bg-blue-50/30 transition-colors block"
+        >
           <p className="text-gray-500 text-sm">Active Accounts</p>
           <p className="text-2xl font-bold text-gray-900 mt-1">
             {stats?.accountCount || 0}
           </p>
-          <p className="text-gray-400 text-sm mt-2">
-            {stats?.accountCount === 0 ? "No accounts yet" : "All performing"}
+          <p className="text-blue-600 text-sm mt-2 font-medium">
+            Manage accounts →
           </p>
-        </div>
+        </Link>
         <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
           <p className="text-gray-500 text-sm">Open Holdings</p>
           <p className="text-2xl font-bold text-gray-900 mt-1">
@@ -270,9 +274,18 @@ export function Dashboard() {
               <h2 className="text-xl font-semibold text-gray-800 mb-4">
                 Portfolio Overview
               </h2>
-              <p className="text-gray-500">
+              <p className="text-gray-500 mb-4">
                 No accounts yet. Create an account to get started.
               </p>
+              <Link
+                href="/accounts"
+                className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+              >
+                Manage accounts
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
             </div>
           )}
         </div>

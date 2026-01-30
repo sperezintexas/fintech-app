@@ -1,0 +1,98 @@
+---
+description: Rules and guidelines for implementing Collar Strategy Evaluation & Recommendation Service in myInvestments
+globs:
+alwaysApply: false
+---
+# Collar Strategy Evaluation Service Guidelines for Cursor
+
+You are implementing a **Collar Analyzer** service — part of the growing suite of options strategy evaluation tools (Covered Call, Protective Put, OptionScanner, etc.) in the myInvestments app.
+
+The service identifies **collar positions** (long stock + long put hedge + short call to finance the put), evaluates cost, protection level, upside cap, current P/L, and market fit, then generates recommendations:
+- HOLD the collar
+- UNWIND (close put and call, keep stock)
+- ROLL collar (close current legs, open new put/call at different strikes/expirations)
+- ADJUST (e.g., widen/narrow, roll out, remove call, remove put)
+- INITIATE new collar on naked/long stock holdings
+
+Runs via scheduler (new job type: `collarScanner`) and produces alerts/recommendations.
+
+## Core Goals
+- Accurately detect collar structures (long stock + long put + short call on same underlying/account)
+- Assess whether the collar is still optimal given:
+  - Stock price relative to put strike (floor) and call strike (cap)
+  - Net debit/credit of the collar
+  - Remaining time value on both options
+  - Implied volatility and directional bias
+  - Account risk profile and portfolio objectives
+- Deliver conservative, risk-managed recommendations with clear rationale
+
+## Key Evaluation Rules (default — configurable per account/strategy later)
+
+| Condition                                              | Recommendation              | Reason / Thresholds                                                                 |
+|--------------------------------------------------------|-----------------------------|--------------------------------------------------------------------------------------|
+| Stock near/above call strike & DTE ≤ 10                | UNWIND or ROLL UP/OUT       | Upside capped, time decay hurting short call, protect gains or extend              |
+| Stock dropped significantly (>10–15%) & put ITM        | HOLD or ROLL DOWN/OUT       | Protection working; maintain floor or improve it                                   |
+| Both options have <10–15% extrinsic value left         | UNWIND                      | Collar mostly intrinsic — little ongoing benefit vs cost/commission                |
+| Net collar cost high (>2–3% of stock value) & stock flat| UNWIND or ADJUST            | Protection too expensive relative to current market stability                      |
+| IV rank > 60 & collar was entered at lower IV          | HOLD                        | Short call premium inflated — good environment to keep collecting                  |
+| Stock > call strike + buffer & call delta ≥ 0.80       | UNWIND call or ROLL UP      | High assignment risk; free up upside or move cap higher                            |
+| No collar & stock volatility 25–45% & user conservative| INITIATE collar             | Opportunity: add zero/low-cost downside protection with financed call              |
+| Put delta ≤ -0.20 & call delta ≥ 0.20 & stock sideways | HOLD                        | Balanced collar — reasonable protection/upside trade-off                           |
+| Account risk = aggressive & stock well above entry     | UNWIND                      | Remove cap to allow full upside participation                                      |
+
+## Metrics to Compute & Include
+- Current stock price
+- Put bid/ask/mid, call bid/ask/mid
+- Net collar value today (stock + put value - call value)
+- Effective floor (put strike - net debit per share)
+- Effective cap (call strike + net credit per share)
+- Breakeven point
+- Max profit / max loss (if held to expiration)
+- Cost of collar as % of stock value
+- DTE (use shortest expiration if legs differ — rare but possible)
+- Combined Greeks (net delta, gamma, vega, theta)
+- Annualized return if held flat (rough estimate)
+
+## Implementation Structure
+
+1. **Core Service**
+   `src/lib/collar-analyzer.ts`
+   ```ts
+   async function analyzeCollars(userId?: string): Promise<CollarRecommendation[]>
+
+   interface CollarRecommendation {
+     accountId: string
+     symbol: string
+     stockPositionId?: string
+     putPositionId?: string
+     callPositionId?: string
+     recommendation:
+       | 'HOLD'
+       | 'UNWIND'
+       | 'ROLL'
+       | 'INITIATE'
+       | 'REMOVE_PUT'
+       | 'REMOVE_CALL'
+       | 'ADJUST'
+       | 'NONE'
+     confidence: 'HIGH' | 'MEDIUM' | 'LOW'
+     reason: string
+     suggestedPutStrike?: number
+     suggestedCallStrike?: number
+     suggestedExpiration?: Date
+     metrics: {
+       stockPrice: number
+       putBid: number
+       putAsk: number
+       callBid: number
+       callAsk: number
+       dte: number
+       netCollarValue: number          // positive = unrealized gain
+       effectiveFloor: number
+       effectiveCap: number
+       netDelta: number
+       netTheta: number
+       costPercent: number
+       stockUnrealizedPl: number
+     }
+   }

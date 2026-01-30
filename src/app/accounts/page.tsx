@@ -21,6 +21,7 @@ export default function AccountsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | undefined>();
   const [error, setError] = useState<string | null>(null);
+  const [analyzingAccountId, setAnalyzingAccountId] = useState<string | null>(null);
 
   // Fetch accounts
   const fetchAccounts = async () => {
@@ -39,6 +40,30 @@ export default function AccountsPage() {
   useEffect(() => {
     fetchAccounts();
   }, []);
+
+  const handleRunAnalysis = async (accountId: string) => {
+    setAnalyzingAccountId(accountId);
+    setError(null);
+    try {
+      const res = await fetch("/api/reports/smartxai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        window.location.href = `/reports/${data.report._id}`;
+      } else {
+        const err = await res.json();
+        setError(err.error || "Failed to generate report");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate SmartXAI report");
+    } finally {
+      setAnalyzingAccountId(null);
+    }
+  };
 
   // Create or update account
   const handleSubmit = async (data: FormData) => {
@@ -159,7 +184,9 @@ export default function AccountsPage() {
             accounts={accounts}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            onRunAnalysis={handleRunAnalysis}
             isDeleting={isDeleting}
+            analyzingAccountId={analyzingAccountId}
           />
         )}
       </main>

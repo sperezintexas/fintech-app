@@ -1,6 +1,7 @@
 import type { ScheduledAlert, WatchlistAlert } from "@/types/portfolio";
 import { formatAlert, getTemplate } from "./alert-formatter";
 import type { WatchlistItem, RiskLevel } from "@/types/portfolio";
+import { getAlertTemplates } from "./templates-store";
 
 // Send push notification to a subscription
 export async function sendPushNotification(
@@ -36,7 +37,8 @@ export async function sendAlertAsPush(
   riskLevel: RiskLevel,
   accountName?: string
 ): Promise<boolean> {
-  const template = getTemplate(scheduledAlert.templateId);
+  const alertTemplates = await getAlertTemplates();
+  const template = getTemplate(scheduledAlert.templateId, alertTemplates);
   const formatted = formatAlert({
     alert: scheduledAlert.alert as WatchlistAlert,
     item,

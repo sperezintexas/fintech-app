@@ -29,6 +29,11 @@ export type Position = {
   // Cash specific
   amount?: number;
   currency?: string;
+  // Enriched by API (holdings with market values)
+  marketValue?: number;
+  unrealizedPL?: number;
+  unrealizedPLPercent?: number;
+  isExpired?: boolean;
 };
 
 export type Recommendation = {
@@ -74,6 +79,14 @@ export type MarketConditions = {
 };
 
 // Watchlist Types
+export type Watchlist = {
+  _id: string;
+  name: string;
+  purpose: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type WatchlistItemType = "stock" | "call" | "put" | "csp" | "covered-call";
 
 export type WatchlistStrategy =
@@ -100,7 +113,8 @@ export type StrategySettings = {
 
 export type WatchlistItem = {
   _id: string;
-  accountId: string;
+  watchlistId: string;
+  accountId?: string;
   symbol: string;
   underlyingSymbol: string;
   type: WatchlistItemType;
@@ -135,7 +149,7 @@ export type AlertSeverity = "info" | "warning" | "urgent" | "critical";
 export type WatchlistAlert = {
   _id: string;
   watchlistItemId: string;
-  accountId: string;
+  accountId?: string;
   symbol: string;
   recommendation: AlertRecommendation;
   severity: AlertSeverity;
@@ -275,6 +289,44 @@ export const ALERT_CHANNEL_COSTS: Record<AlertDeliveryChannel, { perMessage: num
 // Alert templates loaded from config/alert-templates.json. Placeholders: {account}, {action}, {symbol}, {reason}, etc.
 export const ALERT_TEMPLATES: AlertTemplate[] = alertTemplatesData.templates as AlertTemplate[];
 
+/** Per-job alert delivery configuration (stored in alertConfigs collection). */
+export type AlertConfigJobType =
+  | "daily-analysis"
+  | "option-scanner"
+  | "covered-call"
+  | "protective-put"
+  | "straddle-strangle";
+
+export type AlertDeliveryStatus = "pending" | "sent" | "failed";
+
+export type AlertConfig = {
+  _id?: string;
+  jobType: AlertConfigJobType;
+  accountId?: string; // optional: per-account override; omit for global default
+  channels: Array<"slack" | "twitter">;
+  templateId: AlertTemplateId;
+  thresholds: {
+    minPlPercent?: number; // only alert if |P/L| >= this
+    maxDte?: number; // only alert if DTE <= this (for options)
+  };
+  quietHours?: {
+    start: string; // HH:MM (24h)
+    end: string; // HH:MM (24h)
+    timezone?: string; // e.g. America/New_York
+  };
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Delivery record per channel (stored on alert doc). */
+export type AlertDeliveryRecord = {
+  channel: "slack" | "twitter";
+  status: AlertDeliveryStatus;
+  sentAt?: string;
+  error?: string;
+};
+
 // SmartXAI Report Types
 export type MarketSentiment = "bullish" | "neutral" | "bearish";
 
@@ -366,6 +418,7 @@ export type SmartXAIReport = {
 };
 
 // Custom Report Definitions (user-configured)
+/** Legacy union - report types are now stored in reportTypes collection. Use string for type. */
 export type ReportDefinitionType = "smartxai" | "portfoliosummary" | "cleanup" | "watchlistreport";
 
 // Report message template (e.g. for watchlist Slack). Placeholders: {date}, {reportName}, {account}, {stocks}, {options}
@@ -392,33 +445,173 @@ export function getReportTemplate(templateId: ReportTemplateId): ReportTemplate 
 
 export type ReportDefinition = {
   _id: string;
-  accountId: string;
+  /** null = portfolio (all accounts) */
+  accountId: string | null;
   name: string;
   description: string;
-  type: ReportDefinitionType;
+  /** Report type id from reportTypes collection (e.g. smartxai, portfoliosummary, custom types) */
+  type: string;
   /** Message template style for Slack (watchlist, etc.). Default: concise */
   templateId?: ReportTemplateId;
   /** Override: custom Slack message body. Placeholders: {date}, {reportName}, {account}, {stocks}, {options} */
   customSlackTemplate?: string;
   /** Override: custom X/Twitter message body (no {account}). Placeholders: {date}, {reportName}, {stocks}, {options} */
   customXTemplate?: string;
+  /** Scanner config for OptionScanner report type (holdDteMin, btcDteMax, etc.) */
+  scannerConfig?: OptionScannerConfig;
   createdAt: string;
   updatedAt: string;
 };
 
-// Scheduled Report Jobs (user-configured)
-export type ReportJobStatus = "active" | "paused";
+// Scheduled Jobs (job type + config, no report definitions)
+export type JobStatus = "active" | "paused";
 
-export type ReportJob = {
+export type Job = {
   _id: string;
-  accountId: string;
+  /** null = portfolio (all accounts) */
+  accountId: string | null;
   name: string;
-  reportId: string;
-  scheduleCron: string; // cron expression
-  channels: AlertDeliveryChannel[]; // slack | push | twitter
-  status: ReportJobStatus;
+  /** Job type id from jobTypes/reportTypes collection (e.g. smartxai, OptionScanner) */
+  jobType: string;
+  /** Message template for watchlist/smartxai/portfoliosummary */
+  templateId?: ReportTemplateId;
+  customSlackTemplate?: string;
+  customXTemplate?: string;
+  /** Scanner config for OptionScanner job type */
+  scannerConfig?: OptionScannerConfig;
+  scheduleCron: string;
+  channels: AlertDeliveryChannel[];
+  status: JobStatus;
   lastRunAt?: string;
   nextRunAt?: string;
   createdAt: string;
   updatedAt: string;
+};
+
+
+// Option Scanner Types
+export type OptionRecommendationAction = "HOLD" | "BUY_TO_CLOSE";
+
+export type OptionRecommendationMetrics = {
+  price: number;
+  underlyingPrice: number;
+  dte: number;
+  pl: number;
+  plPercent: number;
+  intrinsicValue: number;
+  timeValue: number;
+  impliedVolatility?: number;
+};
+
+export type OptionRecommendation = {
+  positionId: string;
+  accountId: string;
+  symbol: string;
+  underlyingSymbol: string;
+  strike: number;
+  expiration: string;
+  optionType: "call" | "put";
+  contracts: number;
+  recommendation: OptionRecommendationAction;
+  reason: string;
+  metrics: OptionRecommendationMetrics;
+  createdAt: string;
+};
+
+/** Configurable rules for Option Scanner (via job data or report config). */
+export type OptionScannerConfig = {
+  /** DTE threshold: recommend HOLD if above this. Default 14. */
+  holdDteMin?: number;
+  /** DTE threshold: recommend BTC if below this. Default 7. */
+  btcDteMax?: number;
+  /** P/L percent threshold: recommend BTC (stop loss) if below this. Default -50. */
+  btcStopLossPercent?: number;
+  /** Time value as % of premium: HOLD if above. Default 20. */
+  holdTimeValuePercentMin?: number;
+  /** IV threshold: lean BTC for puts if above. Default 30. */
+  highVolatilityPercent?: number;
+  /** Account risk profile: conservative = BTC earlier. */
+  riskProfile?: RiskLevel;
+};
+
+// Covered Call Analyzer Types
+export type CoveredCallRecommendationAction =
+  | "HOLD"
+  | "BUY_TO_CLOSE"
+  | "SELL_NEW_CALL"
+  | "ROLL"
+  | "NONE";
+
+export type CoveredCallConfidence = "HIGH" | "MEDIUM" | "LOW";
+
+export type CoveredCallRecommendationMetrics = {
+  stockPrice: number;
+  callBid: number;
+  callAsk: number;
+  dte: number;
+  netPremium: number;
+  unrealizedPl: number;
+  annualizedReturn?: number;
+  breakeven: number;
+  extrinsicValue?: number;
+  extrinsicPercentOfPremium?: number;
+  moneyness?: "ITM" | "ATM" | "OTM";
+  iv?: number;
+  ivRank?: number;
+};
+
+export type CoveredCallRecommendation = {
+  accountId: string;
+  symbol: string;
+  stockPositionId?: string;
+  callPositionId?: string;
+  recommendation: CoveredCallRecommendationAction;
+  confidence: CoveredCallConfidence;
+  reason: string;
+  suggestedStrike?: number;
+  suggestedExpiration?: string;
+  metrics: CoveredCallRecommendationMetrics;
+  createdAt: string;
+};
+
+// Protective Put Analyzer Types
+export type ProtectivePutRecommendationAction =
+  | "HOLD"
+  | "SELL_TO_CLOSE"
+  | "ROLL"
+  | "BUY_NEW_PUT"
+  | "NONE";
+
+export type ProtectivePutConfidence = "HIGH" | "MEDIUM" | "LOW";
+
+export type ProtectivePutRecommendationMetrics = {
+  stockPrice: number;
+  putBid: number;
+  putAsk: number;
+  dte: number;
+  netProtectionCost: number;
+  effectiveFloor: number;
+  putDelta?: number;
+  iv?: number;
+  ivRank?: number;
+  stockUnrealizedPl: number;
+  stockUnrealizedPlPercent: number;
+  protectionCostPercent: number;
+  extrinsicValue?: number;
+  extrinsicPercentOfPremium?: number;
+  moneyness?: "ITM" | "ATM" | "OTM";
+};
+
+export type ProtectivePutRecommendation = {
+  accountId: string;
+  symbol: string;
+  stockPositionId?: string;
+  putPositionId?: string;
+  recommendation: ProtectivePutRecommendationAction;
+  confidence: ProtectivePutConfidence;
+  reason: string;
+  suggestedStrike?: number;
+  suggestedExpiration?: string;
+  metrics: ProtectivePutRecommendationMetrics;
+  createdAt: string;
 };

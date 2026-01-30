@@ -1,0 +1,147 @@
+import { NextRequest, NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/mongodb";
+import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
+
+export const dynamic = "force-dynamic";
+
+/** Handler keys that have backend implementations. New report types must use one of these. */
+export const REPORT_HANDLER_KEYS = [
+  "smartxai",
+  "portfoliosummary",
+  "watchlistreport",
+  "cleanup",
+  "daily-analysis",
+  "OptionScanner",
+  "coveredCallScanner",
+  "protectivePutScanner",
+  "deliverAlerts",
+  "straddleStrangleScanner",
+] as const;
+
+export type ReportHandlerKey = (typeof REPORT_HANDLER_KEYS)[number];
+
+export type ReportType = {
+  _id: string;
+  /** Unique identifier (used in report definitions). Can match handlerKey or be custom e.g. smartxai-weekly */
+  id: string;
+  /** Backend handler that generates this report */
+  handlerKey: ReportHandlerKey;
+  name: string;
+  description: string;
+  supportsPortfolio: boolean;
+  supportsAccount: boolean;
+  order: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ReportTypeDoc = Omit<ReportType, "_id"> & { _id: ObjectId };
+
+const DEFAULT_REPORT_TYPES: Omit<ReportType, "_id" | "createdAt" | "updatedAt">[] = [
+  { id: "smartxai", handlerKey: "smartxai", name: "SmartXAI Report", description: "AI-powered position analysis and sentiment", supportsPortfolio: false, supportsAccount: true, order: 0, enabled: true },
+  { id: "portfoliosummary", handlerKey: "portfoliosummary", name: "Portfolio Summary", description: "Multi-account portfolio overview", supportsPortfolio: true, supportsAccount: true, order: 1, enabled: true },
+  { id: "watchlistreport", handlerKey: "watchlistreport", name: "Watchlist Report", description: "Watchlist positions formatted for Slack/X", supportsPortfolio: false, supportsAccount: true, order: 2, enabled: true },
+  { id: "cleanup", handlerKey: "cleanup", name: "Data Cleanup", description: "Delete old reports and alerts (30+ days)", supportsPortfolio: true, supportsAccount: true, order: 3, enabled: true },
+  { id: "daily-analysis", handlerKey: "daily-analysis", name: "Daily Analysis", description: "Watchlist analysis with price/RSI and recommendations", supportsPortfolio: true, supportsAccount: true, order: 4, enabled: true },
+  { id: "OptionScanner", handlerKey: "OptionScanner", name: "Option Scanner", description: "Evaluates option positions (HOLD/BTC recommendations)", supportsPortfolio: false, supportsAccount: true, order: 5, enabled: true },
+  { id: "coveredCallScanner", handlerKey: "coveredCallScanner", name: "Covered Call Scanner", description: "Evaluates covered call positions and opportunities", supportsPortfolio: false, supportsAccount: true, order: 6, enabled: true },
+  { id: "protectivePutScanner", handlerKey: "protectivePutScanner", name: "Protective Put Scanner", description: "Evaluates protective put positions and opportunities", supportsPortfolio: false, supportsAccount: true, order: 7, enabled: true },
+  { id: "deliverAlerts", handlerKey: "deliverAlerts", name: "Deliver Alerts", description: "Sends pending alerts to Slack/X per AlertConfig", supportsPortfolio: true, supportsAccount: true, order: 8, enabled: true },
+  { id: "straddleStrangleScanner", handlerKey: "straddleStrangleScanner", name: "Straddle/Strangle Scanner", description: "Evaluates long straddle and strangle positions", supportsPortfolio: false, supportsAccount: true, order: 9, enabled: true },
+];
+
+// GET /api/report-types?all=true (all=true returns disabled types too, for admin)
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const includeDisabled = searchParams.get("all") === "true";
+
+    const db = await getDb();
+    await ensureDefaultReportTypes(db);
+
+    const filter = includeDisabled ? {} : { enabled: true };
+    const types = await db
+      .collection<ReportTypeDoc>("reportTypes")
+      .find(filter)
+      .sort({ order: 1, name: 1 })
+      .toArray();
+
+    return NextResponse.json(
+      types.map((t) => ({
+        ...t,
+        _id: t._id.toString(),
+      }))
+    );
+  } catch (error) {
+    console.error("Failed to fetch report types:", error);
+    return NextResponse.json({ error: "Failed to fetch report types" }, { status: 500 });
+  }
+}
+
+// POST /api/report-types
+export async function POST(request: NextRequest) {
+  try {
+    const body = (await request.json()) as {
+      id?: string;
+      handlerKey?: string;
+      name?: string;
+      description?: string;
+      supportsPortfolio?: boolean;
+      supportsAccount?: boolean;
+      order?: number;
+    };
+
+    const id = (body.id ?? "").trim().toLowerCase().replace(/\s+/g, "-");
+    const handlerKey = body.handlerKey as ReportHandlerKey | undefined;
+    const name = (body.name ?? "").trim();
+    const description = (body.description ?? "").trim();
+    const supportsPortfolio = body.supportsPortfolio ?? false;
+    const supportsAccount = body.supportsAccount ?? true;
+    const order = body.order ?? 100;
+
+    if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+    if (!REPORT_HANDLER_KEYS.includes(handlerKey as ReportHandlerKey)) {
+      return NextResponse.json(
+        { error: `handlerKey must be one of: ${REPORT_HANDLER_KEYS.join(", ")}` },
+        { status: 400 }
+      );
+    }
+    if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+
+    const db = await getDb();
+    await ensureDefaultReportTypes(db);
+
+    const coll = db.collection<ReportTypeDoc>("reportTypes");
+    const existing = await coll.findOne({ id });
+    if (existing) {
+      return NextResponse.json({ error: "A report type with this id already exists" }, { status: 400 });
+    }
+
+    const now = new Date().toISOString();
+    const doc: ReportTypeDoc = {
+      _id: new ObjectId(),
+      id,
+      handlerKey: handlerKey as ReportHandlerKey,
+      name,
+      description,
+      supportsPortfolio,
+      supportsAccount,
+      order,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await coll.insertOne(doc);
+
+    return NextResponse.json(
+      { ...doc, _id: doc._id.toString() },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("Failed to create report type:", error);
+    return NextResponse.json({ error: "Failed to create report type" }, { status: 500 });
+  }
+}

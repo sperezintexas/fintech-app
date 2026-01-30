@@ -3,6 +3,7 @@ import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertTemplateId } from "@/types/portfolio";
 import { formatAlert, getTemplate } from "@/lib/alert-formatter";
+import { getAlertTemplates } from "@/lib/templates-store";
 import { analyzeWatchlistItem, MarketData } from "@/lib/watchlist-rules";
 
 export const dynamic = "force-dynamic";
@@ -99,8 +100,12 @@ export async function POST(request: NextRequest) {
       acknowledged: false,
     };
 
-    // Get template
-    const template = getTemplate((templateId as AlertTemplateId) || "concise");
+    // Get template (from DB override or file default)
+    const alertTemplates = await getAlertTemplates();
+    const template = getTemplate(
+      (templateId as AlertTemplateId) || "concise",
+      alertTemplates
+    );
 
     // Format alert
     const formatted = formatAlert({

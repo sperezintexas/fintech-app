@@ -1,0 +1,51 @@
+---
+alwaysApply: false
+---
+# Holdings / Positions Page Guidelines for Cursor
+
+You are improving the **Holdings** view (`/app/holdings/page.tsx` or `/app/positions/page.tsx`) in the myInvestments app so it reliably shows **current market value** for stocks and options, aggregated per account or across portfolio.
+
+## Core Goals
+- Display a clean, simple list/table of all positions (stocks, options, cash)
+- Show real-time/current **market value** for each position
+- Calculate total value per account + grand total
+- Fetch fresh prices from Yahoo Finance on page load (or via revalidation)
+- Keep UI simple, readable, fast-loading — prioritize clarity over heavy features
+
+## Required Behavior
+- **Data Source**
+  - Positions come from MongoDB (`positions` collection or embedded in `accounts`)
+  - For each position:
+    - Stock: symbol, quantity, average cost
+    - Option: symbol (underlying), type (call/put), strike, expiration, quantity, average cost
+    - Cash: currency, amount
+
+- **Market Value Calculation**
+  - Stocks: `currentPrice × quantity`
+  - Options: `currentOptionPrice × quantity × 100` (standard multiplier)
+  - Use **latest bid/ask/mid** price from Yahoo Finance (prefer lastPrice or regularMarketPrice)
+  - If option chain fetch fails → fallback to last known price or show warning
+  - Handle expired options: mark as expired, use intrinsic value or 0 if out-of-money
+
+- **Display Requirements**
+  - Table columns (minimum):
+    - Account name / ID
+    - Symbol / Description
+    - Type (Stock / Call / Put / Cash)
+    - Quantity / Contracts
+    - Avg Cost
+    - Current Price
+    - Market Value
+    - Unrealized P/L ($ and %)
+  - Group by account (accordion or tabs) or show flat list with account column
+  - Show total portfolio value at top
+  - Loading state + error state (Suspense + error.tsx recommended)
+  - Refresh button or auto-refresh every 60–300s (client-side if needed)
+
+## Implementation Priorities
+
+1. **Data Fetching**
+   - Server Component preferred
+   - Create or use `src/lib/portfolio.ts` or `src/lib/holdings.ts` with:
+     ```ts
+     async function getPositionsWithMarketValues(userId: string): Promise<EnhancedPosition[]>

@@ -472,6 +472,7 @@ export default function FindProfitsPage() {
   // Recommendation state
   const [smaData, setSmaData] = useState<SMAData | null>(null);
   const [smaLoading, setSmaLoading] = useState(false);
+  const [smaError, setSmaError] = useState<string | null>(null);
   const [technicals, setTechnicals] = useState<TechnicalsData | null>(null);
   const [technicalsLoading, setTechnicalsLoading] = useState(false);
 
@@ -795,16 +796,22 @@ export default function FindProfitsPage() {
         }
       }
 
-      // Fetch SMA data
+      // Fetch SMA data (50-day moving average from Yahoo Finance historical chart)
       setSmaLoading(true);
+      setSmaError(null);
       try {
         const smaRes = await fetch(`/api/ticker/${symbol.trim().toUpperCase()}/sma`);
+        const smaResult = await smaRes.json();
         if (smaRes.ok) {
-          const smaResult = await smaRes.json();
           setSmaData(smaResult);
+        } else {
+          setSmaError(smaResult.error || "Historical data unavailable");
+          setSmaData(null);
         }
       } catch (smaErr) {
         console.error("Failed to fetch SMA data:", smaErr);
+        setSmaError("Failed to fetch from Yahoo Finance");
+        setSmaData(null);
       } finally {
         setSmaLoading(false);
       }
@@ -1572,13 +1579,13 @@ export default function FindProfitsPage() {
                           </h3>
                         </div>
 
-                        {/* 50 DMA Display */}
+                        {/* 50 DMA Display - from Yahoo Finance historical chart (70 days) */}
                         <div className="mb-6">
                           <h4 className="text-sm font-medium text-gray-700 mb-3">50-Day Moving Average Analysis</h4>
                           {smaLoading ? (
                             <div className="flex items-center gap-2 text-gray-500">
                               <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                              Loading technical data...
+                              Loading from Yahoo Finance...
                             </div>
                           ) : smaData ? (
                             <div className="grid grid-cols-3 gap-4">
@@ -1600,8 +1607,33 @@ export default function FindProfitsPage() {
                                 <p className="text-xs text-gray-500 mt-1">Resistance Zone</p>
                               </div>
                             </div>
+                          ) : tickerData?.price ? (
+                            <div>
+                              <p className="text-amber-700 text-sm mb-3">
+                                {smaError ?? "Historical data unavailable"}. Using current price as reference:
+                              </p>
+                              <div className="grid grid-cols-3 gap-4">
+                                <div className="bg-white/60 rounded-lg p-4 text-center border-2 border-red-200 opacity-90">
+                                  <p className="text-xs text-red-600 mb-1">-15% from price</p>
+                                  <p className="text-xl font-bold text-red-700">{formatCurrency(tickerData.price * 0.85)}</p>
+                                  <p className="text-xs text-gray-500 mt-1">Support Zone (est.)</p>
+                                </div>
+                                <div className="bg-white/60 rounded-lg p-4 text-center border-2 border-indigo-300 opacity-90">
+                                  <p className="text-xs text-indigo-600 mb-1">Current Price</p>
+                                  <p className="text-xl font-bold text-indigo-700">{formatCurrency(tickerData.price)}</p>
+                                  <p className="text-xs text-gray-500 mt-1">Reference</p>
+                                </div>
+                                <div className="bg-white/60 rounded-lg p-4 text-center border-2 border-green-200 opacity-90">
+                                  <p className="text-xs text-green-600 mb-1">+15% from price</p>
+                                  <p className="text-xl font-bold text-green-700">{formatCurrency(tickerData.price * 1.15)}</p>
+                                  <p className="text-xs text-gray-500 mt-1">Resistance Zone (est.)</p>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
-                            <p className="text-gray-500 text-sm">Technical data unavailable</p>
+                            <p className="text-gray-500 text-sm">
+                              {smaError ?? "Technical data unavailable. Search for a symbol first."}
+                            </p>
                           )}
                         </div>
 

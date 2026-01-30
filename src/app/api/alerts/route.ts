@@ -11,6 +11,10 @@ export async function GET(request: NextRequest) {
     const accountId = searchParams.get("accountId");
     const unacknowledged = searchParams.get("unacknowledged") === "true";
     const severity = searchParams.get("severity");
+    const type = searchParams.get("type"); // job type: daily-analysis, option-scanner, covered-call, protective-put
+    const symbol = searchParams.get("symbol");
+    const dateFrom = searchParams.get("dateFrom"); // YYYY-MM-DD
+    const dateTo = searchParams.get("dateTo"); // YYYY-MM-DD
     const limit = parseInt(searchParams.get("limit") || "50");
 
     const db = await getDb();
@@ -20,6 +24,14 @@ export async function GET(request: NextRequest) {
     if (accountId) query.accountId = accountId;
     if (unacknowledged) query.acknowledged = false;
     if (severity) query.severity = severity;
+    if (type) query.type = type;
+    if (symbol) query.symbol = new RegExp(symbol, "i");
+
+    if (dateFrom || dateTo) {
+      query.createdAt = {};
+      if (dateFrom) (query.createdAt as Record<string, string>).$gte = `${dateFrom}T00:00:00.000Z`;
+      if (dateTo) (query.createdAt as Record<string, string>).$lte = `${dateTo}T23:59:59.999Z`;
+    }
 
     const alerts = await db
       .collection("alerts")

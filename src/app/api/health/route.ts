@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { getAgenda } from "@/lib/scheduler";
+import { getDbStats } from "@/lib/cleanup-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,8 @@ type HealthCheck = {
   latencyMs?: number;
   jobsCount?: number;
   nextRunAt?: string;
+  dataSizeMB?: number;
+  percentOfLimit?: number;
 };
 
 export async function GET() {
@@ -26,10 +29,23 @@ export async function GET() {
     const start = Date.now();
     const db = await getDb();
     await db.command({ ping: 1 });
-    checks.mongodb = {
+    const mongodbCheck: HealthCheck = {
       status: "ok",
       latencyMs: Date.now() - start,
     };
+    try {
+      const stats = await getDbStats();
+      mongodbCheck.dataSizeMB = Math.round(stats.dataSizeMB * 100) / 100;
+      mongodbCheck.percentOfLimit = Math.round(stats.percentOfLimit * 10) / 10;
+      if (stats.percentOfLimit >= 75) {
+        mongodbCheck.status = "degraded";
+        mongodbCheck.message = `Storage at ${stats.percentOfLimit.toFixed(1)}% - cleanup recommended`;
+        if (overallStatus === "ok") overallStatus = "degraded";
+      }
+    } catch {
+      // Stats optional
+    }
+    checks.mongodb = mongodbCheck;
   } catch (e) {
     checks.mongodb = {
       status: "error",

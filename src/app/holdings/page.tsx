@@ -19,6 +19,8 @@ function HoldingsContent() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [holdings, setHoldings] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingPosition, setEditingPosition] = useState<Position | undefined>();
 
@@ -45,6 +47,7 @@ function HoldingsContent() {
 
   const fetchHoldings = useCallback(async () => {
     if (!selectedAccountId) return;
+    setError(null);
     try {
       const res = await fetch(`/api/positions?accountId=${selectedAccountId}`, {
         cache: "no-store",
@@ -52,9 +55,15 @@ function HoldingsContent() {
       if (res.ok) {
         const data = await res.json();
         setHoldings(data);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error ?? "Failed to fetch holdings");
       }
-    } catch (error) {
-      console.error("Failed to fetch holdings:", error);
+    } catch (err) {
+      console.error("Failed to fetch holdings:", err);
+      setError("Failed to fetch holdings");
+    } finally {
+      setRefreshing(false);
     }
   }, [selectedAccountId]);
 
@@ -126,6 +135,16 @@ function HoldingsContent() {
 
   const selectedAccount = accounts.find((a) => a._id === selectedAccountId);
 
+  const totalPortfolioValue = holdings.reduce(
+    (sum, p) => sum + (p.marketValue ?? 0),
+    0
+  );
+
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchHoldings();
+  }, [fetchHoldings]);
+
   const handleAddToWatchlist = useCallback(
     (position: Position) => {
       const params = new URLSearchParams();
@@ -146,7 +165,7 @@ function HoldingsContent() {
         if (position.strike != null) params.set("strikePrice", String(position.strike));
         if (position.expiration) params.set("expirationDate", position.expiration);
       }
-      router.push(`/automation?${params.toString()}`);
+      router.push(`/watchlist?${params.toString()}`);
     },
     [selectedAccountId, router]
   );
@@ -168,16 +187,31 @@ function HoldingsContent() {
           <div>
             <h2 className="text-3xl font-bold text-gray-900">Holdings</h2>
             <p className="text-gray-600 mt-1">
-              Symbol, shares, last price, total cost, and market value — live data every 30s
+              Symbol, shares, last price, market value, and unrealized P/L — live data every 30s
             </p>
           </div>
-          {!showForm && accounts.length > 0 && (
+          <div className="flex items-center gap-3">
+            {selectedAccountId && (
+              <div className="text-right">
+                <div className="text-xs text-gray-500 uppercase tracking-wider">
+                  Portfolio Value
+                </div>
+                <div className="text-2xl font-bold text-gray-900">
+                  {new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                  }).format(totalPortfolioValue)}
+                </div>
+              </div>
+            )}
             <button
-              onClick={() => setShowForm(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              onClick={handleRefresh}
+              disabled={refreshing || !selectedAccountId}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Refresh prices"
             >
               <svg
-                className="w-5 h-5"
+                className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -186,12 +220,33 @@ function HoldingsContent() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M12 4v16m8-8H4"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </svg>
-              Add Holding
+              Refresh
             </button>
-          )}
+            {!showForm && accounts.length > 0 && (
+              <button
+                onClick={() => setShowForm(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
+                </svg>
+                Add Holding
+              </button>
+            )}
+          </div>
         </div>
 
         {accounts.length === 0 ? (
@@ -225,7 +280,7 @@ function HoldingsContent() {
             </Link>
           </div>
         ) : (
-          <>
+          <div className="space-y-6">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-6">
               <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                 <label
@@ -260,6 +315,21 @@ function HoldingsContent() {
               </div>
             </div>
 
+            {error && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between gap-4">
+                <p className="text-red-800 font-medium">{error}</p>
+                <button
+                  onClick={() => setError(null)}
+                  className="text-red-600 hover:text-red-800 p-1"
+                  aria-label="Dismiss"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
             {showForm ? (
               <PositionForm
                 position={editingPosition}
@@ -282,7 +352,7 @@ function HoldingsContent() {
                 accountId={selectedAccountId}
               />
             )}
-          </>
+          </div>
         )}
       </main>
     </div>

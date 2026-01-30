@@ -34,12 +34,10 @@ export async function GET(
         );
       }
 
-      // Get the last 50 trading days (most recent first)
-      // Filter out any entries without close price
-      const validCloses: number[] = chartData.quotes
-        .filter((d) => d.close != null && d.close > 0)
-        .slice(0, 50)
-        .map((d) => d.close as number);
+      // Get the last 50 trading days (quotes are sorted oldest-first)
+      // Filter out any entries without close price, take most recent 50
+      const filtered = chartData.quotes.filter((d) => d.close != null && d.close > 0);
+      const validCloses: number[] = filtered.slice(-50).map((d) => d.close as number);
 
       if (validCloses.length < 30) {
         // Require at least 30 days for meaningful SMA

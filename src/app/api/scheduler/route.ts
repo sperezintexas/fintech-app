@@ -88,10 +88,29 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      case "runPortfolio": {
+        await runJobNow("daily-analysis", {});
+        await runJobNow("OptionScanner", {});
+        await runJobNow("coveredCallScanner", {});
+        await runJobNow("protectivePutScanner", {});
+        await runJobNow("straddleStrangleScanner", {});
+        await runJobNow("deliverAlerts", {});
+
+        return NextResponse.json({
+          success: true,
+          message: "Portfolio scanners triggered (daily-analysis, OptionScanner, coveredCallScanner, protectivePutScanner, straddleStrangleScanner, deliverAlerts)",
+        });
+      }
+
       case "setup-defaults": {
         // Set up default scheduled jobs
         await scheduleJob("daily-analysis", "0 16 * * 1-5"); // 4 PM Mon-Fri
         await scheduleJob("cleanup-alerts", "0 2 * * 0"); // 2 AM Sunday
+        await scheduleJob("OptionScanner", "0 16 * * 1-5", {}); // 4 PM Mon-Fri
+        await scheduleJob("coveredCallScanner", "0 16 * * 1-5", {}); // 4 PM Mon-Fri
+        await scheduleJob("protectivePutScanner", "0 16 * * 1-5", {}); // 4 PM Mon-Fri
+        await scheduleJob("straddleStrangleScanner", "0 16 * * 1-5", {}); // 4 PM Mon-Fri
+        await scheduleJob("deliverAlerts", "15 16 * * 1-5", {}); // 4:15 PM Mon-Fri (post-scanners)
 
         return NextResponse.json({
           success: true,
@@ -99,6 +118,11 @@ export async function POST(request: NextRequest) {
           jobs: [
             { name: "daily-analysis", schedule: "0 16 * * 1-5 (4 PM Mon-Fri)" },
             { name: "cleanup-alerts", schedule: "0 2 * * 0 (2 AM Sunday)" },
+            { name: "OptionScanner", schedule: "0 16 * * 1-5 (4 PM Mon-Fri)" },
+            { name: "coveredCallScanner", schedule: "0 16 * * 1-5 (4 PM Mon-Fri)" },
+            { name: "protectivePutScanner", schedule: "0 16 * * 1-5 (4 PM Mon-Fri)" },
+            { name: "straddleStrangleScanner", schedule: "0 16 * * 1-5 (4 PM Mon-Fri)" },
+            { name: "deliverAlerts", schedule: "15 16 * * 1-5 (4:15 PM Mon-Fri)" },
           ],
         });
       }

@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { getAgenda, executeReportJob } from "@/lib/scheduler";
-import type { AlertDeliveryChannel, ReportJob } from "@/types/portfolio";
+import { getAgenda, executeJob } from "@/lib/scheduler";
+import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
-type RouteParams = {
-  params: Promise<{ id: string }>;
-};
+type RouteParams = { params: Promise<{ id: string }> };
 
 async function upsertAgendaSchedule(jobId: string, cron: string): Promise<void> {
   const agenda = await getAgenda();
@@ -21,20 +19,18 @@ async function cancelAgendaSchedule(jobId: string): Promise<void> {
   await agenda.cancel({ name: "scheduled-report", "data.jobId": jobId });
 }
 
-// POST /api/report-jobs/[id]/run - Run report job synchronously (Run Now)
-export async function POST(request: NextRequest, { params }: RouteParams) {
+// POST /api/jobs/[id] - Run job now
+export async function POST(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
     }
 
-    const result = await executeReportJob(id);
+    const result = await executeJob(id);
     if (!result.success) {
-      const errMsg = result.error ?? "Report job failed";
-      console.error("[report-jobs run] Failed:", errMsg);
       return NextResponse.json(
-        { success: false, error: errMsg },
+        { success: false, error: result.error ?? "Job failed" },
         { status: 400 }
       );
     }
@@ -42,27 +38,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const failed = result.failedChannels ?? [];
     let message =
       channels.length === 0
-        ? "Report sent successfully"
+        ? "Job completed successfully"
         : channels.length === 1
-          ? `Report sent to ${channels[0]}`
+          ? `Sent to ${channels[0]}`
           : channels.length === 2
-            ? `Report sent to ${channels[0]} and ${channels[1]}`
-            : `Report sent to ${channels.slice(0, -1).join(", ")}, and ${channels[channels.length - 1]}`;
+            ? `Sent to ${channels[0]} and ${channels[1]}`
+            : `Sent to ${channels.slice(0, -1).join(", ")}, and ${channels[channels.length - 1]}`;
     if (failed.length > 0) {
-      const failedStr = failed.map((f) => `${f.channel}: ${f.error}`).join("; ");
-      message += `. ${failedStr}`;
+      message += `. ${failed.map((f) => `${f.channel}: ${f.error}`).join("; ")}`;
     }
     return NextResponse.json({ success: true, message });
   } catch (error) {
-    console.error("Run report job failed:", error);
-    return NextResponse.json(
-      { error: "Failed to run report job" },
-      { status: 500 }
-    );
+    console.error("Run job failed:", error);
+    return NextResponse.json({ error: "Failed to run job" }, { status: 500 });
   }
 }
 
-// PUT /api/report-jobs/[id]
+// PUT /api/jobs/[id]
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
@@ -72,15 +64,23 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const body = (await request.json()) as Partial<{
       name: string;
-      reportId: string;
+      jobType: string;
+      templateId: ReportTemplateId;
+      customSlackTemplate: string;
+      customXTemplate: string;
+      scannerConfig: OptionScannerConfig;
       scheduleCron: string;
       channels: AlertDeliveryChannel[];
       status: "active" | "paused";
     }>;
 
-    const update: Partial<ReportJob> & { updatedAt: string } = { updatedAt: new Date().toISOString() };
+    const update: Partial<Job> & { updatedAt: string } = { updatedAt: new Date().toISOString() };
     if (body.name !== undefined) update.name = body.name.trim();
-    if (body.reportId !== undefined) update.reportId = body.reportId;
+    if (body.jobType !== undefined) update.jobType = body.jobType.trim();
+    if (body.templateId !== undefined) update.templateId = body.templateId;
+    if (body.customSlackTemplate !== undefined) update.customSlackTemplate = body.customSlackTemplate;
+    if (body.customXTemplate !== undefined) update.customXTemplate = body.customXTemplate;
+    if (body.scannerConfig !== undefined) update.scannerConfig = body.scannerConfig;
     if (body.scheduleCron !== undefined) update.scheduleCron = body.scheduleCron.trim();
     if (body.channels !== undefined) update.channels = body.channels;
     if (body.status !== undefined) update.status = body.status;
@@ -93,25 +93,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const db = await getDb();
-
-    // If reportId provided, validate it exists
-    if (update.reportId) {
-      const exists = await db.collection("reportDefinitions").findOne({ _id: new ObjectId(update.reportId) });
-      if (!exists) return NextResponse.json({ error: "Report not found" }, { status: 404 });
+    if (update.jobType) {
+      const typeDoc = await db.collection("reportTypes").findOne({ id: update.jobType });
+      if (!typeDoc || !(typeDoc as { enabled?: boolean }).enabled) {
+        return NextResponse.json({ error: "Invalid or disabled job type" }, { status: 400 });
+      }
     }
 
-    const result = await db.collection("reportJobs").updateOne({ _id: new ObjectId(id) }, { $set: update });
+    const result = await db.collection("reportJobs").updateOne(
+      { _id: new ObjectId(id) },
+      { $set: update }
+    );
     if (result.matchedCount === 0) {
-      return NextResponse.json({ error: "Report job not found" }, { status: 404 });
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
-    const updated = (await db.collection("reportJobs").findOne({ _id: new ObjectId(id) })) as {
-  _id: ObjectId;
-  status?: string;
-  scheduleCron?: string;
-} | null;
-
-    // Sync agenda schedule
+    const updated = await db.collection("reportJobs").findOne({ _id: new ObjectId(id) });
     const status = (updated?.status ?? "paused") as "active" | "paused";
     const cron = (updated?.scheduleCron ?? "") as string;
     if (status === "active" && cron) {
@@ -120,14 +117,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       await cancelAgendaSchedule(id);
     }
 
-    return NextResponse.json({ ...updated, _id: updated?._id.toString() });
+    return NextResponse.json({ ...updated, _id: (updated as { _id: ObjectId })?._id.toString() });
   } catch (error) {
-    console.error("Failed to update report job:", error);
-    return NextResponse.json({ error: "Failed to update report job" }, { status: 500 });
+    console.error("Failed to update job:", error);
+    return NextResponse.json({ error: "Failed to update job" }, { status: 500 });
   }
 }
 
-// DELETE /api/report-jobs/[id]
+// DELETE /api/jobs/[id]
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
@@ -138,13 +135,13 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const db = await getDb();
     const result = await db.collection("reportJobs").deleteOne({ _id: new ObjectId(id) });
     if (result.deletedCount === 0) {
-      return NextResponse.json({ error: "Report job not found" }, { status: 404 });
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
     await cancelAgendaSchedule(id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Failed to delete report job:", error);
-    return NextResponse.json({ error: "Failed to delete report job" }, { status: 500 });
+    console.error("Failed to delete job:", error);
+    return NextResponse.json({ error: "Failed to delete job" }, { status: 500 });
   }
 }

@@ -1,12 +1,18 @@
-import Agenda, { Job } from "agenda";
+import Agenda, { Job as AgendaJob } from "agenda";
 import { NextRequest } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "./mongodb";
-import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, ReportJob, ReportDefinition } from "@/types/portfolio";
+import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, Job, OptionScannerConfig } from "@/types/portfolio";
 import { getReportTemplate } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
 import { getMultipleTickerOHLC, getBatchPriceAndRSI } from "./yahoo";
 import { postToXThread } from "./x";
+import { scanOptions, storeOptionRecommendations } from "./option-scanner";
+import { analyzeCoveredCalls, storeCoveredCallRecommendations } from "./covered-call-analyzer";
+import { analyzeProtectivePuts, storeProtectivePutRecommendations } from "./protective-put-analyzer";
+import { analyzeStraddlesAndStrangles, storeStraddleStrangleRecommendations } from "./straddle-strangle-analyzer";
+import { processAlertDelivery } from "./alert-delivery";
+import { shouldRunPurge, runPurge } from "./cleanup-storage";
 
 // Removed - using Yahoo Finance
 // Removed - using Yahoo Finance
@@ -43,7 +49,7 @@ export async function getAgenda(): Promise<Agenda> {
 // Define all scheduled job types
 function defineJobs(agenda: Agenda) {
   // Daily watchlist analysis job
-  agenda.define("daily-analysis", async (job: Job) => {
+  agenda.define("daily-analysis", async (job: AgendaJob) => {
     console.log("Running daily watchlist analysis...", new Date().toISOString());
 
     const data = job.attrs.data as { accountId?: string } | undefined;
@@ -67,7 +73,7 @@ function defineJobs(agenda: Agenda) {
   });
 
   // Cleanup old alerts job
-  agenda.define("cleanup-alerts", async (_job: Job) => {
+  agenda.define("cleanup-alerts", async (_job: AgendaJob) => {
     console.log("Running alert cleanup...", new Date().toISOString());
 
     try {
@@ -87,12 +93,153 @@ function defineJobs(agenda: Agenda) {
     }
   });
 
+  // Option Scanner job - evaluates options positions, generates HOLD/BTC recommendations
+  agenda.define("OptionScanner", async (job: AgendaJob) => {
+    console.log("Running Option Scanner...", new Date().toISOString());
+
+    const data = job.attrs.data as { accountId?: string; config?: OptionScannerConfig } | undefined;
+    const accountId = data?.accountId;
+    const config = data?.config;
+
+    try {
+      const recommendations = await scanOptions(accountId, config);
+      const { stored, alertsCreated } = await storeOptionRecommendations(recommendations, {
+        createAlerts: true,
+      });
+
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        result: { scanned: recommendations.length, stored, alertsCreated },
+      };
+      await job.save();
+
+      console.log(`Option Scanner complete: ${recommendations.length} scanned, ${stored} stored, ${alertsCreated} alerts`);
+    } catch (error) {
+      console.error("Option Scanner failed:", error);
+      throw error;
+    }
+  });
+
+  // Covered Call Scanner job - evaluates covered call positions and opportunities
+  agenda.define("coveredCallScanner", async (job: AgendaJob) => {
+    console.log("Running Covered Call Scanner...", new Date().toISOString());
+
+    const data = job.attrs.data as { accountId?: string } | undefined;
+    const accountId = data?.accountId;
+
+    try {
+      const recommendations = await analyzeCoveredCalls(accountId);
+      const { stored, alertsCreated } = await storeCoveredCallRecommendations(recommendations, {
+        createAlerts: true,
+      });
+
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        result: { analyzed: recommendations.length, stored, alertsCreated },
+      };
+      await job.save();
+
+      console.log(
+        `Covered Call Scanner complete: ${recommendations.length} analyzed, ${stored} stored, ${alertsCreated} alerts`
+      );
+    } catch (error) {
+      console.error("Covered Call Scanner failed:", error);
+      throw error;
+    }
+  });
+
+  // Deliver Alerts job - sends pending alerts to Slack/X per AlertConfig
+  agenda.define("deliverAlerts", async (job: AgendaJob) => {
+    console.log("Running Alert Delivery...", new Date().toISOString());
+
+    const data = job.attrs.data as { accountId?: string } | undefined;
+    const accountId = data?.accountId;
+
+    try {
+      const result = await processAlertDelivery(accountId);
+
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        result,
+      };
+      await job.save();
+
+      console.log(
+        `Alert Delivery complete: ${result.processed} processed, ${result.delivered} delivered, ${result.failed} failed, ${result.skipped} skipped`
+      );
+    } catch (error) {
+      console.error("Alert Delivery failed:", error);
+      throw error;
+    }
+  });
+
+  // Straddle/Strangle Scanner job - evaluates long straddle and strangle positions
+  agenda.define("straddleStrangleScanner", async (job: AgendaJob) => {
+    console.log("Running Straddle/Strangle Scanner...", new Date().toISOString());
+
+    const data = job.attrs.data as { accountId?: string } | undefined;
+    const accountId = data?.accountId;
+
+    try {
+      const recommendations = await analyzeStraddlesAndStrangles(accountId);
+      const { stored, alertsCreated } = await storeStraddleStrangleRecommendations(recommendations, {
+        createAlerts: true,
+      });
+
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        result: { analyzed: recommendations.length, stored, alertsCreated },
+      };
+      await job.save();
+
+      console.log(
+        `Straddle/Strangle Scanner complete: ${recommendations.length} analyzed, ${stored} stored, ${alertsCreated} alerts`
+      );
+    } catch (error) {
+      console.error("Straddle/Strangle Scanner failed:", error);
+      throw error;
+    }
+  });
+
+  // Protective Put Scanner job - evaluates protective put positions and opportunities
+  agenda.define("protectivePutScanner", async (job: AgendaJob) => {
+    console.log("Running Protective Put Scanner...", new Date().toISOString());
+
+    const data = job.attrs.data as { accountId?: string } | undefined;
+    const accountId = data?.accountId;
+
+    try {
+      const recommendations = await analyzeProtectivePuts(accountId);
+      const { stored, alertsCreated } = await storeProtectivePutRecommendations(recommendations, {
+        createAlerts: true,
+      });
+
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        result: { analyzed: recommendations.length, stored, alertsCreated },
+      };
+      await job.save();
+
+      console.log(
+        `Protective Put Scanner complete: ${recommendations.length} analyzed, ${stored} stored, ${alertsCreated} alerts`
+      );
+    } catch (error) {
+      console.error("Protective Put Scanner failed:", error);
+      throw error;
+    }
+  });
+
   // Scheduled report job (user-configured)
-  agenda.define("scheduled-report", async (job: Job) => {
+  agenda.define("scheduled-report", async (job: AgendaJob) => {
     const data = job.attrs.data as { jobId?: string } | undefined;
     const jobId = data?.jobId;
     if (!jobId) return;
-    await executeReportJob(jobId);
+    await executeJob(jobId);
   });
 }
 
@@ -174,8 +321,8 @@ async function buildWatchlistConciseBlock(
   return { stocksBlock, optionsBlock };
 }
 
-/** Execute a report job synchronously (used by Run Now and scheduled runs). Returns { success, error?, deliveredChannels?, failedChannels? }. */
-export async function executeReportJob(jobId: string): Promise<{
+/** Execute a job synchronously (used by Run Now and scheduled runs). Returns { success, error?, deliveredChannels?, failedChannels? }. */
+export async function executeJob(jobId: string): Promise<{
   success: boolean;
   error?: string;
   deliveredChannels?: string[];
@@ -183,44 +330,42 @@ export async function executeReportJob(jobId: string): Promise<{
 }> {
   try {
     const db = await getDb();
-    const reportJob = (await db.collection("reportJobs").findOne({ _id: new ObjectId(jobId) })) as (ReportJob & { _id: ObjectId }) | null;
-    if (!reportJob) return { success: false, error: "Report job not found" };
-    if (reportJob.status !== "active") return { success: false, error: "Report job is paused" };
+    const job = (await db.collection("reportJobs").findOne({ _id: new ObjectId(jobId) })) as (Job & { _id: ObjectId }) | null;
+    if (!job) return { success: false, error: "Job not found" };
+    if (job.status !== "active") return { success: false, error: "Job is paused" };
 
     const deliveredChannels: string[] = [];
     const failedChannels: { channel: string; error: string }[] = [];
 
-    const reportDef = (await db
-      .collection("reportDefinitions")
-      .findOne({ _id: new ObjectId(reportJob.reportId) })) as (ReportDefinition & { _id: ObjectId }) | null;
-    if (!reportDef) return { success: false, error: "Report definition not found" };
+    // Resolve handler from job type
+    const typeDoc = await db.collection("reportTypes").findOne({ id: job.jobType }) as { handlerKey?: string } | null;
+    const handlerKey = typeDoc?.handlerKey ?? job.jobType;
 
-    // Generate report output (SmartXAI or PortfolioSummary)
-    let title = reportDef.name;
+    let title = job.name;
     let bodyText = "";
     let reportLink: string | null = null;
     let xTitle: string | null = null;
     let xBodyText: string | null = null;
 
-    if (reportDef.type === "smartxai") {
+    if (handlerKey === "smartxai") {
       try {
         const { POST: generateSmartXAI } = await import("@/app/api/reports/smartxai/route");
-        const res = await generateSmartXAI({ json: async () => ({ accountId: reportDef.accountId }) } as unknown as NextRequest);
+        const res = await generateSmartXAI({ json: async () => ({ accountId: job.accountId }) } as unknown as NextRequest);
         const payload = (await res.json()) as {
           success?: boolean;
           report?: { _id: string; title: string; summary: Record<string, unknown> };
         };
 
         if (payload.success && payload.report) {
-          const accountId = reportDef.accountId ?? reportJob.accountId;
+          const accountId = job.accountId;
           const accountDoc = accountId
             ? await db.collection("accounts").findOne({ _id: new ObjectId(accountId) })
             : null;
           const accountName = (accountDoc as { name?: string } | null)?.name ?? "Account";
 
           const reportTitle = payload.report.title;
-          title = `${reportTitle} – ${reportDef.name} – ${accountName}`;
-          xTitle = `${reportTitle} – ${reportDef.name}`;
+          title = `${reportTitle} – ${job.name} – ${accountName}`;
+          xTitle = `${reportTitle} – ${job.name}`;
           reportLink = `/reports/${payload.report._id}`;
           const summary = payload.report.summary;
           bodyText += [
@@ -246,10 +391,10 @@ export async function executeReportJob(jobId: string): Promise<{
         console.error("Failed to generate SmartXAI report for scheduled job:", e);
         bodyText += `Failed to generate SmartXAI report.`;
       }
-    } else if (reportDef.type === "portfoliosummary") {
+    } else if (handlerKey === "portfoliosummary") {
       try {
         const { POST: generatePortfolioSummary } = await import("@/app/api/reports/portfoliosummary/route");
-        const res = await generatePortfolioSummary({ json: async () => ({ accountId: reportDef.accountId }) } as unknown as NextRequest);
+        const res = await generatePortfolioSummary({ json: async () => ({ accountId: job.accountId }) } as unknown as NextRequest);
         const payload = (await res.json()) as {
           success?: boolean;
           report?: {
@@ -390,12 +535,12 @@ export async function executeReportJob(jobId: string): Promise<{
         console.error("Failed to generate PortfolioSummary report for scheduled job:", e);
         bodyText += `Failed to generate PortfolioSummary report.`;
       }
-    } else if (reportDef.type === "watchlistreport") {
+    } else if (handlerKey === "watchlistreport") {
       try {
-        const accountId = reportJob.accountId ?? (reportDef as ReportDefinition & { accountId?: string }).accountId;
+        const accountId = job.accountId;
         if (!accountId) {
           bodyText = "Watchlist report: no account configured.";
-          title = reportDef.name;
+          title = job.name;
         } else {
           const accountDoc = await db.collection("accounts").findOne({ _id: new ObjectId(accountId) });
           const accountName = (accountDoc as { name?: string } | null)?.name ?? "Account";
@@ -403,99 +548,203 @@ export async function executeReportJob(jobId: string): Promise<{
 
           const d = new Date();
           const dateStr = `${d.toISOString().slice(0, 10)} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-          const template = getReportTemplate(reportDef.templateId ?? "concise");
+          const template = getReportTemplate(job.templateId ?? "concise");
           const slackTemplate =
-            reportDef.customSlackTemplate ?? template.slackTemplate;
+            job.customSlackTemplate ?? template.slackTemplate;
           const xTemplate =
-            reportDef.customXTemplate ?? template.xTemplate;
+            job.customXTemplate ?? template.xTemplate;
           const body = slackTemplate
             .replace(/\{date\}/g, dateStr)
-            .replace(/\{reportName\}/g, reportDef.name)
+            .replace(/\{reportName\}/g, job.name)
             .replace(/\{account\}/g, accountName)
             .replace(/\{stocks\}/g, stocksBlock)
             .replace(/\{options\}/g, optionsBlock);
           xBodyText = xTemplate
             .replace(/\{date\}/g, dateStr)
-            .replace(/\{reportName\}/g, reportDef.name)
+            .replace(/\{reportName\}/g, job.name)
             .replace(/\{stocks\}/g, stocksBlock)
             .replace(/\{options\}/g, optionsBlock);
-          title = reportDef.name;
+          title = job.name;
           bodyText = body;
         }
       } catch (e) {
         console.error("Failed to generate Watchlist report for scheduled job:", e);
-        title = reportDef.name;
+        title = job.name;
         bodyText = `Failed to generate Watchlist report: ${e instanceof Error ? e.message : String(e)}`;
       }
-    } else if (reportDef.type === "cleanup") {
-      // Run cleanup job - delete old data older than 30 days
+    } else if (handlerKey === "cleanup") {
+      // Run cleanup job - check storage, purge if at 75% of limit or every 30 days
       try {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const { shouldRun, reason, stats } = await shouldRunPurge();
 
-        const cleanupResults: Record<string, number> = {};
+        if (!shouldRun) {
+          title = "Data Cleanup Skipped";
+          bodyText = [
+            `Cleanup skipped on ${new Date().toLocaleString()}`,
+            "",
+            reason,
+            stats ? `Storage: ${stats.dataSizeMB.toFixed(2)} MB (${stats.percentOfLimit.toFixed(1)}% of limit)` : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+          console.log(`Cleanup skipped: ${reason}`);
+        } else {
+          const result = await runPurge();
 
-        // Cleanup old SmartXAI reports
-        const smartXAIResult = await db.collection("smartXAIReports").deleteMany({
-          createdAt: { $lt: thirtyDaysAgo.toISOString() },
-        });
-        cleanupResults.smartXAIReports = smartXAIResult.deletedCount;
+          title = "Data Cleanup Complete";
+          bodyText = [
+            `Cleanup completed on ${new Date().toLocaleString()}`,
+            `Trigger: ${reason}`,
+            "",
+            "Deleted records older than 30 days:",
+            `• SmartXAI Reports: ${result.smartXAIReports}`,
+            `• Portfolio Summary Reports: ${result.portfolioSummaryReports}`,
+            `• Alerts: ${result.alerts}`,
+            `• Scheduled Alerts: ${result.scheduledAlerts}`,
+            "",
+            `Total records deleted: ${result.totalDeleted}`,
+            "",
+            `Storage before: ${result.statsBefore.dataSizeMB.toFixed(2)} MB (${result.statsBefore.percentOfLimit.toFixed(1)}% of limit)`,
+            result.statsAfter
+              ? `Storage after: ${result.statsAfter.dataSizeMB.toFixed(2)} MB (${result.statsAfter.percentOfLimit.toFixed(1)}% of limit)`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
 
-        // Cleanup old PortfolioSummary reports
-        const portfolioSummaryResult = await db.collection("portfolioSummaryReports").deleteMany({
-          createdAt: { $lt: thirtyDaysAgo.toISOString() },
-        });
-        cleanupResults.portfolioSummaryReports = portfolioSummaryResult.deletedCount;
-
-        // Cleanup old alerts (both acknowledged and unacknowledged older than 30 days)
-        const alertsResult = await db.collection("alerts").deleteMany({
-          createdAt: { $lt: thirtyDaysAgo.toISOString() },
-        });
-        cleanupResults.alerts = alertsResult.deletedCount;
-
-        // Cleanup old scheduled alerts (if they exist)
-        const scheduledAlertsResult = await db.collection("scheduledAlerts").deleteMany({
-          createdAt: { $lt: thirtyDaysAgo.toISOString() },
-        });
-        cleanupResults.scheduledAlerts = scheduledAlertsResult.deletedCount;
-
-        const totalDeleted = Object.values(cleanupResults).reduce((a, b) => a + b, 0);
-
-        title = "Data Cleanup Complete";
-        bodyText = [
-          `Cleanup completed on ${new Date().toLocaleString()}`,
-          "",
-          "Deleted records older than 30 days:",
-          `• SmartXAI Reports: ${cleanupResults.smartXAIReports}`,
-          `• Portfolio Summary Reports: ${cleanupResults.portfolioSummaryReports}`,
-          `• Alerts: ${cleanupResults.alerts}`,
-          `• Scheduled Alerts: ${cleanupResults.scheduledAlerts}`,
-          "",
-          `Total records deleted: ${totalDeleted}`,
-        ].join("\n");
-
-        console.log(`Cleanup job completed: ${totalDeleted} records deleted`);
+          console.log(`Cleanup job completed: ${result.totalDeleted} records deleted. ${reason}`);
+        }
       } catch (e) {
         console.error("Failed to run cleanup job:", e);
         title = "Data Cleanup Failed";
         bodyText = `Failed to run cleanup job: ${e instanceof Error ? e.message : String(e)}`;
       }
+    } else if (handlerKey === "daily-analysis") {
+      try {
+        const accountId = job.accountId ?? undefined;
+        const result = await runWatchlistAnalysis(accountId);
+        title = job.name;
+        bodyText = [
+          `Daily Analysis complete`,
+          `• Analyzed: ${result.analyzed}`,
+          `• Alerts created: ${result.alertsCreated}`,
+          `• Errors: ${result.errors}`,
+        ].join("\n");
+      } catch (e) {
+        console.error("Failed to run daily analysis:", e);
+        title = job.name;
+        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else if (handlerKey === "OptionScanner") {
+      try {
+        const accountId = job.accountId ?? undefined;
+        const config = job.scannerConfig;
+        const recommendations = await scanOptions(accountId, config);
+        const { stored, alertsCreated } = await storeOptionRecommendations(recommendations, { createAlerts: true });
+        title = job.name;
+        bodyText = [
+          `Option Scanner complete`,
+          `• Scanned: ${recommendations.length}`,
+          `• Stored: ${stored}`,
+          `• Alerts created: ${alertsCreated}`,
+        ].join("\n");
+      } catch (e) {
+        console.error("Failed to run Option Scanner:", e);
+        title = job.name;
+        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else if (handlerKey === "coveredCallScanner") {
+      try {
+        const accountId = job.accountId ?? undefined;
+        const recommendations = await analyzeCoveredCalls(accountId);
+        const { stored, alertsCreated } = await storeCoveredCallRecommendations(recommendations, { createAlerts: true });
+        title = job.name;
+        bodyText = [
+          `Covered Call Scanner complete`,
+          `• Analyzed: ${recommendations.length}`,
+          `• Stored: ${stored}`,
+          `• Alerts created: ${alertsCreated}`,
+        ].join("\n");
+      } catch (e) {
+        console.error("Failed to run Covered Call Scanner:", e);
+        title = job.name;
+        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else if (handlerKey === "straddleStrangleScanner") {
+      try {
+        const accountId = job.accountId ?? undefined;
+        const recommendations = await analyzeStraddlesAndStrangles(accountId);
+        const { stored, alertsCreated } = await storeStraddleStrangleRecommendations(recommendations, {
+          createAlerts: true,
+        });
+        title = job.name;
+        bodyText = [
+          `Straddle/Strangle Scanner complete`,
+          `• Analyzed: ${recommendations.length}`,
+          `• Stored: ${stored}`,
+          `• Alerts created: ${alertsCreated}`,
+        ].join("\n");
+      } catch (e) {
+        console.error("Failed to run Straddle/Strangle Scanner:", e);
+        title = job.name;
+        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else if (handlerKey === "protectivePutScanner") {
+      try {
+        const accountId = job.accountId ?? undefined;
+        const recommendations = await analyzeProtectivePuts(accountId);
+        const { stored, alertsCreated } = await storeProtectivePutRecommendations(recommendations, { createAlerts: true });
+        title = job.name;
+        bodyText = [
+          `Protective Put Scanner complete`,
+          `• Analyzed: ${recommendations.length}`,
+          `• Stored: ${stored}`,
+          `• Alerts created: ${alertsCreated}`,
+        ].join("\n");
+      } catch (e) {
+        console.error("Failed to run Protective Put Scanner:", e);
+        title = job.name;
+        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else if (handlerKey === "deliverAlerts") {
+      try {
+        const accountId = job.accountId ?? undefined;
+        const result = await processAlertDelivery(accountId);
+        title = job.name;
+        bodyText = [
+          `Alert Delivery complete`,
+          `• Processed: ${result.processed}`,
+          `• Delivered: ${result.delivered}`,
+          `• Failed: ${result.failed}`,
+          `• Skipped: ${result.skipped}`,
+        ].join("\n");
+      } catch (e) {
+        console.error("Failed to run Deliver Alerts:", e);
+        title = job.name;
+        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
     } else {
-      bodyText += `Unknown report type: ${reportDef.type}`;
+      bodyText += `Unknown job type: ${job.jobType} (handler: ${handlerKey})`;
     }
 
     // Deliver (Slack only for now; push/twitter are placeholders)
-    const prefs = await db.collection("alertPreferences").findOne({ accountId: reportJob.accountId });
+    let prefs = await db.collection("alertPreferences").findOne({ accountId: job.accountId });
+    if (!prefs && job.accountId === null) {
+      const firstAcc = await db.collection("accounts").findOne({});
+      if (firstAcc) {
+        prefs = await db.collection("alertPreferences").findOne({ accountId: (firstAcc as { _id: ObjectId })._id.toString() });
+      }
+    }
     const slackConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "slack");
     const twitterConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "twitter");
 
-    if (reportJob.channels.includes("slack")) {
+    if (job.channels.includes("slack")) {
       if (!slackConfig?.target) {
         return { success: false, error: "Slack not configured. Go to Automation → Settings → Alert Settings and add a Slack webhook URL." };
       }
       try {
         const slackText =
-          reportDef.type === "watchlistreport"
+          handlerKey === "watchlistreport"
             ? bodyText
             : `*${title}*\n${bodyText}${reportLink ? `\n\nView: ${reportLink}` : ""}`;
         const slackRes = await fetch(slackConfig.target, {
@@ -515,7 +764,7 @@ export async function executeReportJob(jobId: string): Promise<{
       }
     }
 
-    if (reportJob.channels.includes("twitter") && twitterConfig?.target) {
+    if (job.channels.includes("twitter") && twitterConfig?.target) {
       try {
         const tweetTitle = xTitle ?? title;
         const tweetBody = xBodyText ?? bodyText;
@@ -529,7 +778,7 @@ export async function executeReportJob(jobId: string): Promise<{
       }
     }
 
-    if (reportJob.channels.includes("push")) {
+    if (job.channels.includes("push")) {
       console.log("Push delivery selected but not implemented server-side yet.");
     }
 
@@ -540,7 +789,7 @@ export async function executeReportJob(jobId: string): Promise<{
     return { success: true, deliveredChannels, failedChannels: failedChannels.length ? failedChannels : undefined };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error("executeReportJob failed:", e);
+    console.error("executeJob failed:", e);
     return { success: false, error: msg };
   }
 }
@@ -654,8 +903,8 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
         analysisMarketData.optionMid = optionPrices.mid;
       }
 
-      // Get risk level for this account
-      const riskLevel = accountRiskMap.get(item.accountId) || "medium";
+      // Get risk level for this account (default to medium for portfolio-level items)
+      const riskLevel = item.accountId ? (accountRiskMap.get(item.accountId) || "medium") : "medium";
 
       // Run analysis
       const analysis = analyzeWatchlistItem(item, riskLevel, analysisMarketData);
@@ -686,7 +935,7 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
         });
 
         if (!recentAlert) {
-          const alert: Omit<WatchlistAlert, "_id"> = {
+          const alert: Omit<WatchlistAlert, "_id"> & { type?: string } = {
             watchlistItemId: item._id.toString(),
             accountId: item.accountId,
             symbol: item.symbol,
@@ -698,6 +947,7 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
             suggestedActions: analysis.suggestedActions,
             createdAt: new Date().toISOString(),
             acknowledged: false,
+            type: "daily-analysis",
           };
 
           await db.collection("alerts").insertOne(alert);

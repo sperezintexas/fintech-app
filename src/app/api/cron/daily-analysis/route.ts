@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
         _id: item._id.toString(),
       } as WatchlistItem;
 
-      const riskLevel = accountRiskMap.get(item.accountId) || "medium";
+      const riskLevel = item.accountId ? (accountRiskMap.get(item.accountId) || "medium") : "medium";
 
       // Get market data from grouped daily
       const priceData = groupedData.get(watchlistItem.underlyingSymbol.toUpperCase());
@@ -191,7 +191,7 @@ export async function GET(request: NextRequest) {
       if (analysis.severity !== "info" || analysis.recommendation !== "HOLD") {
         const newAlert: Omit<WatchlistAlert, "_id"> = {
           watchlistItemId: watchlistItem._id,
-          accountId: watchlistItem.accountId,
+          accountId: watchlistItem.accountId ?? undefined,
           symbol: watchlistItem.symbol,
           recommendation: analysis.recommendation,
           severity: analysis.severity,

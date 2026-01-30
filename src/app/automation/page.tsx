@@ -6,17 +6,13 @@ import { useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import type {
   Account,
-  WatchlistItem,
   WatchlistAlert,
-  WatchlistStrategy,
-  WatchlistItemType,
   AlertDeliveryChannel,
   AlertTemplateId,
   AlertFrequency,
   AlertSeverity,
   ScheduledAlert,
-  ReportDefinition,
-  ReportJob,
+  Job,
   ReportTemplateId,
   StrategySettings,
 } from "@/types/portfolio";
@@ -30,51 +26,16 @@ import {
 
 type TestChannel = "slack" | "twitter" | "push";
 
-const STRATEGIES: { value: WatchlistStrategy; label: string }[] = [
-  { value: "covered-call", label: "Covered Call" },
-  { value: "cash-secured-put", label: "Cash-Secured Put" },
-  { value: "wheel", label: "Wheel" },
-  { value: "long-stock", label: "Long Stock" },
-  { value: "leap-call", label: "LEAP Call" },
-  { value: "collar", label: "Collar" },
-];
-
-const ITEM_TYPES: { value: WatchlistItemType; label: string }[] = [
-  { value: "stock", label: "Stock" },
-  { value: "call", label: "Call Option" },
-  { value: "put", label: "Put Option" },
-  { value: "csp", label: "CSP" },
-  { value: "covered-call", label: "Covered Call" },
-];
-
 function AutomationContent() {
   const searchParams = useSearchParams();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
-  const [watchlistItems, setWatchlistItems] = useState<WatchlistItem[]>([]);
   const [alerts, setAlerts] = useState<WatchlistAlert[]>([]);
   const [scheduledAlerts, setScheduledAlerts] = useState<ScheduledAlert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [analyzing, setAnalyzing] = useState(false);
-
-  // Add item form state
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [formData, setFormData] = useState({
-    symbol: "",
-    underlyingSymbol: "",
-    type: "stock" as WatchlistItemType,
-    strategy: "long-stock" as WatchlistStrategy,
-    quantity: 100,
-    entryPrice: 0,
-    strikePrice: undefined as number | undefined,
-    expirationDate: "",
-    entryPremium: undefined as number | undefined,
-    notes: "",
-  });
-  const [formError, setFormError] = useState("");
 
   // Alert preferences state
-  const [activeTab, setActiveTab] = useState<"automation" | "alerts" | "settings" | "strategy" | "reports" | "jobs">("automation");
+  const [activeTab, setActiveTab] = useState<"alerts" | "settings" | "strategy" | "jobs">("alerts");
   const [prefsLoading, setPrefsLoading] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsMessage, setPrefsMessage] = useState("");
@@ -85,27 +46,11 @@ function AutomationContent() {
     twitter: { status: "idle" },
     push: { status: "idle" },
   });
-  // Reports & Jobs state
-  const [reportDefinitions, setReportDefinitions] = useState<ReportDefinition[]>([]);
-  const [reportJobs, setReportJobs] = useState<ReportJob[]>([]);
-  const [showReportForm, setShowReportForm] = useState(false);
-  const [reportFormError, setReportFormError] = useState<string>("");
-  const [reportFormSaving, setReportFormSaving] = useState(false);
-  const [editingReportId, setEditingReportId] = useState<string | null>(null);
-  const [reportForm, setReportForm] = useState<{
-    name: string;
-    description: string;
-    type: "smartxai" | "portfoliosummary" | "cleanup" | "watchlistreport";
-    templateId: ReportTemplateId;
-    customSlackTemplate: string;
-  }>({
-    name: "",
-    description: "",
-    type: "smartxai",
-    templateId: "concise",
-    customSlackTemplate: "",
-  });
-
+  // Jobs state
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobTypes, setJobTypes] = useState<Array<{ _id: string; id: string; name: string; description: string; handlerKey: string; supportsPortfolio: boolean; supportsAccount: boolean; order: number; enabled: boolean }>>([]);
+  const [runJobTypeLoading, setRunJobTypeLoading] = useState<string | null>(null);
+  const [runJobTypeMessage, setRunJobTypeMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showJobForm, setShowJobForm] = useState(false);
   const [jobFormError, setJobFormError] = useState<string>("");
   const [jobFormSaving, setJobFormSaving] = useState(false);
@@ -127,13 +72,18 @@ function AutomationContent() {
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [jobForm, setJobForm] = useState<{
     name: string;
-    reportId: string;
+    jobType: string;
+    templateId: ReportTemplateId;
+    customSlackTemplate: string;
+    scannerConfig?: { holdDteMin?: number; btcDteMax?: number; btcStopLossPercent?: number; holdTimeValuePercentMin?: number; highVolatilityPercent?: number };
     scheduleCron: string;
     channels: AlertDeliveryChannel[];
     status: "active" | "paused";
   }>({
     name: "",
-    reportId: "",
+    jobType: "smartxai",
+    templateId: "concise",
+    customSlackTemplate: "",
     scheduleCron: "0 16 * * 1-5",
     channels: ["slack"],
     status: "active",
@@ -157,37 +107,22 @@ function AutomationContent() {
   const [schedulerLoading, setSchedulerLoading] = useState(false);
   const [schedulerMessage, setSchedulerMessage] = useState("");
 
-  // Alert preview state
-  const [previewItemId, setPreviewItemId] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewData, setPreviewData] = useState<{
-    alert: WatchlistAlert;
-    formatted: {
-      subject: string;
-      body: string;
-      sms: string;
-      slack: string;
-    };
-    template: { id: string; name: string };
-    analysis: {
-      recommendation: string;
-      severity: string;
-      reason: string;
-      confidence: number;
-    };
-  } | null>(null);
-  const [previewTemplateId, setPreviewTemplateId] = useState<AlertTemplateId>("concise");
+  // Message template JSON editor
+  const [templateEditorTab, setTemplateEditorTab] = useState<"alert" | "report">("alert");
+  const [alertTemplatesJson, setAlertTemplatesJson] = useState("");
+  const [reportTemplatesJson, setReportTemplatesJson] = useState("");
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
 
-  // Schedule alert state
-  const [showScheduleForm, setShowScheduleForm] = useState(false);
-  const [scheduleChannels, setScheduleChannels] = useState<AlertDeliveryChannel[]>([]);
-  const [scheduleType, setScheduleType] = useState<"immediate" | "daily" | "weekly" | "once" | "recurring">("immediate");
-  const [scheduleTime, setScheduleTime] = useState("16:00");
-  const [scheduleDay, setScheduleDay] = useState(1); // Monday
-  const [scheduleDate, setScheduleDate] = useState("");
-  const [scheduleCron, setScheduleCron] = useState("0 16 * * 1-5");
-  const [scheduling, setScheduling] = useState(false);
-  const [scheduleMessage, setScheduleMessage] = useState("");
+  // App config (cleanup settings in appUtil collection)
+  const [appConfig, setAppConfig] = useState<{
+    cleanup: { storageLimitMB: number; purgeThreshold: number; purgeIntervalDays: number; lastDataCleanup?: string };
+    storage?: { dataSizeMB: number; percentOfLimit: number };
+  } | null>(null);
+  const [appConfigSaving, setAppConfigSaving] = useState(false);
+  const [appConfigError, setAppConfigError] = useState<string | null>(null);
+
+  // Alert preview state
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushPermission, setPushPermission] = useState<NotificationPermission | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
@@ -315,56 +250,9 @@ function AutomationContent() {
     fetchAccounts();
   }, []);
 
-  // Pre-fill add form when navigating from Holdings (addFromHolding=1)
-  useEffect(() => {
-    if (searchParams.get("addFromHolding") !== "1" || !accounts.length) return;
-    const accountId = searchParams.get("accountId");
-    const symbol = searchParams.get("symbol") ?? "";
-    const type = (searchParams.get("type") ?? "stock") as WatchlistItemType;
-    const strategy = (searchParams.get("strategy") ?? "long-stock") as WatchlistStrategy;
-    const quantity = Number(searchParams.get("quantity")) || 100;
-    const entryPrice = Number(searchParams.get("entryPrice")) || 0;
-    const strikePrice = searchParams.get("strikePrice") ? Number(searchParams.get("strikePrice")) : undefined;
-    const expirationDate = searchParams.get("expirationDate") ?? "";
-    const entryPremium = searchParams.get("entryPremium") ? Number(searchParams.get("entryPremium")) : undefined;
-    if (accountId && accounts.some((a) => a._id === accountId)) setSelectedAccountId(accountId);
-    setFormData((prev) => ({
-      ...prev,
-      symbol,
-      underlyingSymbol: symbol,
-      type,
-      strategy,
-      quantity,
-      entryPrice,
-      strikePrice,
-      expirationDate,
-      entryPremium,
-    }));
-    setShowAddForm(true);
-    window.history.replaceState({}, "", "/automation");
-  }, [searchParams, accounts.length]);
-
-  // Fetch automation items
-  const fetchWatchlist = useCallback(async () => {
-    if (!selectedAccountId) return;
-
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/watchlist?accountId=${selectedAccountId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setWatchlistItems(data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch automation:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedAccountId]);
-
   // Fetch alerts
   const fetchAlerts = useCallback(async () => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId || selectedAccountId === "__portfolio__") return;
 
     try {
       const res = await fetch(`/api/alerts?accountId=${selectedAccountId}&unacknowledged=true`);
@@ -379,7 +267,7 @@ function AutomationContent() {
 
   // Fetch scheduled alerts
   const fetchScheduledAlerts = useCallback(async () => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId || selectedAccountId === "__portfolio__") return;
 
     try {
       const res = await fetch(`/api/alerts/schedule?accountId=${selectedAccountId}&status=pending`);
@@ -393,93 +281,11 @@ function AutomationContent() {
   }, [selectedAccountId]);
 
   useEffect(() => {
-    fetchWatchlist();
     fetchAlerts();
     if (activeTab === "alerts") {
       fetchScheduledAlerts();
     }
-  }, [fetchWatchlist, fetchAlerts, fetchScheduledAlerts, activeTab]);
-
-  // Run analysis - Generate SmartXAI report
-  const handleRunAnalysis = async () => {
-    setAnalyzing(true);
-    try {
-      const res = await fetch("/api/reports/smartxai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: selectedAccountId }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        // Navigate to the report page
-        window.location.href = `/reports/${data.report._id}`;
-      } else {
-        const error = await res.json();
-        alert(error.error || "Failed to generate report");
-      }
-    } catch (err) {
-      console.error("Failed to run analysis:", err);
-      alert("Failed to generate SmartXAI report");
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  // Add item to automation
-  const handleAddItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError("");
-
-    try {
-      const res = await fetch("/api/watchlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountId: selectedAccountId,
-          ...formData,
-          underlyingSymbol: formData.underlyingSymbol || formData.symbol,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setFormError(data.error || "Failed to add item");
-        return;
-      }
-
-      setShowAddForm(false);
-      setFormData({
-        symbol: "",
-        underlyingSymbol: "",
-        type: "stock",
-        strategy: "long-stock",
-        quantity: 100,
-        entryPrice: 0,
-        strikePrice: undefined,
-        expirationDate: "",
-        entryPremium: undefined,
-        notes: "",
-      });
-      await fetchWatchlist();
-    } catch (err) {
-      setFormError("Failed to add item");
-      console.error(err);
-    }
-  };
-
-  // Remove item from automation
-  const handleRemoveItem = async (id: string) => {
-    if (!confirm("Remove this item from automation?")) return;
-
-    try {
-      await fetch(`/api/watchlist/${id}`, { method: "DELETE" });
-      await fetchWatchlist();
-      await fetchAlerts();
-    } catch (err) {
-      console.error("Failed to remove item:", err);
-    }
-  };
+  }, [fetchAlerts, fetchScheduledAlerts, activeTab]);
 
   // Acknowledge alert
   const handleAcknowledgeAlert = async (id: string) => {
@@ -497,7 +303,7 @@ function AutomationContent() {
 
   // Fetch alert preferences
   const fetchAlertPrefs = useCallback(async () => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId || selectedAccountId === "__portfolio__") return;
 
     setPrefsLoading(true);
     try {
@@ -535,34 +341,64 @@ function AutomationContent() {
     }
   }, [activeTab, fetchAlertPrefs]);
 
-  const fetchReportDefinitions = useCallback(async () => {
-    if (!selectedAccountId) return;
+  // Fetch template JSON and app config when settings tab is active
+  useEffect(() => {
+    if (activeTab !== "settings") return;
+    const fetchSettings = async () => {
+      try {
+        const [alertRes, reportRes, appConfigRes] = await Promise.all([
+          fetch("/api/alert-templates"),
+          fetch("/api/report-templates"),
+          fetch("/api/app-config"),
+        ]);
+        if (alertRes.ok) {
+          const data = await alertRes.json();
+          setAlertTemplatesJson(JSON.stringify(data.templates, null, 2));
+        }
+        if (reportRes.ok) {
+          const data = await reportRes.json();
+          setReportTemplatesJson(JSON.stringify(data.templates, null, 2));
+        }
+        if (appConfigRes.ok) {
+          const data = await appConfigRes.json();
+          setAppConfig(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch settings:", err);
+      }
+    };
+    fetchSettings();
+  }, [activeTab]);
+
+  const fetchJobs = useCallback(async () => {
+    const isPortfolio = selectedAccountId === "__portfolio__";
+    const url = isPortfolio ? "/api/jobs" : `/api/jobs?accountId=${selectedAccountId}`;
+    if (!selectedAccountId && !isPortfolio) return;
     try {
-      const res = await fetch(`/api/report-definitions?accountId=${selectedAccountId}`, { cache: "no-store" });
+      const res = await fetch(url, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        setReportDefinitions(data);
+        setJobs(data);
       }
     } catch (err) {
-      console.error("Failed to fetch report definitions:", err);
+      console.error("Failed to fetch jobs:", err);
     }
   }, [selectedAccountId]);
 
-  const fetchReportJobs = useCallback(async () => {
-    if (!selectedAccountId) return;
+  const fetchJobTypes = useCallback(async () => {
     try {
-      const res = await fetch(`/api/report-jobs?accountId=${selectedAccountId}`, { cache: "no-store" });
+      const res = await fetch("/api/report-types?all=true", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        setReportJobs(data);
+        setJobTypes(data);
       }
     } catch (err) {
-      console.error("Failed to fetch report jobs:", err);
+      console.error("Failed to fetch job types:", err);
     }
-  }, [selectedAccountId]);
+  }, []);
 
   const fetchStrategySettings = useCallback(async () => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId || selectedAccountId === "__portfolio__") return;
     setStrategySettingsLoading(true);
     setStrategySettingsError("");
     setStrategySettingsMessage("");
@@ -601,7 +437,7 @@ function AutomationContent() {
   }, [activeTab, fetchStrategySettings]);
 
   const saveStrategySettings = useCallback(async () => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId || selectedAccountId === "__portfolio__") return;
     setStrategySettingsSaving(true);
     setStrategySettingsError("");
     setStrategySettingsMessage("");
@@ -642,99 +478,38 @@ function AutomationContent() {
   }, [selectedAccountId, strategyThresholdsForm]);
 
   useEffect(() => {
-    if (activeTab === "reports") fetchReportDefinitions();
     if (activeTab === "jobs") {
-      fetchReportDefinitions();
-      fetchReportJobs();
+      fetchJobTypes();
+      fetchJobs();
     }
-  }, [activeTab, fetchReportDefinitions, fetchReportJobs]);
+  }, [activeTab, fetchJobTypes, fetchJobs]);
 
-  const openNewReport = () => {
-    setEditingReportId(null);
-    setReportForm({
-      name: "",
-      description: "",
-      type: "smartxai",
-      templateId: "concise",
-      customSlackTemplate: "",
-    });
-    setReportFormError("");
-    setShowReportForm(true);
-  };
-
-  const openEditReport = (def: ReportDefinition) => {
-    setEditingReportId(def._id);
-    setReportForm({
-      name: def.name,
-      description: def.description,
-      type: def.type,
-      templateId: def.templateId ?? "concise",
-      customSlackTemplate: def.customSlackTemplate ?? "",
-    });
-    setReportFormError("");
-    setShowReportForm(true);
-  };
-
-  const saveReportDefinition = async () => {
-    if (!selectedAccountId) return;
-    const name = reportForm.name.trim();
-    if (!name) {
-      setReportFormError("Report name is required");
+  const handleRunJobType = async (rt: (typeof jobTypes)[0]) => {
+    if (accounts.length === 0) {
+      setRunJobTypeMessage({ type: "error", text: "Add an account first. Slack webhook is configured per account in Alert Settings." });
       return;
     }
-    setReportFormSaving(true);
-    setReportFormError("");
+    setRunJobTypeLoading(rt.handlerKey);
+    setRunJobTypeMessage(null);
     try {
-      const res = await fetch(
-        editingReportId ? `/api/report-definitions/${editingReportId}` : "/api/report-definitions",
-        {
-          method: editingReportId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            editingReportId
-              ? {
-                  name,
-                  description: reportForm.description,
-                  type: reportForm.type,
-                  templateId: reportForm.templateId,
-                  customSlackTemplate: reportForm.customSlackTemplate.trim() || undefined,
-                }
-              : {
-                  accountId: selectedAccountId,
-                  name,
-                  description: reportForm.description,
-                  type: reportForm.type,
-                  templateId: reportForm.templateId,
-                  customSlackTemplate: reportForm.customSlackTemplate.trim() || undefined,
-                }
-          ),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        setReportFormError(data.error || "Failed to save report");
-        return;
+      const res = await fetch("/api/report-types/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          handlerKey: rt.handlerKey,
+          accountId: selectedAccountId === "__portfolio__" ? null : selectedAccountId || null,
+        }),
+      });
+      const data = (await res.json()) as { success?: boolean; error?: string; message?: string };
+      if (data.success) {
+        setRunJobTypeMessage({ type: "success", text: data.message ?? "Sent to Slack" });
+      } else {
+        setRunJobTypeMessage({ type: "error", text: data.error ?? "Run failed" });
       }
-      setShowReportForm(false);
-      await fetchReportDefinitions();
     } catch (err) {
-      console.error(err);
-      setReportFormError("Failed to save report");
+      setRunJobTypeMessage({ type: "error", text: err instanceof Error ? err.message : "Request failed" });
     } finally {
-      setReportFormSaving(false);
-    }
-  };
-
-  const deleteReportDefinition = async (id: string) => {
-    if (!confirm("Delete this report definition? This will also delete any jobs that reference it.")) return;
-    try {
-      const res = await fetch(`/api/report-definitions/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        await fetchReportDefinitions();
-        await fetchReportJobs();
-      }
-    } catch (err) {
-      console.error("Failed to delete report definition:", err);
+      setRunJobTypeLoading(null);
     }
   };
 
@@ -747,22 +522,25 @@ function AutomationContent() {
   };
 
   const openNewJob = () => {
+    const isPortfolio = selectedAccountId === "__portfolio__";
+    const defaultType = jobTypes.find((t) => (isPortfolio ? t.supportsPortfolio : t.supportsAccount))?.id ?? "smartxai";
     setEditingJobId(null);
     setJobFormError("");
     setJobScheduleTime("16:00");
     setJobScheduleFreq("weekdays");
-    setJobForm((prev) => ({
-      ...prev,
+    setJobForm({
       name: "",
-      reportId: reportDefinitions[0]?._id ?? "",
+      jobType: isPortfolio ? (jobTypes.find((t) => t.supportsPortfolio)?.id ?? "portfoliosummary") : defaultType,
+      templateId: "concise",
+      customSlackTemplate: "",
       scheduleCron: scheduleToCron("16:00", "weekdays"),
       channels: ["slack"],
       status: "active",
-    }));
+    });
     setShowJobForm(true);
   };
 
-  const openEditJob = (j: ReportJob) => {
+  const openEditJob = (j: Job) => {
     setEditingJobId(j._id);
     setJobFormError("");
     const cronParts = j.scheduleCron.trim().split(/\s+/);
@@ -775,7 +553,10 @@ function AutomationContent() {
     }
     setJobForm({
       name: j.name,
-      reportId: j.reportId,
+      jobType: j.jobType,
+      templateId: j.templateId ?? "concise",
+      customSlackTemplate: j.customSlackTemplate ?? "",
+      scannerConfig: j.scannerConfig,
       scheduleCron: j.scheduleCron,
       channels: j.channels,
       status: j.status,
@@ -783,26 +564,35 @@ function AutomationContent() {
     setShowJobForm(true);
   };
 
-  const saveReportJob = async () => {
-    if (!selectedAccountId) return;
+  const saveJob = async () => {
+    const isPortfolio = selectedAccountId === "__portfolio__";
+    if (!selectedAccountId && !isPortfolio) return;
     const name = jobForm.name.trim();
     if (!name) return setJobFormError("Job name is required");
-    if (!jobForm.reportId) return setJobFormError("Select a report to run");
+    if (!jobForm.jobType) return setJobFormError("Select a job type");
     if (!jobForm.scheduleCron.trim()) return setJobFormError("Cron schedule is required");
     if (!jobForm.channels.length) return setJobFormError("Select at least one delivery channel");
 
     setJobFormSaving(true);
     setJobFormError("");
     try {
+      const body = {
+        name,
+        jobType: jobForm.jobType,
+        templateId: jobForm.templateId,
+        customSlackTemplate: jobForm.customSlackTemplate.trim() || undefined,
+        scannerConfig: jobForm.scannerConfig,
+        scheduleCron: jobForm.scheduleCron,
+        channels: jobForm.channels,
+        status: jobForm.status,
+      };
       const res = await fetch(
-        editingJobId ? `/api/report-jobs/${editingJobId}` : "/api/report-jobs",
+        editingJobId ? `/api/jobs/${editingJobId}` : "/api/jobs",
         {
           method: editingJobId ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
-            editingJobId
-              ? { ...jobForm, name }
-              : { accountId: selectedAccountId, ...jobForm, name }
+            editingJobId ? body : { accountId: isPortfolio ? null : selectedAccountId, ...body }
           ),
         }
       );
@@ -812,7 +602,7 @@ function AutomationContent() {
         return;
       }
       setShowJobForm(false);
-      await fetchReportJobs();
+      await fetchJobs();
     } catch (err) {
       console.error(err);
       setJobFormError("Failed to save job");
@@ -821,38 +611,63 @@ function AutomationContent() {
     }
   };
 
-  const deleteReportJob = async (id: string) => {
+  const deleteJob = async (id: string) => {
     if (!confirm("Delete this scheduled job?")) return;
     try {
-      const res = await fetch(`/api/report-jobs/${id}`, { method: "DELETE" });
-      if (res.ok) await fetchReportJobs();
+      const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+      if (res.ok) await fetchJobs();
     } catch (err) {
       console.error("Failed to delete job:", err);
     }
   };
 
-  const runReportJobNow = async (jobId: string) => {
+  const runJobNow = async (jobId: string) => {
     setSchedulerMessage("");
     try {
-      const res = await fetch(`/api/report-jobs/${jobId}`, {
+      const res = await fetch(`/api/jobs/${jobId}`, {
         method: "POST",
       });
       const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
       if (res.ok && data.success) {
-        setSchedulerMessage(data.message ?? "Report sent successfully.");
+        setSchedulerMessage(data.message ?? "Job completed.");
         setTimeout(() => setSchedulerMessage(""), 5000);
       } else {
         setSchedulerMessage(`Error: ${data.error ?? "Failed to run job"}`);
       }
-      await fetchReportJobs();
+      await fetchJobs();
     } catch (err) {
       console.error("Failed to run job now:", err);
       setSchedulerMessage("Error: Failed to run job");
     }
   };
 
+  const runPortfolioScanners = async () => {
+    setSchedulerMessage("");
+    setSchedulerLoading(true);
+    try {
+      const res = await fetch("/api/scheduler", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "runPortfolio" }),
+      });
+      const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
+      if (res.ok && data.success) {
+        setSchedulerMessage(data.message ?? "Portfolio scanners triggered.");
+        setTimeout(() => setSchedulerMessage(""), 5000);
+      } else {
+        setSchedulerMessage(`Error: ${data.error ?? "Failed to run portfolio scanners"}`);
+      }
+    } catch (err) {
+      console.error("Failed to run portfolio scanners:", err);
+      setSchedulerMessage("Error: Failed to run portfolio scanners");
+    } finally {
+      setSchedulerLoading(false);
+    }
+  };
+
   // Save alert preferences
   const handleSavePrefs = async () => {
+    if (!selectedAccountId || selectedAccountId === "__portfolio__") return;
     setPrefsSaving(true);
     setPrefsMessage("");
 
@@ -951,133 +766,60 @@ function AutomationContent() {
     }
   };
 
-  // Fetch alert preview
-  const handlePreviewAlert = async (itemId: string, templateId?: AlertTemplateId) => {
-    setPreviewLoading(true);
-    setPreviewItemId(itemId);
-    setPreviewTemplateId(templateId || previewTemplateId);
-
+  const saveAppConfig = async () => {
+    if (!appConfig?.cleanup) return;
+    setAppConfigError(null);
+    setAppConfigSaving(true);
     try {
-      const res = await fetch("/api/watchlist/preview-alert", {
-        method: "POST",
+      const res = await fetch("/api/app-config", {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          watchlistItemId: itemId,
-          templateId: templateId || previewTemplateId,
-        }),
+        body: JSON.stringify({ cleanup: appConfig.cleanup }),
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        setPreviewData(data);
-      } else {
-        const error = await res.json();
-        console.error("Failed to generate preview:", error);
+      const data = await res.json();
+      if (!res.ok) {
+        setAppConfigError(data.error || "Failed to save");
+        return;
       }
+      setAppConfig((prev) => (prev ? { ...prev, cleanup: data.cleanup } : { cleanup: data.cleanup }));
     } catch (err) {
-      console.error("Failed to generate preview:", err);
+      setAppConfigError(err instanceof Error ? err.message : "Failed to save");
     } finally {
-      setPreviewLoading(false);
+      setAppConfigSaving(false);
     }
   };
 
-  // Schedule alert
-  const handleScheduleAlert = async () => {
-    if (!previewData || !previewItemId || scheduleChannels.length === 0) {
-      setScheduleMessage("Please select at least one delivery channel");
-      return;
-    }
-
-    // Check if push is selected but not enabled
-    if (scheduleChannels.includes("push") && pushPermission !== "granted") {
-      setScheduleMessage("Please enable push notifications first in Alert Settings");
-      return;
-    }
-
-    setScheduling(true);
-    setScheduleMessage("");
-
+  const saveTemplateJson = async () => {
+    setTemplateError(null);
+    setTemplateSaving(true);
     try {
-      // Build schedule object
-      let schedule: {
-        type: string;
-        time?: string;
-        dayOfWeek?: number;
-        datetime?: string;
-        cron?: string;
-      };
-
-      switch (scheduleType) {
-        case "immediate":
-          schedule = { type: "immediate" };
-          break;
-        case "daily":
-          schedule = { type: "daily", time: scheduleTime };
-          break;
-        case "weekly":
-          schedule = { type: "weekly", dayOfWeek: scheduleDay, time: scheduleTime };
-          break;
-        case "once":
-          if (!scheduleDate) {
-            setScheduleMessage("Please select a date");
-            setScheduling(false);
-            return;
-          }
-          schedule = { type: "once", datetime: new Date(`${scheduleDate}T${scheduleTime}`).toISOString() };
-          break;
-        case "recurring":
-          schedule = { type: "recurring", cron: scheduleCron };
-          break;
-        default:
-          setScheduleMessage("Invalid schedule type");
-          setScheduling(false);
-          return;
+      const url = templateEditorTab === "alert" ? "/api/alert-templates" : "/api/report-templates";
+      const json = templateEditorTab === "alert" ? alertTemplatesJson : reportTemplatesJson;
+      let templates: unknown[];
+      try {
+        templates = JSON.parse(json);
+      } catch {
+        setTemplateError("Invalid JSON");
+        return;
       }
-
-      const res = await fetch("/api/alerts/schedule", {
-        method: "POST",
+      if (!Array.isArray(templates)) {
+        setTemplateError("JSON must be an array of templates");
+        return;
+      }
+      const res = await fetch(url, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          watchlistItemId: previewItemId,
-          alert: previewData.alert,
-          channels: scheduleChannels,
-          templateId: previewTemplateId,
-          schedule,
-        }),
+        body: JSON.stringify({ templates }),
       });
-
       const data = await res.json();
-
-      if (res.ok) {
-        setScheduleMessage("Alert scheduled successfully!");
-
-        // If immediate schedule and push enabled, show notification now
-        if (scheduleType === "immediate" && scheduleChannels.includes("push") && pushEnabled && previewData) {
-          showDirectNotification(
-            previewData.formatted.subject,
-            previewData.formatted.sms,
-            {
-              symbol: previewData.alert.symbol,
-              recommendation: previewData.alert.recommendation,
-              url: "/automation",
-            }
-          );
-        }
-
-        setShowScheduleForm(false);
-        setTimeout(() => {
-          setScheduleMessage("");
-          setPreviewItemId(null);
-          setPreviewData(null);
-        }, 2000);
-      } else {
-        setScheduleMessage(`Error: ${data.error}`);
+      if (!res.ok) {
+        setTemplateError(data.error || "Failed to save");
+        return;
       }
     } catch (err) {
-      setScheduleMessage("Failed to schedule alert");
-      console.error(err);
+      setTemplateError(err instanceof Error ? err.message : "Failed to save");
     } finally {
-      setScheduling(false);
+      setTemplateSaving(false);
     }
   };
 
@@ -1134,7 +876,7 @@ function AutomationContent() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-3xl font-bold text-gray-900">Setup</h2>
-            <p className="text-gray-600 mt-1">Manage watchlist items, alerts, and schedules</p>
+            <p className="text-gray-600 mt-1">Manage alerts, report schedules, and automation</p>
           </div>
           <div className="flex items-center gap-4">
             <select
@@ -1142,33 +884,13 @@ function AutomationContent() {
               onChange={(e) => setSelectedAccountId(e.target.value)}
               className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
             >
+              <option value="__portfolio__">Portfolio (all accounts)</option>
               {accounts.map((account) => (
                 <option key={account._id} value={account._id}>
                   {account.name} ({account.riskLevel})
                 </option>
               ))}
             </select>
-            {activeTab === "automation" && (
-            <button
-              onClick={handleRunAnalysis}
-              disabled={analyzing}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              {analyzing ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Analyzing...
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  Run Analysis
-                </>
-              )}
-            </button>
-            )}
           </div>
         </div>
 
@@ -1176,29 +898,14 @@ function AutomationContent() {
         <div className="border-b border-gray-200 mb-6">
           <nav className="flex gap-4">
             <button
-              onClick={() => setActiveTab("automation")}
-              className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "automation"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              WatchList
-            </button>
-            <button
               onClick={() => setActiveTab("alerts")}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+              className={`py-3 px-1 border-b-2 font-medium text-sm ${
                 activeTab === "alerts"
                   ? "border-blue-500 text-blue-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
               Alerts
-              {alerts.length > 0 && (
-                <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full">
-                  {alerts.length}
-                </span>
-              )}
             </button>
             <button
               onClick={() => setActiveTab("settings")}
@@ -1219,16 +926,6 @@ function AutomationContent() {
               }`}
             >
               Strategy
-            </button>
-            <button
-              onClick={() => setActiveTab("reports")}
-              className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "reports"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Reports
             </button>
             <button
               onClick={() => setActiveTab("jobs")}
@@ -1254,7 +951,7 @@ function AutomationContent() {
           </div>
         )}
 
-        {(activeTab === "automation" || activeTab === "alerts") && alerts.length > 0 && (
+        {activeTab === "alerts" && alerts.length > 0 && (
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
@@ -1414,677 +1111,6 @@ function AutomationContent() {
                 })}
               </div>
             )}
-          </div>
-        )}
-
-        {/* Watchlist Section */}
-        {activeTab === "automation" && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-900">
-              WatchList Items ({watchlistItems.length})
-            </h3>
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Add Position
-            </button>
-          </div>
-
-          {/* Add Form Modal */}
-          {showAddForm && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-lg font-semibold">Add WatchList Item</h4>
-                  <button onClick={() => setShowAddForm(false)} className="text-gray-400 hover:text-gray-600">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-
-                <form onSubmit={handleAddItem} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Symbol *</label>
-                      <input
-                        type="text"
-                        required
-                        value={formData.symbol}
-                        onChange={(e) => setFormData({ ...formData, symbol: e.target.value.toUpperCase() })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="TSLA"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Underlying</label>
-                      <input
-                        type="text"
-                        value={formData.underlyingSymbol}
-                        onChange={(e) => setFormData({ ...formData, underlyingSymbol: e.target.value.toUpperCase() })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="Same as symbol"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
-                      <select
-                        value={formData.type}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value as WatchlistItemType })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      >
-                        {ITEM_TYPES.map((type) => (
-                          <option key={type.value} value={type.value}>{type.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Strategy *</label>
-                      <select
-                        value={formData.strategy}
-                        onChange={(e) => setFormData({ ...formData, strategy: e.target.value as WatchlistStrategy })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      >
-                        {STRATEGIES.map((s) => (
-                          <option key={s.value} value={s.value}>{s.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
-                      <input
-                        type="number"
-                        required
-                        min="1"
-                        value={formData.quantity}
-                        onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Entry Price *</label>
-                      <input
-                        type="number"
-                        required
-                        step="0.01"
-                        min="0"
-                        value={formData.entryPrice || ""}
-                        onChange={(e) => setFormData({ ...formData, entryPrice: parseFloat(e.target.value) })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Option-specific fields */}
-                  {formData.type !== "stock" && (
-                    <>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Strike Price</label>
-                          <input
-                            type="number"
-                            step="0.5"
-                            value={formData.strikePrice || ""}
-                            onChange={(e) => setFormData({ ...formData, strikePrice: parseFloat(e.target.value) || undefined })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Expiration</label>
-                          <input
-                            type="date"
-                            value={formData.expirationDate}
-                            onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Entry Premium (per share)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={formData.entryPremium || ""}
-                          onChange={(e) => setFormData({ ...formData, entryPremium: parseFloat(e.target.value) || undefined })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                    <textarea
-                      value={formData.notes}
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      rows={2}
-                    />
-                  </div>
-
-                  {formError && (
-                    <p className="text-red-600 text-sm">{formError}</p>
-                  )}
-
-                  <div className="flex justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setShowAddForm(false)}
-                      className="px-4 py-2 text-gray-600 hover:text-gray-800"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      Add WatchList Item
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* Watchlist Table */}
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : watchlistItems.length === 0 ? (
-            <div className="text-center py-12">
-              <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              <h4 className="text-lg font-medium text-gray-600 mb-1">No positions in automation</h4>
-              <p className="text-gray-500 text-sm">Add positions to track and receive daily alerts</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-2 font-medium text-gray-600">Symbol</th>
-                    <th className="text-left py-3 px-2 font-medium text-gray-600">Type</th>
-                    <th className="text-left py-3 px-2 font-medium text-gray-600">Strategy</th>
-                    <th className="text-right py-3 px-2 font-medium text-gray-600">Qty</th>
-                    <th className="text-right py-3 px-2 font-medium text-gray-600">Entry</th>
-                    <th className="text-right py-3 px-2 font-medium text-gray-600">Current</th>
-                    <th className="text-right py-3 px-2 font-medium text-gray-600">P/L</th>
-                    <th className="text-center py-3 px-2 font-medium text-gray-600">Expiration</th>
-                    <th className="text-center py-3 px-2 font-medium text-gray-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {watchlistItems.map((item) => {
-                    const hasAlert = alerts.some((a) => a.watchlistItemId === item._id);
-                    return (
-                      <tr key={item._id} className={`border-b border-gray-100 hover:bg-gray-50 ${hasAlert ? "bg-yellow-50" : ""}`}>
-                        <td className="py-3 px-2">
-                          <div className="flex items-center gap-2">
-                            {hasAlert && <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>}
-                            <span className="font-medium">{item.symbol}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-2">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            item.type === "stock" ? "bg-blue-100 text-blue-700" :
-                            item.type === "call" || item.type === "covered-call" ? "bg-green-100 text-green-700" :
-                            "bg-red-100 text-red-700"
-                          }`}>
-                            {item.type.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="py-3 px-2 text-gray-600">{item.strategy}</td>
-                        <td className="py-3 px-2 text-right">{item.quantity}</td>
-                        <td className="py-3 px-2 text-right">{formatCurrency(item.entryPrice)}</td>
-                        <td className="py-3 px-2 text-right">{formatCurrency(item.currentPrice)}</td>
-                        <td className={`py-3 px-2 text-right font-medium ${
-                          (item.profitLossPercent || 0) >= 0 ? "text-green-600" : "text-red-600"
-                        }`}>
-                          {formatPercent(item.profitLossPercent)}
-                        </td>
-                        <td className="py-3 px-2 text-center text-gray-600">
-                          {item.expirationDate ? new Date(item.expirationDate).toLocaleDateString() : "—"}
-                        </td>
-                        <td className="py-3 px-2 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <button
-                              onClick={() => handlePreviewAlert(item._id)}
-                              className="text-indigo-600 hover:text-indigo-800"
-                              title="Preview Alert"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleRemoveItem(item._id)}
-                              className="text-red-500 hover:text-red-700"
-                              title="Remove"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-        )}
-
-        {/* Alert Preview Modal */}
-        {previewItemId && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">Alert Preview</h3>
-                <button
-                  onClick={() => {
-                    setPreviewItemId(null);
-                    setPreviewData(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="p-6 space-y-6">
-                {/* Template Selector */}
-                <div className="flex items-center gap-4">
-                  <label className="text-sm font-medium text-gray-700">Template:</label>
-                  <select
-                    value={previewTemplateId}
-                    onChange={(e) => {
-                      const newTemplate = e.target.value as AlertTemplateId;
-                      setPreviewTemplateId(newTemplate);
-                      if (previewItemId) {
-                        handlePreviewAlert(previewItemId, newTemplate);
-                      }
-                    }}
-                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                  >
-                    {ALERT_TEMPLATES.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {previewLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  </div>
-                ) : previewData ? (
-                  <>
-                    {/* Analysis Summary */}
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
-                      <h4 className="font-semibold text-blue-900 mb-3">Analysis Summary</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div>
-                          <p className="text-xs text-blue-600 mb-1">Recommendation</p>
-                          <p className={`font-bold ${getRecommendationBadge(previewData.analysis.recommendation)} px-2 py-1 rounded inline-block`}>
-                            {previewData.analysis.recommendation}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-blue-600 mb-1">Severity</p>
-                          <p className={`font-bold ${getSeverityColor(previewData.analysis.severity)} px-2 py-1 rounded inline-block`}>
-                            {previewData.analysis.severity}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-blue-600 mb-1">Confidence</p>
-                          <p className="font-bold text-blue-900">{previewData.analysis.confidence}%</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-blue-600 mb-1">Template</p>
-                          <p className="font-bold text-blue-900">{previewData.template.name}</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-blue-200">
-                        <p className="text-sm text-blue-800">
-                          <strong>Reason:</strong> {previewData.analysis.reason}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Formatted Alerts by Channel */}
-                    <div className="space-y-4">
-                      {/* Email */}
-                      <div className="border border-gray-200 rounded-xl overflow-hidden">
-                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center gap-2">
-                          <span className="text-xl">📧</span>
-                          <span className="font-medium text-gray-900">Email</span>
-                        </div>
-                        <div className="p-4 bg-white">
-                          <div className="mb-2">
-                            <span className="text-xs text-gray-500">Subject:</span>
-                            <p className="font-semibold text-gray-900">{previewData.formatted.subject}</p>
-                          </div>
-                          <div className="mt-3">
-                            <span className="text-xs text-gray-500">Body:</span>
-                            <pre className="mt-1 p-3 bg-gray-50 rounded text-sm whitespace-pre-wrap font-sans">
-                              {previewData.formatted.body}
-                            </pre>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* SMS */}
-                      <div className="border border-gray-200 rounded-xl overflow-hidden">
-                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center gap-2">
-                          <span className="text-xl">📱</span>
-                          <span className="font-medium text-gray-900">SMS / Text</span>
-                          <span className="text-xs text-gray-500 ml-auto">
-                            {previewData.formatted.sms.length} / 160 chars
-                          </span>
-                        </div>
-                        <div className="p-4 bg-white">
-                          <pre className="p-3 bg-gray-50 rounded text-sm whitespace-pre-wrap font-sans">
-                            {previewData.formatted.sms}
-                          </pre>
-                        </div>
-                      </div>
-
-                      {/* Slack */}
-                      <div className="border border-gray-200 rounded-xl overflow-hidden">
-                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center gap-2">
-                          <span className="text-xl">💬</span>
-                          <span className="font-medium text-gray-900">Slack</span>
-                        </div>
-                        <div className="p-4 bg-white">
-                          <pre className="p-3 bg-gray-50 rounded text-sm whitespace-pre-wrap font-mono">
-                            {previewData.formatted.slack}
-                          </pre>
-                        </div>
-                      </div>
-
-                      {/* Push Notification */}
-                      <div className="border border-gray-200 rounded-xl overflow-hidden">
-                        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center gap-2">
-                          <span className="text-xl">🔔</span>
-                          <span className="font-medium text-gray-900">Browser Push</span>
-                        </div>
-                        <div className="p-4 bg-white">
-                          <p className="font-semibold text-gray-900">{previewData.formatted.subject}</p>
-                          <p className="text-sm text-gray-600 mt-1">{previewData.formatted.sms}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Alert Details */}
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <h4 className="font-semibold text-gray-900 mb-3">Alert Details</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <p className="text-gray-600">Symbol</p>
-                          <p className="font-medium">{previewData.alert.symbol}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">Current Price</p>
-                          <p className="font-medium">{formatCurrency(previewData.alert.details.currentPrice)}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">P/L</p>
-                          <p className={`font-medium ${previewData.alert.details.priceChangePercent >= 0 ? "text-green-600" : "text-red-600"}`}>
-                            {formatPercent(previewData.alert.details.priceChangePercent)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">DTE</p>
-                          <p className="font-medium">
-                            {previewData.alert.details.daysToExpiration !== undefined
-                              ? `${previewData.alert.details.daysToExpiration} days`
-                              : "N/A"}
-                          </p>
-                        </div>
-                      </div>
-                      {previewData.alert.suggestedActions.length > 0 && (
-                        <div className="mt-4">
-                          <p className="text-gray-600 mb-2">Suggested Actions:</p>
-                          <ul className="list-disc list-inside space-y-1 text-sm">
-                            {previewData.alert.suggestedActions.map((action, idx) => (
-                              <li key={idx} className="text-gray-800">{action}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {previewData.alert.riskWarning && (
-                        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded">
-                          <p className="text-xs font-medium text-amber-900 mb-1">Risk Warning:</p>
-                          <p className="text-sm text-amber-800">{previewData.alert.riskWarning}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Schedule Alert Section */}
-                    <div className="border-t border-gray-200 pt-6">
-                      {!showScheduleForm ? (
-                        <button
-                          onClick={() => setShowScheduleForm(true)}
-                          className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          Schedule This Alert
-                        </button>
-                      ) : (
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-semibold text-gray-900">Schedule Alert</h4>
-                            <button
-                              onClick={() => setShowScheduleForm(false)}
-                              className="text-gray-400 hover:text-gray-600"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </div>
-
-                          {/* Delivery Channels */}
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Delivery Channels *
-                            </label>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                              {(["slack", "push", "twitter"] as AlertDeliveryChannel[]).map((channel) => (
-                                <label
-                                  key={channel}
-                                  className={`flex items-center gap-2 p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                                    scheduleChannels.includes(channel)
-                                      ? "border-indigo-500 bg-indigo-50"
-                                      : "border-gray-200 hover:border-gray-300"
-                                  }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={scheduleChannels.includes(channel)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setScheduleChannels([...scheduleChannels, channel]);
-                                      } else {
-                                        setScheduleChannels(scheduleChannels.filter((c) => c !== channel));
-                                      }
-                                    }}
-                                    className="rounded"
-                                  />
-                                  <span className="text-sm font-medium">
-                                    {channel === "slack" ? "Slack" : channel === "push" ? "Push" : "X"}
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Schedule Type */}
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Schedule *
-                            </label>
-                            <select
-                              value={scheduleType}
-                              onChange={(e) => setScheduleType(e.target.value as typeof scheduleType)}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
-                            >
-                              <option value="immediate">Send Immediately</option>
-                              <option value="daily">Daily at specific time</option>
-                              <option value="weekly">Weekly on specific day</option>
-                              <option value="once">Once at specific date/time</option>
-                              <option value="recurring">Recurring (Cron expression)</option>
-                            </select>
-                          </div>
-
-                          {/* Schedule Options */}
-                          {scheduleType === "daily" && (
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
-                              <input
-                                type="time"
-                                value={scheduleTime}
-                                onChange={(e) => setScheduleTime(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg"
-                              />
-                            </div>
-                          )}
-
-                          {scheduleType === "weekly" && (
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Day of Week</label>
-                                <select
-                                  value={scheduleDay}
-                                  onChange={(e) => setScheduleDay(parseInt(e.target.value))}
-                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg"
-                                >
-                                  <option value={0}>Sunday</option>
-                                  <option value={1}>Monday</option>
-                                  <option value={2}>Tuesday</option>
-                                  <option value={3}>Wednesday</option>
-                                  <option value={4}>Thursday</option>
-                                  <option value={5}>Friday</option>
-                                  <option value={6}>Saturday</option>
-                                </select>
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
-                                <input
-                                  type="time"
-                                  value={scheduleTime}
-                                  onChange={(e) => setScheduleTime(e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg"
-                                />
-                              </div>
-                            </div>
-                          )}
-
-                          {scheduleType === "once" && (
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
-                                <input
-                                  type="date"
-                                  value={scheduleDate}
-                                  onChange={(e) => setScheduleDate(e.target.value)}
-                                  min={new Date().toISOString().split("T")[0]}
-                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
-                                <input
-                                  type="time"
-                                  value={scheduleTime}
-                                  onChange={(e) => setScheduleTime(e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg"
-                                />
-                              </div>
-                            </div>
-                          )}
-
-                          {scheduleType === "recurring" && (
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Cron Expression</label>
-                              <input
-                                type="text"
-                                value={scheduleCron}
-                                onChange={(e) => setScheduleCron(e.target.value)}
-                                placeholder="0 16 * * 1-5"
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono text-sm"
-                              />
-                              <p className="text-xs text-gray-500 mt-1">
-                                Format: minute hour day month dayOfWeek (e.g., "0 16 * * 1-5" = 4 PM Mon-Fri)
-                              </p>
-                            </div>
-                          )}
-
-                          {/* Message */}
-                          {scheduleMessage && (
-                            <div className={`p-3 rounded-lg ${
-                              scheduleMessage.includes("Error") || scheduleMessage.includes("Please")
-                                ? "bg-red-100 text-red-800"
-                                : "bg-green-100 text-green-800"
-                            }`}>
-                              {scheduleMessage}
-                            </div>
-                          )}
-
-                          {/* Submit Button */}
-                          <button
-                            onClick={handleScheduleAlert}
-                            disabled={scheduling || scheduleChannels.length === 0}
-                            className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                          >
-                            {scheduling ? (
-                              <>
-                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Scheduling...
-                              </>
-                            ) : (
-                              <>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                                Schedule Alert
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-center py-12 text-gray-500">
-                    Click a automation item to preview its alert
-                  </div>
-                )}
-              </div>
-            </div>
           </div>
         )}
 
@@ -2348,6 +1374,144 @@ function AutomationContent() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Edit Template JSON */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Template JSON</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                View and edit the raw JSON for alert and report message templates. Placeholders: {"{account}"}, {"{action}"}, {"{symbol}"}, {"{reason}"}, {"{profitPercent}"}, {"{currentPrice}"}, {"{dte}"}, etc.
+              </p>
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => setTemplateEditorTab("alert")}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm ${
+                    templateEditorTab === "alert"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  Alert Templates
+                </button>
+                <button
+                  onClick={() => setTemplateEditorTab("report")}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm ${
+                    templateEditorTab === "report"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  Report Templates
+                </button>
+              </div>
+              <textarea
+                value={templateEditorTab === "alert" ? alertTemplatesJson : reportTemplatesJson}
+                onChange={(e) =>
+                  templateEditorTab === "alert"
+                    ? setAlertTemplatesJson(e.target.value)
+                    : setReportTemplatesJson(e.target.value)
+                }
+                className="w-full h-64 px-3 py-2 border border-gray-200 rounded-lg font-mono text-sm"
+                spellCheck={false}
+              />
+              {templateError && (
+                <p className="mt-2 text-sm text-red-600">{templateError}</p>
+              )}
+              <button
+                onClick={saveTemplateJson}
+                disabled={templateSaving}
+                className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {templateSaving ? "Saving..." : "Save Templates"}
+              </button>
+            </div>
+
+            {/* App Config (Data Cleanup - stored in appUtil collection) */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Data Cleanup Config</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Configure when the cleanup job purges old data. Stored in appUtil collection.
+              </p>
+              {appConfig ? (
+                <div className="space-y-4 max-w-md">
+                  {appConfig.storage && (
+                    <div className="p-3 bg-gray-50 rounded-lg text-sm">
+                      <span className="font-medium">Current storage:</span> {appConfig.storage.dataSizeMB.toFixed(2)} MB
+                      ({appConfig.storage.percentOfLimit.toFixed(1)}% of limit)
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Storage Limit (MB)</label>
+                    <input
+                      type="number"
+                      min={64}
+                      max={512000}
+                      value={appConfig.cleanup.storageLimitMB}
+                      onChange={(e) =>
+                        setAppConfig((c) =>
+                          c ? { ...c, cleanup: { ...c.cleanup, storageLimitMB: parseInt(e.target.value) || 512 } } : c
+                        )
+                      }
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Atlas free tier = 512. Use 512000 for 500GB.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Purge Threshold: {(appConfig.cleanup.purgeThreshold * 100).toFixed(0)}%
+                    </label>
+                    <input
+                      type="range"
+                      min={10}
+                      max={100}
+                      step={5}
+                      value={appConfig.cleanup.purgeThreshold * 100}
+                      onChange={(e) =>
+                        setAppConfig((c) =>
+                          c
+                            ? { ...c, cleanup: { ...c.cleanup, purgeThreshold: parseInt(e.target.value) / 100 } }
+                            : c
+                        )
+                      }
+                      className="w-full"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Purge when storage reaches this % of limit.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Purge Interval (days)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={appConfig.cleanup.purgeIntervalDays}
+                      onChange={(e) =>
+                        setAppConfig((c) =>
+                          c
+                            ? { ...c, cleanup: { ...c.cleanup, purgeIntervalDays: parseInt(e.target.value) || 30 } }
+                            : c
+                        )
+                      }
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Purge records older than this many days.</p>
+                  </div>
+                  {appConfig.cleanup.lastDataCleanup && (
+                    <p className="text-xs text-gray-500">
+                      Last cleanup: {new Date(appConfig.cleanup.lastDataCleanup).toLocaleString()}
+                    </p>
+                  )}
+                  {appConfigError && <p className="text-sm text-red-600">{appConfigError}</p>}
+                  <button
+                    onClick={saveAppConfig}
+                    disabled={appConfigSaving}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {appConfigSaving ? "Saving..." : "Save Config"}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm">Loading...</p>
+              )}
             </div>
 
             {/* Alert Frequency & Thresholds */}
@@ -2629,7 +1793,7 @@ function AutomationContent() {
               </div>
               <button
                 onClick={handleSavePrefs}
-                disabled={prefsSaving}
+                disabled={prefsSaving || selectedAccountId === "__portfolio__"}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
               >
                 {prefsSaving ? (
@@ -2779,7 +1943,7 @@ function AutomationContent() {
 
                   <button
                     onClick={saveStrategySettings}
-                    disabled={strategySettingsSaving || !selectedAccountId}
+                    disabled={strategySettingsSaving || !selectedAccountId || selectedAccountId === "__portfolio__"}
                     className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
                   >
                     {strategySettingsSaving ? (
@@ -2803,200 +1967,79 @@ function AutomationContent() {
           </div>
         )}
 
-        {/* Reports Tab */}
-        {activeTab === "reports" && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Reports</h3>
-                  <p className="text-sm text-gray-600">Define reusable report templates (name + description).</p>
-                </div>
-                <button
-                  onClick={openNewReport}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  New Report
-                </button>
-              </div>
-
-              {reportDefinitions.length === 0 ? (
-                <div className="text-center py-10 text-gray-500">
-                  No reports yet. Create one to start scheduling it.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {reportDefinitions.map((def) => (
-                    <div key={def._id} className="p-4 rounded-xl border border-gray-200 bg-gray-50">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-gray-900 truncate">{def.name}</p>
-                          {def.description && <p className="text-sm text-gray-600 mt-1">{def.description}</p>}
-                          <p className="text-xs text-gray-500 mt-2">Type: {def.type}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => openEditReport(def)}
-                            className="px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-100"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => deleteReportDefinition(def._id)}
-                            className="px-3 py-1.5 text-sm bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {showReportForm && (
-              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-lg font-semibold">
-                      {editingReportId ? "Edit Report" : "New Report"}
-                    </h4>
-                    <button onClick={() => setShowReportForm(false)} className="text-gray-400 hover:text-gray-600">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  {reportFormError && (
-                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                      {reportFormError}
-                    </div>
-                  )}
-
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
-                      <select
-                        value={reportForm.type}
-                        onChange={(e) => setReportForm({ ...reportForm, type: e.target.value as "smartxai" | "portfoliosummary" | "cleanup" | "watchlistreport" })}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg"
-                      >
-                        <option value="smartxai">SmartXAI Report</option>
-                        <option value="portfoliosummary">Portfolio Summary</option>
-                        <option value="watchlistreport">Watchlist Report</option>
-                        <option value="cleanup">Data Cleanup</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Report Name</label>
-                      <input
-                        value={reportForm.name}
-                        onChange={(e) => setReportForm({ ...reportForm, name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg"
-                        placeholder={
-                          reportForm.type === "smartxai"
-                            ? "e.g. Daily SmartXAI Summary"
-                            : reportForm.type === "portfoliosummary"
-                            ? "e.g. Daily Portfolio Update"
-                            : reportForm.type === "watchlistreport"
-                            ? "e.g. Daily Watchlist Alert"
-                            : "e.g. Weekly Data Cleanup"
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                      <textarea
-                        value={reportForm.description}
-                        onChange={(e) => setReportForm({ ...reportForm, description: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg"
-                        rows={3}
-                        placeholder="What does this report contain?"
-                      />
-                    </div>
-                    {(reportForm.type === "watchlistreport" || reportForm.type === "smartxai" || reportForm.type === "portfoliosummary") && (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Message template</label>
-                          <p className="text-sm text-gray-600 mb-3">
-                            Choose how the report message is styled when sent to Slack (e.g. concise, detailed, actionable, risk-aware).
-                          </p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {REPORT_TEMPLATES.map((template) => (
-                              <button
-                                key={template.id}
-                                type="button"
-                                onClick={() => setReportForm({ ...reportForm, templateId: template.id })}
-                                className={`p-3 rounded-xl border-2 text-left transition-all ${
-                                  reportForm.templateId === template.id
-                                    ? "border-blue-500 bg-blue-50"
-                                    : "border-gray-200 hover:border-gray-300"
-                                }`}
-                              >
-                                <p className="font-medium text-gray-900">{template.name}</p>
-                                <p className="text-xs text-gray-600 mt-0.5">{template.description}</p>
-                                <div className="mt-2 p-2 bg-gray-100 rounded text-xs font-mono text-gray-700 line-clamp-2">
-                                  {template.slackTemplate.replace(/\{(?:date|stocks|options)\}/g, "…").substring(0, 80)}…
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Custom message template (optional)</label>
-                          <p className="text-xs text-gray-500 mb-1">
-                            Override the template above. Use {"{date}"}, {"{reportName}"}, {"{account}"}, {"{stocks}"}, {"{options}"} as placeholders.
-                          </p>
-                          <textarea
-                            value={reportForm.customSlackTemplate}
-                            onChange={(e) => setReportForm({ ...reportForm, customSlackTemplate: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono text-sm"
-                            rows={4}
-                            placeholder="Leave empty to use the selected template."
-                          />
-                        </div>
-                      </>
-                    )}
-                    <div className="flex items-center justify-end gap-2 pt-2">
-                      <button
-                        onClick={() => setShowReportForm(false)}
-                        className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={saveReportDefinition}
-                        disabled={reportFormSaving}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        {reportFormSaving ? "Saving..." : "Save"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
+        {/* Reports tab removed - use Jobs tab with job types */}
         {/* Scheduled Jobs Tab */}
         {activeTab === "jobs" && (
           <div className="space-y-6">
+            {/* Job Types - Run Now for testing */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Job Types</h3>
+              <p className="text-sm text-gray-600 mb-4">Use Run Now to test before scheduling.</p>
+              {runJobTypeMessage && (
+                <div className={`mb-4 p-3 rounded-lg ${runJobTypeMessage.type === "success" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                  {runJobTypeMessage.text}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {jobTypes.filter((t) => t.enabled).map((rt) => {
+                  const isPortfolio = selectedAccountId === "__portfolio__";
+                  const canRun = isPortfolio ? rt.supportsPortfolio : rt.supportsAccount;
+                  return (
+                    <button
+                      key={rt._id}
+                      onClick={() => canRun && handleRunJobType(rt)}
+                      disabled={!canRun || !!runJobTypeLoading || accounts.length === 0}
+                      className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                      title={rt.description}
+                    >
+                      {runJobTypeLoading === rt.handlerKey ? (
+                        <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        </svg>
+                      )}
+                      {rt.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Scheduled Jobs</h3>
-                  <p className="text-sm text-gray-600">Create jobs that run a report on a cron schedule.</p>
+                  <p className="text-sm text-gray-600">Create jobs by choosing a job type and configuring schedule.</p>
                 </div>
-                <button
-                  onClick={openNewJob}
-                  disabled={reportDefinitions.length === 0}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  New Job
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={runPortfolioScanners}
+                    disabled={schedulerLoading}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {schedulerLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Running…
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Run portfolio scanners
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={openNewJob}
+                    disabled={jobTypes.length === 0}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    New Job
+                  </button>
+                </div>
               </div>
 
               {schedulerMessage && (
@@ -3005,20 +2048,20 @@ function AutomationContent() {
                 </div>
               )}
 
-              {reportDefinitions.length === 0 ? (
+              {jobTypes.length === 0 ? (
                 <div className="text-center py-10 text-gray-500">
-                  Create a report first, then you can schedule it.
+                  Loading job types…
                 </div>
-              ) : reportJobs.length === 0 ? (
+              ) : jobs.length === 0 ? (
                 <div className="text-center py-10 text-gray-500">
                   No jobs yet.
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {reportJobs.map((j) => {
-                    const reportDef = reportDefinitions.find((d) => d._id === j.reportId);
-                    const reportName = reportDef?.name ?? "Unknown report";
-                    const template = getReportTemplate(reportDef?.templateId ?? "concise");
+                  {jobs.map((j) => {
+                    const typeInfo = jobTypes.find((t) => t.id === j.jobType);
+                    const typeName = typeInfo?.name ?? j.jobType;
+                    const template = getReportTemplate(j.templateId ?? "concise");
                     const scheduleFriendly = cronToHuman(j.scheduleCron);
                     const nextRunFriendly = j.nextRunAt
                       ? new Intl.DateTimeFormat(undefined, {
@@ -3031,8 +2074,10 @@ function AutomationContent() {
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0">
                             <p className="font-semibold text-gray-900 truncate">{j.name}</p>
-                            <p className="text-sm text-gray-600 mt-1">Report: {reportName}</p>
-                            <p className="text-sm text-gray-600 mt-0.5">Template: {template.name}</p>
+                            <p className="text-sm text-gray-600 mt-1">Job type: {typeName}</p>
+                            {["watchlistreport", "smartxai", "portfoliosummary"].includes(typeInfo?.handlerKey ?? "") && (
+                              <p className="text-sm text-gray-600 mt-0.5">Template: {template.name}</p>
+                            )}
                             <p className="text-sm text-gray-600 mt-0.5">
                               Schedule: {scheduleFriendly}
                               {nextRunFriendly && (
@@ -3048,7 +2093,7 @@ function AutomationContent() {
                           </div>
                           <div className="flex items-center gap-2">
                             <button
-                              onClick={() => runReportJobNow(j._id)}
+                              onClick={() => runJobNow(j._id)}
                               className="px-3 py-1.5 text-sm bg-white border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50"
                             >
                               Run now
@@ -3060,7 +2105,7 @@ function AutomationContent() {
                               Edit
                             </button>
                             <button
-                              onClick={() => deleteReportJob(j._id)}
+                              onClick={() => deleteJob(j._id)}
                               className="px-3 py-1.5 text-sm bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50"
                             >
                               Delete
@@ -3105,20 +2150,136 @@ function AutomationContent() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Report</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Job Type</label>
                       <select
-                        value={jobForm.reportId}
-                        onChange={(e) => setJobForm({ ...jobForm, reportId: e.target.value })}
+                        value={jobForm.jobType}
+                        onChange={(e) => setJobForm({ ...jobForm, jobType: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white"
                       >
-                        <option value="" disabled>Select a report</option>
-                        {reportDefinitions.map((d) => (
-                          <option key={d._id} value={d._id}>{d.name}</option>
-                        ))}
+                        {(() => {
+                          const isPortfolio = selectedAccountId === "__portfolio__";
+                          const filtered = jobTypes.filter((t) => t.enabled && (isPortfolio ? t.supportsPortfolio : t.supportsAccount));
+                          if (filtered.length === 0) return <option value="">No job types available</option>;
+                          return (
+                            <>
+                              <option value="">Select job type</option>
+                              {filtered.map((t) => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                              ))}
+                            </>
+                          );
+                        })()}
                       </select>
                     </div>
+                    {jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey === "OptionScanner" && (
+                      <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                        <h5 className="text-sm font-medium text-gray-700 mb-3">Option Scanner Config</h5>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">HOLD DTE min</label>
+                            <input
+                              type="number"
+                              value={jobForm.scannerConfig?.holdDteMin ?? 14}
+                              onChange={(e) => setJobForm({ ...jobForm, scannerConfig: { ...jobForm.scannerConfig, holdDteMin: parseInt(e.target.value, 10) || undefined } })}
+                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">BTC DTE max</label>
+                            <input
+                              type="number"
+                              value={jobForm.scannerConfig?.btcDteMax ?? 7}
+                              onChange={(e) => setJobForm({ ...jobForm, scannerConfig: { ...jobForm.scannerConfig, btcDteMax: parseInt(e.target.value, 10) || undefined } })}
+                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">BTC stop loss %</label>
+                            <input
+                              type="number"
+                              value={jobForm.scannerConfig?.btcStopLossPercent ?? -50}
+                              onChange={(e) => setJobForm({ ...jobForm, scannerConfig: { ...jobForm.scannerConfig, btcStopLossPercent: parseInt(e.target.value, 10) || undefined } })}
+                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">HOLD time value % min</label>
+                            <input
+                              type="number"
+                              value={jobForm.scannerConfig?.holdTimeValuePercentMin ?? 20}
+                              onChange={(e) => setJobForm({ ...jobForm, scannerConfig: { ...jobForm.scannerConfig, holdTimeValuePercentMin: parseInt(e.target.value, 10) || undefined } })}
+                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">High IV % (puts)</label>
+                            <input
+                              type="number"
+                              value={jobForm.scannerConfig?.highVolatilityPercent ?? 30}
+                              onChange={(e) => setJobForm({ ...jobForm, scannerConfig: { ...jobForm.scannerConfig, highVolatilityPercent: parseInt(e.target.value, 10) || undefined } })}
+                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {jobTypes.find((t) => t.id === jobForm.jobType) && ["watchlistreport", "smartxai", "portfoliosummary"].includes(jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey ?? "") && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Message template</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {REPORT_TEMPLATES.map((template) => (
+                            <button
+                              key={template.id}
+                              type="button"
+                              onClick={() => setJobForm({ ...jobForm, templateId: template.id })}
+                              className={`p-2 rounded-lg border-2 text-left text-sm ${jobForm.templateId === template.id ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"}`}
+                            >
+                              {template.name}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-2">
+                          <label className="block text-xs text-gray-500 mb-1">Custom template (optional)</label>
+                          <textarea
+                            value={jobForm.customSlackTemplate}
+                            onChange={(e) => setJobForm({ ...jobForm, customSlackTemplate: e.target.value })}
+                            className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm font-mono"
+                            rows={2}
+                            placeholder="Leave empty to use selected template"
+                          />
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Schedule</label>
+                      <div className="mb-3">
+                        <label className="block text-xs text-gray-500 mb-1">Quick presets</label>
+                        <select
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white"
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (!v) return;
+                            const presets: Record<string, { cron: string; time: string; freq: "daily" | "weekdays" }> = {
+                              "0 16 * * 1-5": { cron: "0 16 * * 1-5", time: "16:00", freq: "weekdays" },
+                              "0 9 * * 1-5": { cron: "0 9 * * 1-5", time: "09:00", freq: "weekdays" },
+                              "0 16 * * *": { cron: "0 16 * * *", time: "16:00", freq: "daily" },
+                              "0 9 * * *": { cron: "0 9 * * *", time: "09:00", freq: "daily" },
+                            };
+                            const p = presets[v];
+                            if (p) {
+                              setJobScheduleTime(p.time);
+                              setJobScheduleFreq(p.freq);
+                              setJobForm({ ...jobForm, scheduleCron: p.cron });
+                            }
+                          }}
+                        >
+                          <option value="">Choose preset…</option>
+                          <option value="0 16 * * 1-5">Weekdays 4:00 PM</option>
+                          <option value="0 9 * * 1-5">Weekdays 9:00 AM</option>
+                          <option value="0 16 * * *">Daily 4:00 PM</option>
+                          <option value="0 9 * * *">Daily 9:00 AM</option>
+                        </select>
+                      </div>
                       <div className="grid grid-cols-2 gap-3 mb-3">
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">Frequency</label>
@@ -3204,7 +2365,7 @@ function AutomationContent() {
                         Cancel
                       </button>
                       <button
-                        onClick={saveReportJob}
+                        onClick={saveJob}
                         disabled={jobFormSaving}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                       >

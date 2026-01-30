@@ -1,0 +1,98 @@
+---
+description: Rules and guidelines for implementing Straddle / Strangle Strategy Evaluation & Recommendation Service in myInvestments
+globs:
+alwaysApply: false
+---
+# Straddle / Strangle Strategy Evaluation Service Guidelines for Cursor
+
+You are implementing a **Straddle & Strangle Analyzer** service — the next logical piece in the options strategy evaluation suite (Covered Call, Protective Put, Collar, etc.) in the myInvestments app.
+
+The service identifies **long straddle** (long ATM call + long ATM put) and **long strangle** (long OTM call + long OTM put) positions, evaluates their current value, breakeven range, time decay impact, volatility outlook, and recommends:
+- HOLD (if volatility expected to increase or already profitable)
+- SELL_TO_CLOSE both legs (unwind if outlook changed or theta burn too high)
+- ROLL (close current → open new strikes/expirations)
+- ADD/INCREASE position (if new high-conviction volatility setup appears)
+
+This runs via the scheduler (new job type: `straddleStrangleScanner`) and produces alerts/recommendations.
+
+## Core Goals
+- Detect straddle/strangle structures (paired long call + long put on same underlying, same/similar expiration, same account)
+- Evaluate whether the position still makes sense given:
+  - Current stock price vs strikes
+  - Combined extrinsic value / theta decay rate
+  - Implied volatility vs realized volatility (IV vs HV comparison)
+  - Breakeven points and required move to profit
+  - Time remaining (DTE)
+  - Account risk profile (directional bias tolerance)
+- Favor volatility contraction / theta-aware recommendations (straddles/strangles are typically short-volatility decay plays when held too long)
+
+## Key Evaluation Rules (default — configurable per account/strategy)
+
+| Condition                                              | Recommendation              | Reason / Thresholds                                                                 |
+|--------------------------------------------------------|-----------------------------|--------------------------------------------------------------------------------------|
+| DTE ≤ 7–10 & combined extrinsic < 20–25% of entry cost | SELL_TO_CLOSE               | Heavy theta burn; little volatility left to capture                                 |
+| IV rank dropped > 20–30 points since entry             | SELL_TO_CLOSE               | Volatility contraction realized — profit taken or loss cut                         |
+| Stock moved > upper/lower breakeven & position profitable | SELL_TO_CLOSE or partial close | Take profit; straddle/strangle rarely benefits from large directional moves long-term |
+| IV rank > 70–80 & rising & DTE > 30                    | HOLD or ADD                 | High/expanding vol environment — ideal for long straddle/strangle                  |
+| Realized vol (30d HV) >> IV & position losing          | HOLD                        | Volatility undervalued — expect mean reversion or catch-up                          |
+| Combined delta near neutral (±0.10) & stock flat       | HOLD                        | Still in sweet spot for volatility play                                             |
+| Position vega negative or near zero & vol expected to fall | SELL_TO_CLOSE            | Losing vega exposure in declining vol regime                                        |
+| No straddle/strangle & upcoming catalyst + high IV crush risk | None (avoid)             | Classic straddle/strangle trap — post-earnings IV crush hurts long positions        |
+| Upcoming earnings in < 5 days & IV rank < 40           | None / avoid initiating     | Low relative vol → poor risk/reward for long straddles                             |
+
+## Metrics to Compute & Include
+- Current stock price
+- Call bid/ask/mid, put bid/ask/mid
+- Combined premium paid vs current combined value
+- Net P/L today
+- Upper & lower breakeven points
+- Required % move to breakeven (both directions)
+- Combined theta (daily decay estimate)
+- Net vega (sensitivity to IV change)
+- DTE
+- IV rank / IV percentile at entry vs current
+- 30-day historical volatility (HV) for comparison
+- Days until next major catalyst (earnings, ex-div, etc.) — if data available
+
+## Implementation Structure
+
+1. **Core Service**
+   `src/lib/straddle-strangle-analyzer.ts`
+   ```ts
+   async function analyzeStraddlesAndStrangles(userId?: string): Promise<StraddleStrangleRecommendation[]>
+
+   interface StraddleStrangleRecommendation {
+     accountId: string
+     symbol: string
+     callPositionId?: string
+     putPositionId?: string
+     isStraddle: boolean          // true = ATM ≈ same strike, false = strangle
+     recommendation:
+       | 'HOLD'
+       | 'SELL_TO_CLOSE'
+       | 'ROLL'
+       | 'ADD'
+       | 'NONE'
+     confidence: 'HIGH' | 'MEDIUM' | 'LOW'
+     reason: string
+     suggestedCallStrike?: number
+     suggestedPutStrike?: number
+     suggestedExpiration?: Date
+     metrics: {
+       stockPrice: number
+       callBid: number
+       callAsk: number
+       putBid: number
+       putAsk: number
+       dte: number
+       netCurrentValue: number
+       combinedTheta: number
+       netVega: number
+       upperBreakeven: number
+       lowerBreakeven: number
+       requiredMovePercent: number
+       ivRankCurrent: number
+       ivVsHvDiff: number          // current IV - 30d HV
+       unrealizedPl: number
+     }
+   }

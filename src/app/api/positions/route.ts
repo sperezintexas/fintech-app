@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/mongodb";
+import { getPositionsWithMarketValues } from "@/lib/holdings";
 import type { Account, Position } from "@/types/portfolio";
-import { getMultipleTickerPrices } from "@/lib/yahoo";
 
 export const dynamic = "force-dynamic";
 
-// GET all positions for an account
+// GET all positions for an account (with market values from Yahoo Finance)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -19,52 +19,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const db = await getDb();
-    type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
-    const account = await db
-      .collection<AccountDoc>("accounts")
-      .findOne({ _id: new ObjectId(accountId) });
-
-    if (!account) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 });
-    }
-
-    const positions: Position[] = account.positions || [];
-
-    // Fetch current prices for stock and option positions (options use underlying ticker)
-    const tickers = positions
-      .filter((p) => (p.type === "stock" || p.type === "option") && p.ticker)
-      .map((p) => p.ticker!.toUpperCase());
-    const uniqueTickers = Array.from(new Set(tickers));
-
-    if (uniqueTickers.length > 0) {
-      try {
-        const prices = await getMultipleTickerPrices(uniqueTickers);
-
-        // Update positions with current prices and daily change data
-        const updatedPositions = positions.map((position) => {
-          if ((position.type === "stock" || position.type === "option") && position.ticker) {
-            const priceData = prices.get(position.ticker.toUpperCase());
-            if (priceData) {
-              return {
-                ...position,
-                currentPrice: priceData.price,
-                dailyChange: priceData.change,
-                dailyChangePercent: priceData.changePercent,
-              };
-            }
-          }
-          return position;
-        });
-
-        return NextResponse.json(updatedPositions);
-      } catch (priceError) {
-        console.error("Error fetching prices:", priceError);
-        // Return positions without updated prices if price fetch fails
-        return NextResponse.json(positions);
-      }
-    }
-
+    const { positions } = await getPositionsWithMarketValues(accountId);
     return NextResponse.json(positions);
   } catch (error) {
     console.error("Error fetching positions:", error);

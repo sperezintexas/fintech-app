@@ -1,0 +1,144 @@
+import { NextRequest, NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/mongodb";
+import { getAgenda } from "@/lib/scheduler";
+import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
+import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig } from "@/types/portfolio";
+
+export const dynamic = "force-dynamic";
+
+type JobDoc = Omit<Job, "_id"> & { _id: ObjectId };
+
+async function upsertAgendaSchedule(jobId: string, cron: string): Promise<void> {
+  const agenda = await getAgenda();
+  await agenda.cancel({ name: "scheduled-report", "data.jobId": jobId });
+  await agenda.every(cron, "scheduled-report", { jobId });
+}
+
+// GET /api/jobs?accountId=... (omit accountId for portfolio-level)
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const accountIdParam = searchParams.get("accountId");
+
+    const db = await getDb();
+    const query: Record<string, unknown> =
+      accountIdParam === null || accountIdParam === ""
+        ? { accountId: null }
+        : { accountId: accountIdParam };
+
+    const jobs = await db
+      .collection<JobDoc>("reportJobs")
+      .find(query)
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const agenda = await getAgenda();
+    const scheduledReports = await agenda.jobs({ name: "scheduled-report" });
+    const nextRunByJobId = new Map<string, string>();
+    for (const job of scheduledReports) {
+      const jid = (job.attrs.data as { jobId?: string })?.jobId;
+      if (jid && job.attrs.nextRunAt) {
+        nextRunByJobId.set(jid, job.attrs.nextRunAt.toISOString());
+      }
+    }
+
+    return NextResponse.json(
+      jobs.map((j) => {
+        const id = j._id.toString();
+        return {
+          ...j,
+          _id: id,
+          nextRunAt: nextRunByJobId.get(id) ?? j.nextRunAt ?? undefined,
+        };
+      })
+    );
+  } catch (error) {
+    console.error("Failed to fetch jobs:", error);
+    return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
+  }
+}
+
+// POST /api/jobs
+export async function POST(request: NextRequest) {
+  try {
+    const body = (await request.json()) as {
+      accountId?: string | null;
+      name?: string;
+      jobType?: string;
+      templateId?: ReportTemplateId;
+      customSlackTemplate?: string;
+      customXTemplate?: string;
+      scannerConfig?: OptionScannerConfig;
+      scheduleCron?: string;
+      channels?: AlertDeliveryChannel[];
+      status?: "active" | "paused";
+    };
+
+    const accountIdRaw = body.accountId;
+    const accountId: string | null =
+      accountIdRaw === null || accountIdRaw === undefined || accountIdRaw === ""
+        ? null
+        : String(accountIdRaw);
+    const name = (body.name ?? "").trim();
+    const jobType = body.jobType?.trim();
+    const scheduleCron = (body.scheduleCron ?? "").trim();
+    const channels = body.channels ?? [];
+    const status = body.status ?? "active";
+
+    if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+    if (!jobType) return NextResponse.json({ error: "jobType is required" }, { status: 400 });
+    if (!scheduleCron) return NextResponse.json({ error: "scheduleCron is required" }, { status: 400 });
+
+    const db = await getDb();
+    await ensureDefaultReportTypes(db);
+
+    if (accountId) {
+      const account = await db.collection("accounts").findOne({ _id: new ObjectId(accountId) });
+      if (!account) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    }
+
+    const typeDoc = (await db.collection("reportTypes").findOne({ id: jobType })) as {
+      enabled?: boolean;
+      supportsPortfolio?: boolean;
+      supportsAccount?: boolean;
+    } | null;
+    if (!typeDoc || !typeDoc.enabled) {
+      return NextResponse.json({ error: "Invalid or disabled job type" }, { status: 400 });
+    }
+    if (accountId === null && !typeDoc.supportsPortfolio) {
+      return NextResponse.json({ error: "This job type does not support portfolio-level jobs" }, { status: 400 });
+    }
+    if (accountId && !typeDoc.supportsAccount) {
+      return NextResponse.json({ error: "This job type does not support account-level jobs" }, { status: 400 });
+    }
+
+    const now = new Date().toISOString();
+    const jobDoc: Omit<JobDoc, "_id"> = {
+      accountId,
+      name,
+      jobType,
+      templateId: body.templateId,
+      customSlackTemplate: body.customSlackTemplate,
+      customXTemplate: body.customXTemplate,
+      scannerConfig: body.scannerConfig,
+      scheduleCron,
+      channels,
+      status,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const result = await db.collection<JobDoc>("reportJobs").insertOne(jobDoc as JobDoc);
+    const jobId = result.insertedId.toString();
+
+    if (status === "active") {
+      await upsertAgendaSchedule(jobId, scheduleCron);
+    }
+
+    return NextResponse.json({ ...jobDoc, _id: jobId }, { status: 201 });
+  } catch (error) {
+    console.error("Failed to create job:", error);
+    return NextResponse.json({ error: "Failed to create job" }, { status: 500 });
+  }
+}

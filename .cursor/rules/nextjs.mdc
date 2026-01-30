@@ -1,7 +1,6 @@
 ---
 alwaysApply: false
 ---
-
 # Next.js Sound Rules for Cursor (App Router + TypeScript)
 
 You are an expert Next.js engineer using App Router (Next.js 14/15+), TypeScript, Server Components by default.

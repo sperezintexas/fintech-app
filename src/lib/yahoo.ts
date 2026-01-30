@@ -376,3 +376,353 @@ export async function getMarketConditions(): Promise<MarketConditions> {
     lastUpdated: new Date().toISOString(),
   };
 }
+
+// --- Smart Grok Chat Tools ---
+
+export type MarketNewsItem = {
+  title: string;
+  link?: string;
+  summary: string;
+  date: string;
+};
+
+export type MarketNewsOutlook = {
+  news: MarketNewsItem[];
+  outlook: { summary: string; sentiment: "bullish" | "neutral" | "bearish" };
+};
+
+const NEWS_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+let marketNewsCache: { data: MarketNewsOutlook; timestamp: number } | null = null;
+
+/** Fetch market news and outlook for Smart Grok Chat. Uses trendingSymbols, insights (sigDevs), and indices. */
+export async function getMarketNewsAndOutlook(options?: {
+  limit?: number;
+  region?: string;
+}): Promise<MarketNewsOutlook> {
+  const limit = options?.limit ?? 10;
+  const region = options?.region ?? "US";
+
+  if (marketNewsCache && Date.now() - marketNewsCache.timestamp < NEWS_CACHE_TTL) {
+    return {
+      ...marketNewsCache.data,
+      news: marketNewsCache.data.news.slice(0, limit),
+    };
+  }
+
+  const news: MarketNewsItem[] = [];
+  let sentiment: "bullish" | "neutral" | "bearish" = "neutral";
+
+  try {
+    const [trending, marketConditions, insightsSpy, insightsQqq] = await Promise.all([
+      yahooFinance.trendingSymbols(region, { count: Math.min(limit, 10) }),
+      getMarketConditions(),
+      yahooFinance.insights("SPY", { reportsCount: 2 }).catch(() => null),
+      yahooFinance.insights("QQQ", { reportsCount: 2 }).catch(() => null),
+    ]);
+
+    const insightsList = [insightsSpy, insightsQqq].filter(Boolean);
+    for (const ins of insightsList) {
+      const sigDevs = (ins as { sigDevs?: { headline: string; date?: Date }[] })?.sigDevs ?? [];
+      for (const dev of sigDevs.slice(0, 3)) {
+        news.push({
+          title: dev.headline,
+          summary: dev.headline,
+          date: dev.date ? new Date(dev.date).toISOString().slice(0, 10) : "",
+        });
+      }
+    }
+
+    const avgChange =
+      marketConditions.indices.length > 0
+        ? marketConditions.indices.reduce((s, i) => s + (i.changePercent ?? 0), 0) /
+          marketConditions.indices.length
+        : 0;
+    if (avgChange > 0.5) sentiment = "bullish";
+    else if (avgChange < -0.5) sentiment = "bearish";
+
+    const trendingSymbols = (trending as { quotes?: { symbol: string }[] })?.quotes ?? [];
+    const trendingStr =
+      trendingSymbols.length > 0
+        ? `Trending: ${trendingSymbols.map((q) => q.symbol).join(", ")}`
+        : "";
+
+    const summary = [
+      `Market status: ${marketConditions.status}.`,
+      marketConditions.indices
+        .map(
+          (i) =>
+            `${i.symbol} ${i.price.toFixed(2)} (${i.changePercent >= 0 ? "+" : ""}${i.changePercent.toFixed(2)}%)`
+        )
+        .join("; "),
+      trendingStr,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const result: MarketNewsOutlook = {
+      news: news.slice(0, limit),
+      outlook: { summary, sentiment },
+    };
+    marketNewsCache = { data: result, timestamp: Date.now() };
+    return result;
+  } catch (e) {
+    console.error("getMarketNewsAndOutlook:", e);
+    return {
+      news: [],
+      outlook: {
+        summary: "Unable to fetch market data. Please try again.",
+        sentiment: "neutral",
+      },
+    };
+  }
+}
+
+export type OptionContract = {
+  strike: number;
+  type: "call" | "put";
+  bid: number;
+  ask: number;
+  lastPrice: number;
+  volume?: number;
+  impliedVolatility?: number;
+};
+
+export type StockAndOptionPrices = {
+  stock: { price: number; change: number; volume: number; changePercent?: number };
+  options?: { calls: OptionContract[]; puts: OptionContract[] };
+};
+
+/** Fetch option premium for a specific position (underlying, expiration, strike, type). Used by holdings. */
+export async function getOptionPremiumForPosition(
+  underlying: string,
+  expiration: string,
+  strike: number,
+  optionType: "call" | "put"
+): Promise<number | null> {
+  try {
+    const result = await getStockAndOptionPrices(underlying, {
+      includeOptions: true,
+      expiration: new Date(expiration + "T12:00:00Z"),
+    });
+    if (!result?.options) return null;
+    const list = optionType === "call" ? result.options.calls : result.options.puts;
+    const match = list.find((c) => Math.abs(c.strike - strike) < 0.01);
+    if (!match) return null;
+    const mid = match.lastPrice > 0 ? match.lastPrice : (match.bid + match.ask) / 2;
+    return mid > 0 ? mid : null;
+  } catch (e) {
+    console.error(`getOptionPremiumForPosition ${underlying} ${expiration} ${strike} ${optionType}:`, e);
+    return null;
+  }
+}
+
+/** Option metrics for Option Scanner (price, IV, intrinsic/time value). */
+export type OptionMetrics = {
+  price: number;
+  bid: number;
+  ask: number;
+  underlyingPrice: number;
+  impliedVolatility?: number;
+  intrinsicValue: number;
+  timeValue: number;
+  volume?: number;
+};
+
+/** Fetch option metrics for a specific contract (strike, expiration, type). Used by Option Scanner. */
+export async function getOptionMetrics(
+  symbol: string,
+  expiration: Date | string,
+  strike: number,
+  type: "call" | "put"
+): Promise<OptionMetrics | null> {
+  try {
+    const expDate = typeof expiration === "string" ? new Date(expiration + "T12:00:00Z") : expiration;
+    const result = await getStockAndOptionPrices(symbol.toUpperCase(), {
+      includeOptions: true,
+      expiration: expDate,
+    });
+    if (!result?.options) return null;
+
+    const list = type === "call" ? result.options.calls : result.options.puts;
+    const match = list.find((c) => Math.abs(c.strike - strike) < 0.01);
+    if (!match) return null;
+
+    const price = match.lastPrice > 0 ? match.lastPrice : (match.bid + match.ask) / 2;
+    const underlyingPrice = result.stock.price;
+    const intrinsicValue =
+      type === "call"
+        ? Math.max(0, underlyingPrice - strike)
+        : Math.max(0, strike - underlyingPrice);
+    const timeValue = Math.max(0, price - intrinsicValue);
+
+    return {
+      price,
+      bid: match.bid,
+      ask: match.ask,
+      underlyingPrice,
+      impliedVolatility: match.impliedVolatility,
+      intrinsicValue,
+      timeValue,
+      volume: match.volume,
+    };
+  } catch (e) {
+    console.error(`getOptionMetrics ${symbol} ${expiration} ${strike} ${type}:`, e);
+    return null;
+  }
+}
+
+/** Market conditions for Option Scanner: VIX level and symbol trend. */
+export type OptionMarketConditions = {
+  vix: number;
+  vixLevel: "low" | "moderate" | "elevated";
+  trend: "up" | "down" | "neutral";
+  symbolChangePercent?: number;
+};
+
+/** Fetch market conditions (VIX, trend) for Option Scanner. */
+export async function getOptionMarketConditions(symbol?: string): Promise<OptionMarketConditions> {
+  try {
+    const [vixQuote, symbolQuote] = await Promise.all([
+      yahooFinance.quote("^VIX"),
+      symbol ? yahooFinance.quote(symbol.toUpperCase()) : null,
+    ]);
+
+    const vix = vixQuote?.regularMarketPrice ?? 0;
+    const vixLevel: OptionMarketConditions["vixLevel"] =
+      vix < 15 ? "low" : vix < 25 ? "moderate" : "elevated";
+
+    let trend: "up" | "down" | "neutral" = "neutral";
+    let symbolChangePercent: number | undefined;
+    if (symbolQuote?.regularMarketPrice != null && symbolQuote?.regularMarketPreviousClose != null) {
+      const prev = symbolQuote.regularMarketPreviousClose;
+      const change = symbolQuote.regularMarketPrice - prev;
+      symbolChangePercent = prev > 0 ? (change / prev) * 100 : 0;
+      if (symbolChangePercent > 0.5) trend = "up";
+      else if (symbolChangePercent < -0.5) trend = "down";
+    }
+
+    return { vix, vixLevel, trend, symbolChangePercent };
+  } catch (e) {
+    console.error("getOptionMarketConditions:", e);
+    return { vix: 0, vixLevel: "moderate", trend: "neutral" };
+  }
+}
+
+/** Detailed option contract for Covered Call Analyzer (includes delta if available). */
+export type OptionChainContract = OptionContract & {
+  delta?: number;
+};
+
+/** Full option chain with more strikes for Covered Call Analyzer. */
+export type OptionChainDetailed = {
+  stock: { price: number; change: number; changePercent: number };
+  calls: OptionChainContract[];
+  puts: OptionChainContract[];
+};
+
+/** Fetch full option chain with bid/ask/IV for Covered Call Analyzer. */
+export async function getOptionChainDetailed(
+  underlying: string,
+  expiration?: Date | string
+): Promise<OptionChainDetailed | null> {
+  const expDate = expiration
+    ? typeof expiration === "string"
+      ? new Date(expiration + "T12:00:00Z")
+      : expiration
+    : (() => {
+        const d = new Date();
+        d.setMonth(d.getMonth() + 1);
+        return d;
+      })();
+
+  const result = await getStockAndOptionPrices(underlying.toUpperCase(), {
+    includeOptions: true,
+    expiration: expDate,
+  });
+  if (!result?.options) return null;
+
+  return {
+    stock: {
+      ...result.stock,
+      changePercent: result.stock.changePercent ?? 0,
+    },
+    calls: result.options.calls.map((c) => ({ ...c, delta: undefined })),
+    puts: result.options.puts.map((p) => ({ ...p, delta: undefined })),
+  };
+}
+
+/** IV rank/percentile approximation. Yahoo doesn't provide historical IV; returns null or heuristic. */
+export async function getIVRankOrPercentile(symbol: string): Promise<number | null> {
+  try {
+    const result = await getStockAndOptionPrices(symbol.toUpperCase(), {
+      includeOptions: true,
+    });
+    if (!result?.options?.calls?.length) return null;
+    const avgIV =
+      result.options.calls
+        .filter((c) => c.impliedVolatility != null && c.impliedVolatility > 0)
+        .reduce((s, c) => s + (c.impliedVolatility ?? 0), 0) /
+      Math.max(1, result.options.calls.filter((c) => c.impliedVolatility).length);
+    if (!avgIV || avgIV <= 0) return null;
+    return Math.min(100, Math.round(avgIV * 4));
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch stock and optionally options for Smart Grok Chat. */
+export async function getStockAndOptionPrices(
+  symbol: string,
+  options?: { includeOptions?: boolean; expiration?: Date }
+): Promise<StockAndOptionPrices | null> {
+  const upper = symbol.toUpperCase();
+  try {
+    const quote = await yahooFinance.quote(upper);
+    if (!quote?.regularMarketPrice) return null;
+
+    const prev = quote.regularMarketPreviousClose ?? quote.regularMarketOpen ?? quote.regularMarketPrice;
+    const change = quote.regularMarketPrice - prev;
+    const changePercent = prev > 0 ? (change / prev) * 100 : 0;
+
+    const stock = {
+      price: quote.regularMarketPrice,
+      change,
+      volume: quote.regularMarketVolume ?? 0,
+      changePercent,
+    };
+
+    if (!options?.includeOptions) {
+      return { stock };
+    }
+
+    const expDate = options.expiration ?? (() => {
+      const d = new Date();
+      d.setMonth(d.getMonth() + 1);
+      return d;
+    })();
+
+    const optsResult = await yahooFinance.options(upper, { date: expDate });
+    const rawOpts = (optsResult as { options?: { calls?: unknown[]; puts?: unknown[] } })?.options ?? [];
+    const group = Array.isArray(rawOpts) ? rawOpts[0] : rawOpts;
+    const rawCalls = (group as { calls?: { strike: number; bid?: number; ask?: number; lastPrice?: number; volume?: number; impliedVolatility?: number }[] })?.calls ?? [];
+    const rawPuts = (group as { puts?: { strike: number; bid?: number; ask?: number; lastPrice?: number; volume?: number; impliedVolatility?: number }[] })?.puts ?? [];
+
+    const mapOpt = (o: { strike: number; bid?: number; ask?: number; lastPrice?: number; volume?: number; impliedVolatility?: number }, type: "call" | "put"): OptionContract => ({
+      strike: o.strike,
+      type,
+      bid: o.bid ?? 0,
+      ask: o.ask ?? 0,
+      lastPrice: o.lastPrice ?? ((o.bid ?? 0) + (o.ask ?? 0)) / 2,
+      volume: o.volume,
+      impliedVolatility: o.impliedVolatility,
+    });
+
+    const calls = rawCalls.slice(0, 20).map((c) => mapOpt(c, "call"));
+    const puts = rawPuts.slice(0, 20).map((p) => mapOpt(p, "put"));
+
+    return { stock, options: { calls, puts } };
+  } catch (e) {
+    console.error(`getStockAndOptionPrices ${upper}:`, e);
+    return null;
+  }
+}

@@ -7,7 +7,9 @@ type AccountListProps = {
   accounts: Account[];
   onEdit: (account: Account) => void;
   onDelete: (id: string) => void;
+  onRunAnalysis: (accountId: string) => void;
   isDeleting?: string;
+  analyzingAccountId?: string | null;
 };
 
 function formatCurrency(value: number): string {
@@ -45,7 +47,7 @@ function getStrategyBadge(strategy: Account["strategy"]): { bg: string; text: st
   }
 }
 
-export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountListProps) {
+export function AccountList({ accounts, onEdit, onDelete, onRunAnalysis, isDeleting, analyzingAccountId }: AccountListProps) {
   const router = useRouter();
 
   if (accounts.length === 0) {
@@ -132,9 +134,26 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    onRunAnalysis(account._id);
+                  }}
+                  disabled={analyzingAccountId === account._id}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  {analyzingAccountId === account._id ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    "Run Analysis"
+                  )}
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
                     onEdit(account);
                   }}
-                  className="flex-1 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                 >
                   Edit
                 </button>

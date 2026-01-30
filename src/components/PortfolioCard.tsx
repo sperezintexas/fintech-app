@@ -27,7 +27,15 @@ export function PortfolioCard({ portfolio }: PortfolioCardProps) {
     <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-gray-800">Portfolio Overview</h2>
-        <span className="text-sm text-gray-500">{portfolio.name}</span>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/accounts"
+            className="text-sm font-medium text-blue-600 hover:text-blue-700"
+          >
+            Manage accounts
+          </Link>
+          <span className="text-sm text-gray-500">{portfolio.name}</span>
+        </div>
       </div>
 
       <div className="mb-8">

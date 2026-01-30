@@ -1,0 +1,49 @@
+---
+description: Guidelines for implementing Alert Delivery Channels (Slack & X/Twitter), Configuration Rules, and Alerts Page in myInvestments
+globs:
+alwaysApply: false
+---
+# Alert Delivery Channels and Configuration Guidelines for Cursor
+
+You are implementing/enhancing the alert delivery system in the myInvestments app to support two specific channels: a private Slack channel for family notifications and X (Twitter) for watchlist-related alerts. Include configuration rules per job/report (e.g., which channel, templates, thresholds), and add an Alerts page to view daily recommendations. Leverage the existing Agenda.js scheduler for job invocation and alert generation.
+
+## Core Goals
+- Support delivery to: Private Slack (family-focused, e.g., portfolio summaries/recommendations) and X/Twitter (public watchlist alerts, e.g., price triggers).
+- Allow per-job/report configuration: Channel selection, custom templates, thresholds (e.g., min P/L change), quiet hours.
+- Create a simple Alerts page to list/view historical and daily recommendations/alerts.
+- Integrate with existing scheduler jobs (e.g., OptionScanner, CoveredCallScanner) to generate and deliver alerts.
+- Keep configurations stored in MongoDB (e.g., `alertConfigs` collection) and ensure secure handling (e.g., Slack webhook secret).
+
+## Required Features
+- **Delivery Channels**
+  - **Slack**: Post to private family channel via webhook. Message format: Markdown or blocks with recommendations, metrics, links.
+  - **X/Twitter**: Post to X via API (use Twitter API v2 with OAuth or existing lib). Limit to watchlist items; ensure compliance (no spam, rate limits).
+  - Fallback: If delivery fails, log error and retry once (via Agenda job).
+
+- **Configuration Rules**
+  - Per job/report: Select channel(s) (Slack, X, both, none), template string (e.g., "{symbol}: {recommendation} - {reason}"), thresholds (e.g., only alert if P/L > 10%), quiet hours (e.g., no alerts 10 PM–8 AM).
+  - UI: Extend Setup → Alert Settings page (/app/automation/alert-settings) with forms for job-specific configs.
+  - Global defaults: Family Slack for internal reports, X for watchlist/public.
+
+- **Alerts Page**
+  - Route: /app/alerts/page.tsx (Server Component).
+  - Display: Table/list of alerts (timestamp, job type, content, status: sent/failed/pending, channel).
+  - Filters: By date, job type, symbol; search; pagination.
+  - Daily view: Highlight today's recommendations from scanners.
+  - Export: Simple CSV download or view in reports.
+
+- **Scheduler Integration**
+  - After job execution (e.g., scanOptions() generates recommendations), trigger alert delivery based on configs.
+  - Add Agenda job type: `deliverAlerts` (runs post-scanner, processes queue).
+  - Queue alerts in MongoDB `alerts` collection for persistence and retry.
+
+## Implementation Priorities
+1. **Data Models**
+   - Extend `src/types/portfolio.ts` with `AlertConfig` and `Alert` interfaces.
+     - AlertConfig: { jobType: string, channels: ['slack'|'x'], template: string, thresholds: object, quietHours: {start: string, end: string} }
+     - Alert: { id: string, timestamp: Date, jobType: string, content: string, status: 'pending'|'sent'|'failed', channel: string, symbol?: string }
+
+2. **Delivery Logic**
+   - Create `src/lib/alert-delivery.ts` with:
+     ```ts
+     async function deliverAlert(alert: Alert): Promise<{ success: boolean, error?: string }>

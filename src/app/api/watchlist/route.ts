@@ -6,14 +6,25 @@ import { getRiskDisclosure } from "@/lib/watchlist-rules";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/watchlist - Get all watchlist items or filter by accountId
+// GET /api/watchlist - Get watchlist items by watchlistId (primary) or accountId (legacy)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const watchlistId = searchParams.get("watchlistId");
     const accountId = searchParams.get("accountId");
 
     const db = await getDb();
-    const query = accountId ? { accountId } : {};
+    let query: Record<string, unknown> = {};
+    if (watchlistId) {
+      // Include items with watchlistId OR legacy items (no watchlistId) when querying default
+      const defaultWatchlist = await db.collection("watchlists").findOne({ name: "Default" });
+      const isDefault = defaultWatchlist && watchlistId === defaultWatchlist._id.toString();
+      query = isDefault
+        ? { $or: [{ watchlistId }, { watchlistId: { $exists: false } }, { watchlistId: "" }] }
+        : { watchlistId };
+    } else if (accountId) {
+      query = { accountId };
+    }
     const items = await db
       .collection("watchlist")
       .find(query)
@@ -41,6 +52,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
+      watchlistId,
       accountId,
       symbol,
       underlyingSymbol,
@@ -55,26 +67,33 @@ export async function POST(request: NextRequest) {
       notes,
     } = body;
 
-    // Validate required fields
-    if (!accountId || !symbol || !type || !strategy || !quantity || !entryPrice) {
+    // Validate required fields - watchlistId required (portfolio-level)
+    if (!watchlistId || !symbol || !type || !strategy || !quantity || !entryPrice) {
       return NextResponse.json(
-        { error: "Missing required fields: accountId, symbol, type, strategy, quantity, entryPrice" },
+        { error: "Missing required fields: watchlistId, symbol, type, strategy, quantity, entryPrice" },
         { status: 400 }
       );
     }
 
     const db = await getDb();
 
-    // Verify account exists
-    const account = await db.collection("accounts").findOne({
-      _id: new ObjectId(accountId),
+    // Verify watchlist exists
+    if (!ObjectId.isValid(watchlistId)) {
+      return NextResponse.json({ error: "Invalid watchlist ID" }, { status: 400 });
+    }
+    const watchlist = await db.collection("watchlists").findOne({
+      _id: new ObjectId(watchlistId),
     });
+    if (!watchlist) {
+      return NextResponse.json({ error: "Watchlist not found" }, { status: 404 });
+    }
 
-    if (!account) {
-      return NextResponse.json(
-        { error: "Account not found" },
-        { status: 404 }
-      );
+    // Optional: verify account exists if provided
+    if (accountId && ObjectId.isValid(accountId)) {
+      const account = await db.collection("accounts").findOne({ _id: new ObjectId(accountId) });
+      if (!account) {
+        return NextResponse.json({ error: "Account not found" }, { status: 404 });
+      }
     }
 
     // Get risk disclosure for the strategy
@@ -101,7 +120,8 @@ export async function POST(request: NextRequest) {
 
     const now = new Date().toISOString();
     const newItem: Omit<WatchlistItem, "_id"> = {
-      accountId,
+      watchlistId,
+      accountId: accountId || undefined,
       symbol: symbol.toUpperCase(),
       underlyingSymbol: (underlyingSymbol || symbol).toUpperCase(),
       type,

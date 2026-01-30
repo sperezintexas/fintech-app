@@ -1,0 +1,98 @@
+---
+description: Guidelines for implementing Option Evaluation Service in myInvestments
+globs:
+alwaysApply: false
+---
+# Option Evaluation Service Guidelines for Cursor
+
+You are implementing an "OptionScanner" service in the myInvestments app: a backend service that evaluates options holdings, fetches current market data, and generates recommendations (HOLD or BUY_TO_CLOSE) for each position. This service is invoked via the existing scheduler (Agenda.js) as a new job type "OptionScanner". Integrate with MongoDB for positions, Yahoo Finance for real-time data, and store recommendations as alerts or reports.
+
+## Core Goals
+- Analyze all options positions across accounts daily (or on schedule)
+- Provide reasoned recommendations: HOLD (if favorable) or BUY_TO_CLOSE (BTC, if risky/lossy)
+- Base decisions on current prices, market conditions (volatility, trends), position details (strike, expiration, cost basis)
+- Keep logic modular and extensible (e.g., add more rules later)
+- Generate alerts/notifications with recommendations
+
+## Required Behavior
+- **Input**: User/account ID (from job context), or scan all if global
+- **Logic Rules** (default, extensible):
+  - Fetch current underlying price, option price, implied volatility via Yahoo Finance
+  - Calculate: Delta, days to expiration (DTE), intrinsic value, time value, unrealized P/L
+  - Recommendations:
+    - HOLD: If DTE > 14, P/L > 0, or time value > 20% of premium (bullish outlook)
+    - BTC: If DTE < 7, intrinsic value < 0 (OTM), or P/L < -50% (stop loss)
+    - Consider account risk profile (e.g., conservative accounts BTC earlier)
+    - Market conditions: If high volatility (>30%), lean toward BTC for puts; use VIX or symbol IV
+- **Output**: Array of recommendations per position { positionId, recommendation: 'HOLD' | 'BUY_TO_CLOSE', reason: string, metrics: { price, dte, pl, ... } }
+- Store in MongoDB (e.g., `alerts` collection) and trigger notifications (push/Slack/Twitter per config)
+
+## Implementation Priorities
+1. **Service Logic**
+   - Create `src/lib/option-scanner.ts` with:
+     ```ts
+     async function scanOptions(userId?: string): Promise<OptionRecommendation[]>
+
+Fetch positions from MongoDB (filter to options only)
+Batch-fetch market data (option prices, underlying quotes, IV)
+Apply rules to generate recommendations
+Handle errors: Skip invalid positions, log issues
+
+
+Yahoo Finance Extensions
+Extend src/lib/yahoo-finance.ts:
+getOptionMetrics(symbol: string, expiration: Date, strike: number, type: 'call'|'put'): Return { price, delta, iv, ... }
+getMarketConditions(symbol?: string): Return { vix: number, trend: 'up'|'down'|'neutral' } (simple MA or recent change)
+
+
+Scheduler Integration
+Update src/lib/scheduler.ts (or equivalent) to add "OptionScanner" job type
+Job handler: Call scanOptions(), store results, send alerts
+Default schedule: Daily at 4 PM Mon-Fri (like daily-analysis)
+API extensions: Add to /api/scheduler POST body options for "OptionScanner"
+
+Data Models
+Extend src/types/portfolio.ts with OptionRecommendation interface
+Add schema for alerts if needed
+
+Alerts/Notifications
+Use existing push-client or add to reports
+Template: "Recommendation for [symbol] [expiration]: [HOLD/BTC] - Reason: [reason]"
+
+
+File Targets (create/update)
+
+src/lib/option-scanner.ts              ← Core service logic
+src/lib/yahoo-finance.ts               ← Market data helpers
+src/lib/scheduler.ts                   ← Add job type and handler
+src/app/api/scheduler/route.ts         ← Extend API for new job
+src/types/portfolio.ts                 ← New types
+Optionally: src/components/AlertViewer.tsx ← If UI needed for viewing recs
+
+Acceptance Criteria Checklist
+
+Service runs without errors on sample data
+Recommendations based on real logic (not hardcoded)
+Integrates with scheduler: Can setup/schedule/run "OptionScanner" via API
+Fetches fresh Yahoo data each run
+Stores recommendations accessibly (queryable in reports)
+Handles no options gracefully (empty array)
+Unit testable: Pure functions for rule application
+
+Suggested Implementation Order
+
+Extend yahoo-finance.ts with option metrics and conditions helpers
+Build option-scanner.ts core function with rules
+Integrate into scheduler: Add job definition and handler
+Update API route for new job type
+Add types and basic error handling
+
+Deliver complete files or targeted diffs starting with:
+
+src/lib/option-scanner.ts
+src/lib/scheduler.ts updates
+Scheduler API extensions
+
+Focus on accurate recommendation logic first — simulate with mock data internally, then integrate real fetches.
+
+The strategy rules used during the scan should be configurable via the setup / report config

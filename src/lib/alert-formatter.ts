@@ -125,9 +125,12 @@ function truncateSms(message: string): string {
   return message.substring(0, 157) + "...";
 }
 
-// Get template by ID
-export function getTemplate(templateId: AlertTemplateId): AlertTemplate {
-  return ALERT_TEMPLATES.find((t) => t.id === templateId) || ALERT_TEMPLATES[0];
+// Get template by ID from a templates array (or default ALERT_TEMPLATES)
+export function getTemplate(
+  templateId: AlertTemplateId,
+  templates: AlertTemplate[] = ALERT_TEMPLATES
+): AlertTemplate {
+  return templates.find((t) => t.id === templateId) || templates[0];
 }
 
 // Preview how an alert would look with a given template

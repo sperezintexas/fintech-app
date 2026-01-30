@@ -1,0 +1,126 @@
+---
+alwaysApply: false
+---
+# Covered Call Strategy Evaluation Service Guidelines for Cursor
+
+You are implementing a **Covered Call Analyzer** service as part of the OptionScanner / profit-building features in the myInvestments app.
+
+The service evaluates existing covered call positions (long stock + short call) and open opportunities (stock holdings without covered call yet), then provides clear, data-driven recommendations:
+- Keep the current covered call (HOLD)
+- Buy to close the short call (BTC) and potentially sell a new one
+- Sell a new covered call against naked/long stock
+- Roll the call (BTC current → sell new at different strike/expiration)
+
+This logic runs via the scheduler (new or extended job type: `coveredCallScanner`) and generates actionable alerts/recommendations.
+
+## Core Goals
+- Identify all covered call positions (stock leg + short call leg linked by same account & symbol)
+- Evaluate current profitability, risk, and opportunity
+- Suggest optimal action based on:
+  - Current stock price vs strike
+  - Days to expiration (DTE)
+  - Implied volatility rank/percentile
+  - Unrealized P/L on stock and premium received
+  - Target return / max profit zone
+- Produce recommendations that are conservative by default but respect account risk profile
+
+## Key Evaluation Rules (default logic — make configurable later)
+
+1. **Position Identification**
+   - Covered call = long ≥100 shares of underlying + short call(s) on same symbol, same account
+   - Track via position metadata or matching logic (symbol + accountId)
+
+2. **Recommendation Triggers & Logic**
+   | Condition                                   | Recommendation          | Reason / Thresholds                                                                 |
+   |---------------------------------------------|--------------------------|--------------------------------------------------------------------------------------|
+   | Stock ≥ call strike + 5% buffer & DTE ≤ 7   | BTC + consider new call | Call is deep ITM, little time value left, protect gains                           |
+   | DTE ≤ 3 & call OTM                          | BTC                     | Avoid assignment risk on worthless expiration                                       |
+   | Call delta ≥ 0.85 & stock rising fast       | BTC or roll up/out      | High likelihood of early assignment                                                |
+   | IV rank > 50 & stock near/below strike      | HOLD or roll out        | High premium environment — keep collecting or extend duration                      |
+   | Unrealized stock gain > 15% & call near ATM | BTC                     | Lock in stock gains, avoid capping upside                                           |
+   | No covered call on ≥100 shares holding      | SELL covered call       | Opportunity: generate income on idle long stock                                     |
+   | Call extrinsic value < 5% of premium paid   | BTC                     | Time decay mostly gone — free up capital or roll                                   |
+   | Account risk = conservative & DTE < 14      | BTC early               | Reduce exposure sooner                                                             |
+
+3. **Metrics to Compute & Include in Recommendation**
+   - Current stock price
+   - Call current value / bid-ask
+   - Net premium received vs current call value
+   - Breakeven point
+   - Max profit / max loss
+   - Return if flat (annualized)
+   - Probability of expiring worthless (rough delta-based)
+   - DTE
+   - IV / IV rank (if available)
+
+## Implementation Structure
+
+1. **Core Service**
+   `src/lib/covered-call-analyzer.ts`
+   ```ts
+   async function analyzeCoveredCalls(userId?: string): Promise<CoveredCallRecommendation[]>
+
+   interface CoveredCallRecommendation {
+     accountId: string
+     symbol: string
+     stockPositionId?: string
+     callPositionId?: string
+     recommendation: 'HOLD' | 'BUY_TO_CLOSE' | 'SELL_NEW_CALL' | 'ROLL' | 'NONE'
+     confidence: 'HIGH' | 'MEDIUM' | 'LOW'
+     reason: string
+     suggestedStrike?: number
+     suggestedExpiration?: Date
+     metrics: {
+       stockPrice: number
+       callBid: number
+       callAsk: number
+       dte: number
+       netPremium: number
+       unrealizedPl: number
+       annualizedReturn?: number
+       breakeven: number
+     }
+   }
+
+Data Dependencies
+src/lib/yahoo-finance.ts extensions:
+getOptionChainDetailed(underlying: string, expiration?: string) → full chain with greeks, bid/ask
+getIVRankOrPercentile(symbol: string) → if possible via external data or approximation
+
+
+Scheduler Integration
+Add job type: coveredCallScanner
+Same schedule as daily-analysis (Mon–Fri 4 PM) or configurable
+Handler: analyzeCoveredCalls() → save to alerts or recommendations collection → trigger notifications
+
+Storage & Visibility
+Store in MongoDB recommendations or extend alerts collection
+Expose via /app/reports/covered-calls or integrate into find-profits page
+Alert template:
+"Covered Call [symbol]: [RECOMMENDATION] — [reason]. Stock @ $[price], Call $[bid]–$[ask], DTE [dte]"
+
+
+File Targets
+
+src/lib/covered-call-analyzer.ts       ← main logic
+src/lib/yahoo-finance.ts               ← option chain + IV helpers
+src/lib/scheduler.ts                   ← add coveredCallScanner job
+src/types/portfolio.ts                 ← add CoveredCallRecommendation type
+src/app/api/scheduler/route.ts         ← support new job type
+
+Acceptance Criteria
+
+Correctly identifies covered call pairs
+Recommendations match rules table for test cases
+Fetches real-time prices & option data
+Graceful handling: no positions, API errors, missing greeks
+Scheduler can run job and persist results
+Unit-testable core functions (pure where possible)
+
+Start with:
+
+covered-call-analyzer.ts core function + rule engine
+Yahoo Finance option chain helper
+Scheduler job registration
+
+Prioritize accurate pairing of stock + call legs and realistic recommendation logic over UI polish.
