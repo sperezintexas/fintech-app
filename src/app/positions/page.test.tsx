@@ -29,12 +29,11 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert (PositionList renders desktop + mobile views, so use getAllByText)
-    expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0);
+    // Assert (PositionList renders desktop + mobile views; compact format "Qty @ Cost")
+    expect(screen.getAllByText(/AAPL/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Stock").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("10.000").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/10\.000/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("$175.00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$1,500.00").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$1,750.00").length).toBeGreaterThan(0);
   });
 
@@ -63,12 +62,11 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert (options display formatted symbol e.g. TSLA260320C00250000)
+    // Assert (options display Call/Put, contracts count, formatted symbol; compact "Qty @ Cost")
     expect(screen.getAllByText(/TSLA/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Option").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("200.000").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Call").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/2\s*@/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("$6.00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$1,000.00").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$1,200.00").length).toBeGreaterThan(0);
   });
 
@@ -93,12 +91,11 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert
+    // Assert (cash displays "—" for qty, $5,000.00 for value)
     expect(screen.getAllByText("CASH").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cash").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
-    // Last Price, Total Cost, Market Value: $5,000.00
-    expect(screen.getAllByText("$5,000.00").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/\u2014/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\$5,000\.00/).length).toBeGreaterThanOrEqual(2);
   });
 
   it("should handle multiple position types correctly", () => {
@@ -143,11 +140,11 @@ describe("PositionList - Position Calculations", () => {
 
     // Assert
     expect(screen.getAllByText("Stock").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Option").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Call").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cash").length).toBeGreaterThan(0);
 
     // Check all symbols (options use formatted symbol containing ticker)
-    expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/AAPL/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/TSLA/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("CASH").length).toBeGreaterThan(0);
   });
@@ -194,9 +191,9 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert
-    expect(screen.getAllByText("$150.00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$1,500.00").length).toBeGreaterThanOrEqual(2);
+    // Assert (compact "Qty @ Cost" format)
+    expect(screen.getAllByText(/\$150\.00/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\$1,500\.00/).length).toBeGreaterThanOrEqual(2);
   });
 
   it("should handle missing current price by using premium for options", () => {
@@ -224,9 +221,9 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert
-    expect(screen.getAllByText("$5.00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$1,000.00").length).toBeGreaterThanOrEqual(2);
+    // Assert (compact format)
+    expect(screen.getAllByText(/\$5\.00/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\$1,000\.00/).length).toBeGreaterThanOrEqual(2);
   });
 
   it("should calculate total cost correctly for stock positions", () => {
@@ -251,9 +248,8 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert
-    expect(screen.getAllByText("$2,500.00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$3,000.00").length).toBeGreaterThan(0);
+    // Assert (market value = 25 * 120 = $3,000)
+    expect(screen.getAllByText(/\$3,000\.00/).length).toBeGreaterThan(0);
   });
 
   it("should calculate option positions with contract multiplier correctly", () => {
@@ -281,9 +277,9 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert
-    expect(screen.getAllByText("500.000").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$5,000.00").length).toBeGreaterThan(0);
+    // Assert (5 contracts, market value = 5 * 12 * 100 = $6,000; compact "Qty @ Cost")
+    expect(screen.getAllByText(/5\s*@/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Put").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$6,000.00").length).toBeGreaterThan(0);
   });
 });

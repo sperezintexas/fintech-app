@@ -23,8 +23,14 @@ describe("POST /api/watchlist", () => {
   });
 
   it("adds a stock watchlist item", async () => {
+    const watchlistId = "64b64c2f9a1b2c3d4e5f6789";
     const mockDb = {
       collection: vi.fn((name: string) => {
+        if (name === "watchlists") {
+          return {
+            findOne: vi.fn().mockResolvedValue({ _id: watchlistId, name: "Default" }),
+          };
+        }
         if (name === "accounts") {
           return {
             findOne: vi.fn().mockResolvedValue({ _id: "acct" }),
@@ -43,6 +49,7 @@ describe("POST /api/watchlist", () => {
 
     const request = {
       json: async () => ({
+        watchlistId,
         accountId: "64b64c2f9a1b2c3d4e5f6789",
         symbol: "aapl",
         underlyingSymbol: "AAPL",
@@ -67,8 +74,14 @@ describe("POST /api/watchlist", () => {
   });
 
   it("adds an option watchlist item", async () => {
+    const watchlistId = "64b64c2f9a1b2c3d4e5f6789";
     const mockDb = {
       collection: vi.fn((name: string) => {
+        if (name === "watchlists") {
+          return {
+            findOne: vi.fn().mockResolvedValue({ _id: watchlistId, name: "Default" }),
+          };
+        }
         if (name === "accounts") {
           return {
             findOne: vi.fn().mockResolvedValue({ _id: "acct" }),
@@ -87,6 +100,7 @@ describe("POST /api/watchlist", () => {
 
     const request = {
       json: async () => ({
+        watchlistId,
         accountId: "64b64c2f9a1b2c3d4e5f6789",
         symbol: "TSLA",
         underlyingSymbol: "TSLA",
