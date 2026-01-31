@@ -1,5 +1,7 @@
 "use client";
 
+import type { AlertDeliveryChannel } from "@/types/portfolio";
+
 type JobType = {
   _id: string;
   id: string;
@@ -10,7 +12,10 @@ type JobType = {
   supportsAccount: boolean;
   order: number;
   enabled: boolean;
+  defaultConfig?: Record<string, unknown>;
+  defaultDeliveryChannels?: AlertDeliveryChannel[];
 };
+
 
 type JobTypeListProps = {
   jobTypes: JobType[];
@@ -84,6 +89,21 @@ export function JobTypeList({
                   {jt.supportsAccount && (
                     <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-700">
                       Account
+                    </span>
+                  )}
+                  {jt.defaultDeliveryChannels && jt.defaultDeliveryChannels.length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded bg-indigo-100 text-indigo-700" title="Default channels">
+                      Channels: {jt.defaultDeliveryChannels.join(", ")}
+                    </span>
+                  )}
+                  {jt.defaultConfig && Object.keys(jt.defaultConfig).length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700" title="Default config">
+                      Config: {Object.entries(jt.defaultConfig)
+                        .filter(([, v]) => v != null && v !== "")
+                        .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as string[]).join(",") : v}`)
+                        .slice(0, 3)
+                        .join(" · ")}
+                      {Object.keys(jt.defaultConfig).length > 3 ? "…" : ""}
                     </span>
                   )}
                 </div>

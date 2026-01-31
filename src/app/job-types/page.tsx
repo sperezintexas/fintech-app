@@ -5,6 +5,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { JobTypeForm } from "@/components/JobTypeForm";
 import { JobTypeList } from "@/components/JobTypeList";
 import type { JobTypeFormData } from "@/components/JobTypeForm";
+import type { AlertDeliveryChannel } from "@/types/portfolio";
 
 type JobType = {
   _id: string;
@@ -16,6 +17,8 @@ type JobType = {
   supportsAccount: boolean;
   order: number;
   enabled: boolean;
+  defaultConfig?: Record<string, unknown>;
+  defaultDeliveryChannels?: AlertDeliveryChannel[];
   createdAt?: string;
   updatedAt?: string;
 };
@@ -66,6 +69,8 @@ export default function JobTypesPage() {
             supportsAccount: data.supportsAccount,
             order: data.order,
             enabled: data.enabled,
+            defaultConfig: data.defaultConfig,
+            defaultDeliveryChannels: data.defaultDeliveryChannels,
           }
         : {
             id: data.id,
@@ -75,6 +80,8 @@ export default function JobTypesPage() {
             supportsPortfolio: data.supportsPortfolio,
             supportsAccount: data.supportsAccount,
             order: data.order,
+            defaultConfig: data.defaultConfig,
+            defaultDeliveryChannels: data.defaultDeliveryChannels,
           };
 
       const res = await fetch(url, {

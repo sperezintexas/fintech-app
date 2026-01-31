@@ -1,0 +1,50 @@
+---
+alwaysApply: false
+---
+# xStrategyBuilder Guidelines for Cursor
+
+You are implementing xStrategyBuilder, a multi-step UI workflow for building option strategies. It guides users through stock symbol, market outlook, strategy selection, and contract details. Integrate with Yahoo Finance (or Polygon via code execution if needed) for real-time data like quotes, option chains, and calculations.
+
+## Core Principles
+- 4 steps + order preview/execution.
+    Step 0: Choose Account from list of accounts and display the risk prefs
+  - Step 1: Input symbol (autocomplete/search via API).
+  - Step 2: Choose outlook (bullish/up, neutral/flat, bearish/down).
+  - Step 3: Choose strategy (single-leg: buy calls/puts, sell covered calls/cash-secured puts; multi-leg: spreads, straddles, etc.).
+  - Step 4: Select contract (expiration, strike, quantity, limit price) with option chain viewer and P/L graph.
+- Use Next.js App Router: Place in `/src/app/xstrategybuilder/` with sub-routes or client-side steps (e.g., wizard component).
+- Server Components default: Fetch data server-side (quotes, chains); use client for interactive elements (selectors, graphs).
+- Calculations: Use math libs (e.g., mathjs or built-in) for breakeven, max P/L, 80% rule (buy back sold options at 20% of premium).
+- UI: Tailwind + shadcn/ui for forms, tables (option chain), charts (recharts or chart.js for P/L graphs).
+- **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4
+- Error handling: Validate inputs (valid symbol, sufficient buying power), handle API failures gracefully.
+- Integration: Link to accounts/positions; check for covered strategies (e.g., own shares for covered calls).
+
+## Implementation Structure
+- **Routes**: `/xstrategybuilder/page.tsx` (main wizard), optional sub-pages for steps if multi-page.
+- **Components**:
+  - SelectAccount: select account it will be used later to add option to account or watchlist item
+  - SymbolInput: Search/fetch quote.
+  - OutlookSelector: Buttons for up/flat/down.
+  - StrategySelector: Cards with descriptions, filtered by outlook.
+  - ContractSelector: Table for option chain, inputs for expiration/strike/price/qty, P/L preview graph.
+  - OrderPreview: Summary table with estimated costs, risks, commissions.
+- **API Routes**: `/api/options/chain?symbol=TSLA&expiration=...` (fetch from Yahoo/Polygon).
+- **Utils**: Strategy definitions (array of {name, type, outlook, calcBreakeven(), calcMaxPL()}).
+- **Types**: Extend portfolio.ts with Strategy, OptionContract interfaces.
+
+## Data Flow
+- Server: Fetch symbol quote → option chain.
+- Client: Handle selections, compute previews (or server action for complex calcs).
+- Persist state: Use URL params or sessionStorage for multi-step.
+
+## 80% Rule Integration
+- For sold options: Monitor value decay; suggest buy-to-close when 80% profit captured (premium - current price >= 80% of initial premium).
+- Add alert/setup in automation for monitoring.
+
+## Testing Workflow
+- Unit: Test calc functions (breakeven, P/L).
+- Integration: Mock API responses, test flow end-to-end.
+- After code: Run `npm test src/app/xstrategybuilder`, `npm run typecheck`.
+
+Focus on one step at a time in edits; build incrementally.

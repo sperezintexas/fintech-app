@@ -1,0 +1,96 @@
+---
+description: Cursor rules for xStrategyBuilder - Step "Review order" / Order Preview screen
+globs:
+  - src/app/xstrategybuilder/**/*
+  - src/components/xstrategybuilder/OrderReview.*
+alwaysApply: false
+---
+
+# xStrategyBuilder - Review Order / Order Preview Screen Guidelines
+
+Implement the "Review order" screen to closely match the Fidelity-style preview shown in the screenshot (as of Jan/Feb 2026).
+
+## Overall Layout & Visual Style
+- Progress bar at top (same as previous steps):
+  - Circle steps: Choose symbol → Choose outlook → Choose strategy → Choose contract → Review order → Strategy built
+  - Current step highlighted with green checkmark
+- Header section:
+  - "Review: [Strategy Name]" (e.g. "Review: Sell covered calls")
+  - Right side: Symbol + current price + change (e.g. "TSLA $430.41 +$13.85 (+3.32%)" with Tesla logo)
+- Main content in a clean card/box with subtle border or shadow
+- Two-column or stacked layout on mobile
+- Bottom: Two prominent buttons
+  - "Go back" (secondary/outline)
+  - "Proceed to order ticket" or "Proceed to order" (primary green)
+
+## Key Sections & Content Blocks
+
+### 1. Trade Summary Table (compact, bordered or underlined)
+Columns (left-aligned labels, right-aligned values):
+
+Action          Sell to open (dropdown – read-only or editable?)
+Quantity        1 (number input – editable)
+Expiration date Feb 13, 2026 (dropdown – editable)
+Strike price    432.5 (dropdown – editable)
+Limit price     13.90 (number input with $ prefix – editable)
+
+- Use dashed underline under headers like Fidelity
+- All fields should remain editable (allow user to tweak before final submit)
+
+### 2. Metrics Bar (horizontal, compact, icons or small gauges)
+Displayed below table, in one line or wrapped cards:
+
+- Bid               13.75           (green if favorable)
+- Breakeven (BE)    $416.51         (calculated)
+- Probability OTM   54%             (gauge: blue-to-gray semicircle, 54% filled)
+
+Use visual indicator similar to Fidelity’s half-circle gauge (progress from left to right, color-coded)
+
+### 3. Descriptive Summary Text (narrative block)
+Key paragraphs (use strong/bold for emphasis):
+
+"You are selling 1 call to open with the strike price of $432.50 that expires Feb 13, 2026."
+
+"This trade is expected to result in receiving a credit of $1,390.00."
+
+"This trade has a 54% probability to be out of the money, which is below $432.50, at expiration."
+
+"If assigned anytime, you have the obligation to sell (1) TSLA at the strike price of $432.50, for a total of (total)"
+
+- Use sentence casing, natural language
+- Highlight key numbers ($ amounts, %, strike) in bold or larger font
+- For covered call specifically: mention obligation to sell shares if assigned
+
+### 4. Risk / Assignment Disclosure
+- Keep language clear and regulatory-sounding but concise
+- Optional: small info icon linking to "Learn more about covered calls" or assignment risk
+
+## Dynamic Calculations Required
+Must recompute on any change (quantity, limit price, strike, etc.):
+
+- Credit received = quantity × limit price × 100
+- Breakeven (for covered call) = current stock price - premium received per share
+  In screenshot BE is $416.51 while stock is ~$430 → premium ≈ $13.49
+- Probability OTM: placeholder for now (can be passed from previous step or mocked)
+- If multi-leg later: show net credit/debit, combined breakeven, max profit/loss
+
+## Interactivity & State
+- All fields editable → changes should trigger re-calculation of credit, BE, etc.
+- Use controlled inputs + debounced updates if fetching new data
+- Persist selections via URL params, context, or zustand store
+- On "Proceed to order ticket" → navigate to final order entry screen (not yet implemented)
+
+## Accessibility & Polish
+- Semantic labels: <label> for each input
+- ARIA-live region for updated metrics (credit, BE)
+- Focus management: keyboard-friendly tab order
+- Loading skeleton when recalculating
+- Error display if invalid (e.g. limit price outside bid/ask)
+- Mobile: stack table rows vertically, metrics in cards
+
+## Naming & Folder Suggestions
+- Component: `OrderReviewPanel.tsx` or `ReviewOrderStep.tsx`
+- Location: `src/components/xstrategybuilder/` or `src/app/xstrategybuilder/review/page.tsx`
+- Hook: `useOrderPreviewCalculations` for credit/BE/prob logic
+
+Focus on fidelity-like typography (clean sans-serif, green accents for positive), precise number formatting ($x,xxx.xx), and instant feedback when user tweaks values.

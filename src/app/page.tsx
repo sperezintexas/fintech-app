@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Dashboard } from "@/components/Dashboard";
 import { Footer } from "@/components/Footer";
 import { AppHeader } from "@/components/AppHeader";
@@ -17,6 +18,12 @@ export default function Home() {
           <p className="text-gray-600 mt-1">
             Here&apos;s how your portfolio is performing today.
           </p>
+          <Link
+            href="/xstrategybuilder"
+            className="inline-block mt-4 px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+          >
+            → xStrategyBuilder
+          </Link>
         </div>
 
         {/* Dashboard Component with Live Data */}

@@ -48,7 +48,7 @@ function AutomationContent() {
   });
   // Jobs state
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [jobTypes, setJobTypes] = useState<Array<{ _id: string; id: string; name: string; description: string; handlerKey: string; supportsPortfolio: boolean; supportsAccount: boolean; order: number; enabled: boolean }>>([]);
+  const [jobTypes, setJobTypes] = useState<Array<{ _id: string; id: string; name: string; description: string; handlerKey: string; supportsPortfolio: boolean; supportsAccount: boolean; order: number; enabled: boolean; defaultConfig?: Record<string, unknown>; defaultDeliveryChannels?: AlertDeliveryChannel[] }>>([]);
   const [showJobForm, setShowJobForm] = useState(false);
   const [jobFormError, setJobFormError] = useState<string>("");
   const [jobFormSaving, setJobFormSaving] = useState(false);
@@ -495,19 +495,25 @@ function AutomationContent() {
   const openNewJob = () => {
     const isPortfolio = selectedAccountId === "__portfolio__";
     const defaultType = jobTypes.find((t) => (isPortfolio ? t.supportsPortfolio : t.supportsAccount))?.id ?? "smartxai";
+    const jobTypeId = isPortfolio ? (jobTypes.find((t) => t.supportsPortfolio)?.id ?? "portfoliosummary") : defaultType;
+    const typeInfo = jobTypes.find((t) => t.id === jobTypeId);
+    const defaultConfig = typeInfo?.defaultConfig;
+    const defaultChannels = typeInfo?.defaultDeliveryChannels;
+    const isOptionScanner = typeInfo?.handlerKey === "OptionScanner";
     setEditingJobId(null);
     setJobFormError("");
     setJobScheduleTime("16:00");
     setJobScheduleFreq("weekdays");
     setJobForm({
       name: "",
-      jobType: isPortfolio ? (jobTypes.find((t) => t.supportsPortfolio)?.id ?? "portfoliosummary") : defaultType,
+      jobType: jobTypeId,
       messageTemplate: "",
       templateId: "concise",
       customSlackTemplate: "",
-      config: undefined,
+      config: isOptionScanner ? undefined : (defaultConfig as Record<string, unknown> | undefined),
+      scannerConfig: isOptionScanner ? (defaultConfig as { holdDteMin?: number; btcDteMax?: number; btcStopLossPercent?: number; holdTimeValuePercentMin?: number; highVolatilityPercent?: number } | undefined) : undefined,
       scheduleCron: scheduleToCron("16:00", "weekdays"),
-      channels: ["slack"],
+      channels: (defaultChannels?.length ? defaultChannels : ["slack"]) as AlertDeliveryChannel[],
       status: "active",
     });
     setShowJobForm(true);

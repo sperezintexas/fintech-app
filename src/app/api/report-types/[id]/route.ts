@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
+import { validateJobConfig } from "@/lib/job-config-schemas";
 import { REPORT_HANDLER_KEYS, type ReportHandlerKey } from "../route";
+import type { AlertDeliveryChannel } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
+const VALID_CHANNELS: AlertDeliveryChannel[] = ["slack", "twitter", "push", "email", "sms"];
+
 type RouteParams = { params: Promise<{ id: string }> };
+
+function validateChannels(channels: unknown): AlertDeliveryChannel[] | undefined {
+  if (!Array.isArray(channels) || channels.length === 0) return undefined;
+  const valid = channels.filter((c) => VALID_CHANNELS.includes(c as AlertDeliveryChannel));
+  return valid.length > 0 ? valid : undefined;
+}
 
 // GET /api/report-types/[id] - get by MongoDB _id or by type id
 export async function GET(_request: NextRequest, { params }: RouteParams) {
@@ -42,6 +52,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       supportsAccount?: boolean;
       order?: number;
       enabled?: boolean;
+      defaultConfig?: Record<string, unknown>;
+      defaultDeliveryChannels?: AlertDeliveryChannel[];
     };
 
     const db = await getDb();
@@ -49,6 +61,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const query = byObjectId ? { _id: new ObjectId(id) } : { id };
     const existing = await db.collection("reportTypes").findOne(query);
     if (!existing) return NextResponse.json({ error: "Report type not found" }, { status: 404 });
+
+    const handlerKey = (existing as { handlerKey?: string })?.handlerKey ?? body.handlerKey ?? "";
+    if (body.defaultConfig !== undefined) {
+      try {
+        validateJobConfig("", handlerKey, body.defaultConfig);
+      } catch (err) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : "Invalid default config" },
+          { status: 400 }
+        );
+      }
+    }
 
     const update: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     if (body.name !== undefined) {
@@ -78,6 +102,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ error: "A report type with this id already exists" }, { status: 400 });
       }
       update.id = newId;
+    }
+    if (body.defaultConfig !== undefined) {
+      update.defaultConfig =
+        body.defaultConfig == null ||
+        (typeof body.defaultConfig === "object" && Object.keys(body.defaultConfig).length === 0)
+          ? undefined
+          : (validateJobConfig("", handlerKey, body.defaultConfig) as Record<string, unknown>);
+    }
+    if (body.defaultDeliveryChannels !== undefined) {
+      update.defaultDeliveryChannels = validateChannels(body.defaultDeliveryChannels);
     }
 
     await db.collection("reportTypes").updateOne(query, { $set: update });

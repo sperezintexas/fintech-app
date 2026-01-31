@@ -2,14 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
+import { validateJobConfig } from "@/lib/job-config-schemas";
 import {
   REPORT_HANDLER_KEYS,
   type ReportHandlerKey,
 } from "@/lib/report-type-constants";
+import type { AlertDeliveryChannel } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
 export { REPORT_HANDLER_KEYS, type ReportHandlerKey };
+
+const VALID_CHANNELS: AlertDeliveryChannel[] = ["slack", "twitter", "push", "email", "sms"];
 
 export type ReportType = {
   _id: string;
@@ -23,6 +27,10 @@ export type ReportType = {
   supportsAccount: boolean;
   order: number;
   enabled: boolean;
+  /** Type-specific default config (used when creating new jobs) */
+  defaultConfig?: Record<string, unknown>;
+  /** Default delivery channels (used when creating new jobs) */
+  defaultDeliveryChannels?: AlertDeliveryChannel[];
   createdAt: string;
   updatedAt: string;
 };
@@ -70,6 +78,23 @@ export async function GET(request: NextRequest) {
   }
 }
 
+function validateDefaultConfig(handlerKey: string, config: unknown): Record<string, unknown> | undefined {
+  if (config == null || (typeof config === "object" && Object.keys(config as object).length === 0)) {
+    return undefined;
+  }
+  try {
+    return validateJobConfig("", handlerKey, config) as Record<string, unknown>;
+  } catch (err) {
+    throw new Error(err instanceof Error ? err.message : "Invalid default config");
+  }
+}
+
+function validateChannels(channels: unknown): AlertDeliveryChannel[] | undefined {
+  if (!Array.isArray(channels) || channels.length === 0) return undefined;
+  const valid = channels.filter((c) => VALID_CHANNELS.includes(c as AlertDeliveryChannel));
+  return valid.length > 0 ? valid : undefined;
+}
+
 // POST /api/report-types
 export async function POST(request: NextRequest) {
   try {
@@ -81,6 +106,8 @@ export async function POST(request: NextRequest) {
       supportsPortfolio?: boolean;
       supportsAccount?: boolean;
       order?: number;
+      defaultConfig?: Record<string, unknown>;
+      defaultDeliveryChannels?: AlertDeliveryChannel[];
     };
 
     const id = (body.id ?? "").trim().toLowerCase().replace(/\s+/g, "-");
@@ -99,6 +126,19 @@ export async function POST(request: NextRequest) {
       );
     }
     if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+
+    let defaultConfig: Record<string, unknown> | undefined;
+    if (body.defaultConfig !== undefined) {
+      try {
+        defaultConfig = validateDefaultConfig(handlerKey ?? "", body.defaultConfig);
+      } catch (err) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : "Invalid default config" },
+          { status: 400 }
+        );
+      }
+    }
+    const defaultDeliveryChannels = validateChannels(body.defaultDeliveryChannels);
 
     const db = await getDb();
     await ensureDefaultReportTypes(db);
@@ -120,6 +160,8 @@ export async function POST(request: NextRequest) {
       supportsAccount,
       order,
       enabled: true,
+      defaultConfig,
+      defaultDeliveryChannels,
       createdAt: now,
       updatedAt: now,
     };

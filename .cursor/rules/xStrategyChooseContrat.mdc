@@ -1,0 +1,108 @@
+---
+description: Rules for xStrategyBuilder Step 4 - Choose Contract screen
+globs:
+  - src/app/xstrategybuilder/**/*
+  - src/components/xstrategybuilder/ContractSelector.*
+alwaysApply: false
+---
+
+# xStrategyBuilder - Step 4: Choose Contract Guidelines
+
+Implement the "Choose contract" screen to match Fidelity's Option Strategy Builder style (as of 2026 screenshots).
+
+## Visual & Layout Goals
+- Clean, tabular + graph dual-pane layout
+- Left side: Compact controls + Option chain table
+- Right side: P/L payoff diagram (hockey-stick style)
+- Top row: Four inline selectors (horizontal or grid)
+  Expiration date (dropdown/select)
+  Strike price (dropdown or searchable list)
+  Limit price (number input + slider?)
+  Quantity (number input, default 1)
+- Below selectors: Option chain table (strikes list) + payoff graph side-by-side
+- Bottom: "Review order" primary button
+
+## Key UI Elements & Behavior
+
+### 1. Controls Row
+- Expiration date: <Select> with available expiration dates (fetched from chain)
+  - Format: "MMM dd, yyyy" e.g. "Feb 13, 2026"
+- Strike price: <Select> populated dynamically from selected expiration
+  - Shows only strikes near current price (±10–15% or configurable range)
+- Limit price: <Input type="number" step="0.05"> with $ prefix
+  - Shows real-time mid/bid/ask next to it when possible
+  - Optional: small slider tied to bid–ask range
+- Quantity: <Input type="number" min="1" step="1"> default 1
+
+### 2. Option Chain Table (left ~55–60% width)
+Style: compact, scrollable if many strikes, radio-button selection
+
+Columns (exact order):
+- [radio]          – single select row (filled circle when chosen)
+- Strike           – number, bold if ITM, normal OTM
+- Bid*             – formatted $xx.xx (mid if no bid/ask?)
+- Breakeven (BE)*  – calculated (for calls: strike + premium, puts: strike - premium)
+- Probability OTM* – percentage (mocked or from model if available)
+- (optional) Delta / IV / Volume / OI – can be toggled or later phase
+
+Behavior:
+- Clicking row → auto-selects that strike, updates right graph
+- Highlight selected row (light blue/green background)
+- Mark "In the money" strikes visually (small label or background tint)
+- Asterisk footnote: "* Values are calculated using current market prices."
+
+### 3. Payoff Graph (right ~40–45% width)
+Use Recharts or lightweight SVG/chart lib
+
+Features to replicate:
+- Classic single-leg payoff diagram
+- X-axis: stock price (range: ~70%–130% of current price)
+- Y-axis: profit/loss ($)
+- Green area above breakeven = profit
+- Red area below = loss
+- Dashed max profit line (if capped, e.g. covered call)
+- Markers:
+  • Diamond = strike price
+  • Circle = breakeven point
+  • Dotted line at $0
+- Label max profit value at top-right (e.g. "$1,599.00")
+- Legend / labels:
+  ◇ Strike price
+  ● Breakeven price
+  x: Stock price
+  y: Profit / Loss
+
+Dynamic updates:
+- When user changes strike / limit price / quantity → recalculate & re-render graph
+- Show breakeven value numerically near the breakeven dot
+
+### 4. Helper Links / Tooltips
+- "How to pick an expiration date" → tooltip or modal with basic guidance
+- "How to pick a strike price"
+- "How to pick a limit price"
+- "How to read the option chain"
+- "How to read the graph"
+- Small info icons next to columns: Bid*, BE*, Prob OTM*
+
+### 5. Data & Calculation Requirements
+Must compute (client or server):
+- Breakeven = for call: strike + premium; for put: strike - premium
+- Max profit / loss / breakeven displayed in preview
+- Probability OTM (placeholder: can be mocked at first, later integrate crude IV-based estimate or external API)
+
+### 6. State Management Suggestions
+- Use URL search params or zustand / context for:
+  selectedExpiration
+  selectedStrike
+  limitPrice
+  quantity
+- On change → fetch new chain slice if needed, recompute graph data
+
+### 7. Accessibility & Polish
+- ARIA labels on selects, inputs, radio group
+- Keyboard navigation in table (arrow keys + space to select)
+- Responsive: stack vertically on narrow screens (chain above graph)
+- Loading state: skeleton table + graph placeholder
+- Error state: invalid symbol, no chain, API failure
+
+Focus on fidelity-like clarity, numbers formatting ($xx.xx), and instant feedback on graph when selections change.
