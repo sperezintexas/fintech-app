@@ -1,0 +1,65 @@
+---
+description: Guidelines for reviewing and updating Smart Grok Chat to integrate web search tool for external queries like weather
+globs:
+alwaysApply: false
+---
+# Grok Chat Web Search Integration Guidelines for Cursor
+
+You are reviewing and updating the Smart Grok Chat feature in the myInvestments app to add a web search tool. This enables Grok API to handle external queries (e.g., "current weather in Austin") by calling a web search function, similar to examples in DataCamp Grok API tutorial[](https://www.datacamp.com/tutorial/grok-3-api) or xAI docs[](https://docs.x.ai/docs/guides/tools/advanced-usage). Use tool calling loop: Grok requests web search → execute locally → feed results back → Grok reasons and responds.
+
+## Core Goals
+- Review existing implementation (`src/lib/xai-grok.ts`, `/app/api/chat/grok/route.ts`, etc.) for tool calling compatibility.
+- Add web search tool: Simple query-based search (use existing web_search tool or integrate a library like SerpAPI/Google Search if needed; assume free-tier or env-key setup).
+- Enable for non-portfolio queries: Grok detects need (e.g., weather, news) → calls tool → incorporates results.
+- Preserve existing tools (Yahoo Finance, portfolio summary) and add web search to the tool list.
+- Support reasoning: Grok uses chain-of-thought internally for multi-step queries.
+
+## Required Changes
+- **Tool Definition**: Add to tool schemas in `src/lib/xai-grok.ts` (OpenAI-compatible format).
+  - Tool name: `web_search`
+  - Parameters: { query: string (required), num_results?: number (default 5) }
+  - Description: "Search the web for current information like weather, news, or facts."
+
+- **Tool Execution**: In `/app/api/chat/grok/route.ts` tool calling loop:
+  - If Grok calls `web_search`, execute: Use a search lib (e.g., npm i google-search-results or similar; fallback to fetch from a free API).
+  - Return results as: { results: [{ title: string, snippet: string, url: string }] }
+  - Handle in loop: Append tool result to messages, re-call Grok for final reasoning.
+
+- **API Key/Env**: Add WEB_SEARCH_API_KEY to .env.local (e.g., for SerpAPI).
+
+- **Example Flow** (for "weather in Austin"):
+  - User message → Grok calls web_search({ query: "current weather in Austin TX" })
+  - Execute search → get results (temp, conditions from weather site)
+  - Feed back → Grok reasons: "Based on search, current weather is 75°F sunny..."
+
+- **Reasoning Enhancements**: In system prompt, encourage CoT for tools: "Use tools when needed, reason step-by-step internally."
+
+## Implementation Priorities
+1. **Review Existing Code**
+   - Check tool calling loop handles multiple tools/iterations.
+   - Ensure streaming if supported; fallback to non-streaming for simplicity.
+
+2. **Add Web Search Tool**
+   - Install dep if needed: `npm i serpapi` or equivalent.
+   - Implement executor in `src/lib/web-search.ts`: async function searchWeb(query: string, num: number = 5)
+
+3. **Update Grok Client**
+   - In `callGrokWithTools`: Append web_search to tools array.
+
+4. **Testing**
+   - Manual: Query weather/news via chat UI.
+   - Unit: Mock tool calls in `__tests__/lib/xai-grok.test.ts`.
+
+## File Targets (update/create)
+- `src/lib/xai-grok.ts`                    ← Add web_search to tools, update call function
+- `src/lib/web-search.ts`                  ← Search executor (handle API or fetch)
+- `src/app/api/chat/grok/route.ts`         ← Extend tool router to handle web_search
+- `.env.local`                             ← Add WEB_SEARCH_API_KEY
+
+## Acceptance Criteria
+- Chat handles weather/news queries accurately via search.
+- Existing tools (Yahoo) unaffected.
+- No API key exposure to client.
+- Errors handled: Fallback message if search fails.
+
+Deliver diffs for key files: Start with tool additions in xai-grok.ts, then executor.

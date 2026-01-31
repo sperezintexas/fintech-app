@@ -1,23 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
 import { getMarketNewsAndOutlook, getStockAndOptionPrices } from "@/lib/yahoo";
 import { getDb } from "@/lib/mongodb";
 import type { Account } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
+import { callGrokWithTools } from "@/lib/xai-grok";
 
 export const dynamic = "force-dynamic";
-
-const XAI_MODEL = "grok-4";
-
-function getXaiClient(): OpenAI | null {
-  const key = process.env.XAI_API_KEY;
-  if (!key?.trim()) return null;
-  return new OpenAI({
-    apiKey: key,
-    baseURL: "https://api.x.ai/v1",
-    timeout: 60_000,
-  });
-}
 
 const MAX_MESSAGE_LENGTH = 2000;
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 min
@@ -198,34 +186,26 @@ export async function POST(request: NextRequest) {
     }
 
     const toolContext = buildToolContext(toolResults);
-    const xaiClient = getXaiClient();
 
     let response: string;
 
-    if (xaiClient) {
-      try {
-        const systemPrompt = `You are Grok, a leading financial expert for myInvestments. You advise on maximizing profits using current, mid, and future potential earnings for valuable companies like TESLA. Provide brief, direct answers with no leading intro; offer more details when asked. Focus on moderate and aggressive suggestions, sound options strategies around TSLA, SpaceX proxies, xAI/Grok proxies, and defense investments. Use the provided market/portfolio data to inform your response. Always include a brief disclaimer that this is not financial advice.`;
+    try {
+      const systemPrompt = `You are Grok, a leading financial expert for myInvestments. You advise on maximizing profits using current, mid, and future potential earnings for valuable companies like TESLA. Provide brief, direct answers with no leading intro; offer more details when asked. Focus on moderate and aggressive suggestions, sound options strategies around TSLA, SpaceX proxies, xAI/Grok proxies, and defense investments.
 
-        const userContent = toolContext.trim()
-          ? `[Context from tools]\n${toolContext}\n\n[User question]\n${message}`
-          : message;
+Use tools when needed: call web_search for queries about weather, news, general facts, or real-time data outside portfolio/market. Use the provided market/portfolio context when available. Reason step-by-step internally when combining multiple data sources.
 
-        const completion = await xaiClient.chat.completions.create({
-          model: XAI_MODEL,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent },
-          ],
-          max_tokens: 1024,
-        });
+Always include a brief disclaimer that this is not financial advice.`;
 
-        const text = completion.choices[0]?.message?.content?.trim();
-        response = text || buildFallbackResponse(toolResults);
-      } catch (e) {
-        console.error("xAI Grok API error:", e);
+      const userContent = toolContext.trim()
+        ? `[Context from tools]\n${toolContext}\n\n[User question]\n${message}`
+        : message;
+
+      response = await callGrokWithTools(systemPrompt, userContent);
+      if (!response?.trim() || response.includes("Tool loop limit")) {
         response = buildFallbackResponse(toolResults);
       }
-    } else {
+    } catch (e) {
+      console.error("xAI Grok API error:", e);
       response = buildFallbackResponse(toolResults);
     }
 

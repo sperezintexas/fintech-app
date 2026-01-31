@@ -33,6 +33,7 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "recharts": "^3.7.0",
+    "serpapi": "^2.2.1",
     "tailwindcss": "^4.1.18",
     "twitter-api-v2": "^1.29.0",
     "typescript": "^5.9.3",
