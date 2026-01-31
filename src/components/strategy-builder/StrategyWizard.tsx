@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { STRATEGIES, OUTLOOKS } from '@/lib/strategy-builder';
 import { ContractSelector, type OptionChainRow } from './ContractSelector';
+import { ReviewOrderStep } from './ReviewOrderStep';
 import type { Outlook } from '@/types/strategy';
 
 type SymbolResult = { symbol: string; name: string; type: string };
@@ -39,6 +40,7 @@ function Button({
 
 export function StrategyWizard() {
   const [step, setStep] = useState(1);
+  const STEPS = ['Symbol', 'Outlook', 'Strategy', 'Contract', 'Review order'];
 
   // Step 1: Symbol
   const [symbolQuery, setSymbolQuery] = useState('');
@@ -161,14 +163,29 @@ export function StrategyWizard() {
   }, []);
 
   useEffect(() => {
-    if (selectedSymbol && step >= 4) {
+    if (selectedSymbol && step === 4) {
       fetchExpirations(selectedSymbol.symbol);
     }
   }, [selectedSymbol, step, fetchExpirations]);
 
   useEffect(() => {
-    if (expiration) setStrike(null);
-  }, [expiration]);
+    if (expiration && step === 4) setStrike(null);
+  }, [expiration, step]);
+
+  useEffect(() => {
+    if (step === 5 && strike != null && optionChain.length > 0) {
+      const hasStrike = optionChain.some((c) => c.strike === strike);
+      if (!hasStrike) {
+        const atm = optionChain.reduce((a, b) =>
+          Math.abs(b.strike - (selectedSymbol?.price ?? 0)) <
+          Math.abs(a.strike - (selectedSymbol?.price ?? 0))
+            ? b
+            : a
+        );
+        setStrike(atm.strike);
+      }
+    }
+  }, [step, strike, optionChain, selectedSymbol?.price]);
 
   useEffect(() => {
     if (selectedSymbol && expiration) {
@@ -184,19 +201,17 @@ export function StrategyWizard() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-4">
-        {[1, 2, 3, 4].map((s) => (
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-4 flex-wrap">
+        {STEPS.map((label, i) => (
           <button
-            key={s}
-            onClick={() => setStep(s)}
+            key={label}
+            onClick={() => setStep(i + 1)}
             className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium transition-all ${
-              step === s ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-100'
+              step === i + 1 ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-100'
             }`}
           >
-            {s === 1 && 'Symbol'}
-            {s === 2 && 'Outlook'}
-            {s === 3 && 'Strategy'}
-            {s === 4 && 'Contract'}
+            {step > i + 1 && <span className="text-green-600" aria-hidden>✓</span>}
+            {label}
           </button>
         ))}
       </div>
@@ -336,8 +351,37 @@ export function StrategyWizard() {
           onContractTypeChange={setContractType}
           onQuantityChange={setQuantity}
           onLimitPriceChange={setLimitPrice}
-          onReviewOrder={() => {}}
+          onReviewOrder={() => setStep(5)}
           onBack={() => setStep(3)}
+        />
+      )}
+
+      {/* Step 5: Review order */}
+      {step === 5 && selectedSymbol && selectedStrategy && expiration && strike && (
+        <ReviewOrderStep
+          strategyName={selectedStrategy.name}
+          strategyId={selectedStrategy.id}
+          symbol={selectedSymbol.symbol}
+          stockPrice={selectedSymbol.price}
+          change={selectedSymbol.change}
+          changePercent={selectedSymbol.changePercent}
+          contractType={contractType}
+          action={['covered-call', 'cash-secured-put'].includes(selectedStrategy.id) ? 'sell' : 'buy'}
+          quantity={quantity}
+          expiration={expiration}
+          strike={strike}
+          limitPrice={limitPrice}
+          bid={
+            (optionChain.find((c) => c.strike === strike)?.[contractType]?.last_quote?.bid ??
+              optionChain.find((c) => c.strike === strike)?.[contractType]?.premium) ??
+            0
+          }
+          ask={
+            (optionChain.find((c) => c.strike === strike)?.[contractType]?.last_quote?.ask ??
+              optionChain.find((c) => c.strike === strike)?.[contractType]?.premium) ??
+            0
+          }
+          onBack={() => setStep(4)}
         />
       )}
     </div>

@@ -170,6 +170,12 @@ export function ContractSelector({
         ) : (
           <span className="text-sm text-gray-500">50 MA unavailable</span>
         )}
+        <div>
+          <span className="text-xs text-gray-500 uppercase tracking-wider">Target price (+20%)</span>
+          <p className="text-lg font-bold text-indigo-700">
+            ${(stockPrice * 1.2).toFixed(2)}
+          </p>
+        </div>
       </div>
 
       {/* Controls row */}
@@ -407,7 +413,7 @@ export function ContractSelector({
                     label={{ value: 'Profit / Loss', angle: -90, position: 'insideLeft' }}
                   />
                   <Tooltip
-                    formatter={(value: number) => [`$${value.toFixed(2)}`, 'P/L']}
+                    formatter={(value) => [value != null ? `$${Number(value).toFixed(2)}` : '—', 'P/L']}
                     labelFormatter={(label) => `Stock: $${label}`}
                   />
                   <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 4" />

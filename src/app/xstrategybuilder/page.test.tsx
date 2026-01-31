@@ -36,7 +36,7 @@ describe("xStrategyBuilder Page", () => {
     expect(screen.getByText(/Step 1: Select a symbol/)).toBeInTheDocument();
   });
 
-  it("has step navigation for Symbol, Outlook, Strategy, Contract", async () => {
+  it("has step navigation for Symbol, Outlook, Strategy, Contract, Review order", async () => {
     render(<XStrategyBuilderPage />);
 
     await waitFor(() => {
@@ -44,6 +44,7 @@ describe("xStrategyBuilder Page", () => {
       expect(screen.getByText("Outlook")).toBeInTheDocument();
       expect(screen.getByText("Strategy")).toBeInTheDocument();
       expect(screen.getByText("Contract")).toBeInTheDocument();
+      expect(screen.getByText("Review order")).toBeInTheDocument();
     });
   });
 });

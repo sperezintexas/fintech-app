@@ -7,13 +7,14 @@ import type { AlertDeliveryChannel } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
-const VALID_CHANNELS: AlertDeliveryChannel[] = ["slack", "twitter", "push", "email", "sms"];
+/** Default delivery channels: Slack or X (twitter) only. */
+const DEFAULT_DELIVERY_CHANNELS: AlertDeliveryChannel[] = ["slack", "twitter"];
 
 type RouteParams = { params: Promise<{ id: string }> };
 
 function validateChannels(channels: unknown): AlertDeliveryChannel[] | undefined {
   if (!Array.isArray(channels) || channels.length === 0) return undefined;
-  const valid = channels.filter((c) => VALID_CHANNELS.includes(c as AlertDeliveryChannel));
+  const valid = channels.filter((c) => DEFAULT_DELIVERY_CHANNELS.includes(c as AlertDeliveryChannel));
   return valid.length > 0 ? valid : undefined;
 }
 

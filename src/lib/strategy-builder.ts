@@ -31,6 +31,19 @@ export function calculatePL(
   return pnl;
 }
 
+/** OCC/Yahoo option symbol: SYMBOL + YYMMDD + C/P + strike*1000 (8 digits) */
+export function toYahooOptionSymbol(
+  underlying: string,
+  expiration: string,
+  contractType: 'call' | 'put',
+  strikePrice: number
+): string {
+  const expDate = expiration.replace(/-/g, '').slice(2); // YYMMDD
+  const typeChar = contractType === 'call' ? 'C' : 'P';
+  const strikeStr = String(Math.round(strikePrice * 1000)).padStart(8, '0');
+  return `${underlying}${expDate}${typeChar}${strikeStr}`;
+}
+
 export function generatePLData(
   strike: number,
   premium: number,

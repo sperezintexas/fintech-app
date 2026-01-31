@@ -3,14 +3,18 @@ import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { executeJob } from "@/lib/scheduler";
 import { REPORT_HANDLER_KEYS } from "../route";
+import type { AlertDeliveryChannel } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
+/** Default delivery channels: Slack or X (twitter) only. */
+const DEFAULT_DELIVERY_CHANNELS: AlertDeliveryChannel[] = ["slack", "twitter"];
+
 /**
  * POST /api/report-types/run
- * Run a job type immediately and post result to Slack.
+ * Run a job type immediately and deliver result to the job type's default channels.
  * Body: { handlerKey: string, accountId?: string | null }
- * - handlerKey: e.g. coveredCallScanner, smartxai
+ * - handlerKey: e.g. OptionScanner, coveredCallScanner, smartxai
  * - accountId: account for Slack config and account-scoped jobs; null for portfolio-level
  */
 export async function POST(request: NextRequest) {
@@ -32,15 +36,21 @@ export async function POST(request: NextRequest) {
     const db = await getDb();
     const reportTypeDoc = await db.collection("reportTypes").findOne({ id: handlerKey });
     const reportTypeName = (reportTypeDoc as { name?: string } | null)?.name ?? handlerKey;
+    const defaultChannels = (reportTypeDoc as { defaultDeliveryChannels?: AlertDeliveryChannel[] } | null)
+      ?.defaultDeliveryChannels;
+    const channels =
+      defaultChannels?.length && defaultChannels.every((c) => DEFAULT_DELIVERY_CHANNELS.includes(c))
+        ? defaultChannels
+        : (["slack"] as AlertDeliveryChannel[]);
 
-    // Create temporary job (jobType + minimal config)
+    // Create temporary job (jobType + minimal config, use default channels from job type)
     const jobDoc = {
       _id: new ObjectId(),
       name: `Test: ${reportTypeName}`,
       jobType: handlerKey,
       accountId,
       scheduleCron: "0 0 1 1 *",
-      channels: ["slack" as const],
+      channels,
       status: "active" as const,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

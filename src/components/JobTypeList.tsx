@@ -93,7 +93,7 @@ export function JobTypeList({
                   )}
                   {jt.defaultDeliveryChannels && jt.defaultDeliveryChannels.length > 0 && (
                     <span className="text-xs px-2 py-0.5 rounded bg-indigo-100 text-indigo-700" title="Default channels">
-                      Channels: {jt.defaultDeliveryChannels.join(", ")}
+                      Channels: {jt.defaultDeliveryChannels.map((c) => (c === "twitter" ? "X" : c)).join(", ")}
                     </span>
                   )}
                   {jt.defaultConfig && Object.keys(jt.defaultConfig).length > 0 && (

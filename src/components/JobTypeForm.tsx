@@ -38,12 +38,10 @@ type JobTypeFormProps = {
   isLoading?: boolean;
 };
 
+/** Default delivery channels: Slack or X only. */
 const CHANNEL_OPTIONS: { value: AlertDeliveryChannel; label: string }[] = [
   { value: "slack", label: "Slack" },
   { value: "twitter", label: "X" },
-  { value: "push", label: "Push" },
-  { value: "email", label: "Email" },
-  { value: "sms", label: "SMS" },
 ];
 
 export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeFormProps) {
@@ -192,12 +190,15 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
         />
       </div>
 
-      {/* Default delivery channels */}
+      {/* Default delivery channels (Slack or X only) */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Default delivery channel(s)
         </label>
-        <p className="text-xs text-gray-500 mb-2">Used when creating new jobs of this type.</p>
+        <p className="text-xs text-gray-500 mb-2">
+          Used when creating new jobs and when running this type on demand (e.g. Option Scanner from xStrategyBuilder).
+          Select one or both.
+        </p>
         <div className="flex flex-wrap gap-2">
           {CHANNEL_OPTIONS.map(({ value, label }) => (
             <label
