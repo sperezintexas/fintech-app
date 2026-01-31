@@ -357,9 +357,8 @@ export async function executeJob(jobId: string): Promise<{
         };
 
         if (payload.success && payload.report) {
-          const accountId = job.accountId;
-          const accountDoc = accountId
-            ? await db.collection("accounts").findOne({ _id: new ObjectId(accountId) })
+          const accountDoc = job.accountId
+            ? await db.collection("accounts").findOne({ _id: new ObjectId(job.accountId) })
             : null;
           const accountName = (accountDoc as { name?: string } | null)?.name ?? "Account";
 
@@ -367,22 +366,32 @@ export async function executeJob(jobId: string): Promise<{
           title = `${reportTitle} – ${job.name} – ${accountName}`;
           xTitle = `${reportTitle} – ${job.name}`;
           reportLink = `/reports/${payload.report._id}`;
-          const summary = payload.report.summary;
-          bodyText += [
-            `Summary:`,
-            `- Positions: ${summary.totalPositions}`,
-            `- Total value: $${Number(summary.totalValue).toFixed(2)}`,
-            `- P/L: $${Number(summary.totalProfitLoss).toFixed(2)} (${Number(summary.totalProfitLossPercent).toFixed(2)}%)`,
-            `- Sentiment: bullish ${summary.bullishCount} / neutral ${summary.neutralCount} / bearish ${summary.bearishCount}`,
-          ].join("\n");
+          const summary = payload.report.summary as {
+            totalPositions: number;
+            totalValue: number;
+            totalProfitLoss: number;
+            totalProfitLossPercent: number;
+            bullishCount: number;
+            neutralCount: number;
+            bearishCount: number;
+          };
+          const positions = (payload.report as { positions?: Array<{ symbol: string; underlyingSymbol: string; type: string; strategy: string; snapshot: { price: number; changePercent: number }; recommendation: string; recommendationReason: string }> }).positions ?? [];
 
-          if (accountId) {
-            try {
-              const { stocksBlock, optionsBlock } = await buildWatchlistConciseBlock(accountId);
-              bodyText += `\n\nWatchlist (concise):\n${stocksBlock}\n${optionsBlock}`;
-            } catch (e) {
-              console.error("Failed to append watchlist concise block:", e);
-            }
+          // Concise summary: 3 pos · $216K · +$103K (91%) · bullish 3
+          const valK = (Number(summary.totalValue) / 1000).toFixed(1);
+          const plK = (Number(summary.totalProfitLoss) / 1000).toFixed(1);
+          const plSign = Number(summary.totalProfitLoss) >= 0 ? "+" : "";
+          bodyText += `${summary.totalPositions} pos · $${valK}K · ${plSign}$${plK}K (${Number(summary.totalProfitLossPercent).toFixed(1)}%) · bullish ${summary.bullishCount} / neutral ${summary.neutralCount} / bearish ${summary.bearishCount}`;
+
+          // Concise positions from report (no re-fetch): short format, no RSI
+          if (positions.length > 0) {
+            const formatPos = (p: { symbol: string; underlyingSymbol: string; type: string; strategy: string; snapshot: { price: number; changePercent: number } }): string => {
+              const sign = p.snapshot.changePercent >= 0 ? "+" : "";
+              const tag = p.type === "stock" ? "Stock" : p.strategy === "covered-call" ? "CC" : p.strategy === "cash-secured-put" ? "CSP" : "Opt";
+              return `$${p.symbol} $${p.snapshot.price.toFixed(0)} (${sign}${p.snapshot.changePercent.toFixed(1)}%) ${tag}`;
+            };
+            const lines = positions.map(formatPos);
+            bodyText += `\n\n${lines.join("\n")}`;
           }
         } else {
           bodyText += `Failed to generate SmartXAI report.`;
@@ -448,9 +457,8 @@ export async function executeJob(jobId: string): Promise<{
           for (const acc of r.accounts) {
             const riskLabel = acc.riskLevel === "low" || acc.riskLevel === "medium" ? "Moderate" : "Aggressive";
             const strategyLabel = acc.strategy || "Core";
-            lines.push(`${acc.broker || acc.name} (${riskLabel} – ${strategyLabel})`);
-
-            lines.push(`• Total Value:          $${acc.totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+            const accountName = acc.broker || acc.name;
+            lines.push(`${accountName} · ${riskLabel} · ${strategyLabel} · $${acc.totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
             // Main position (TSLA if available, otherwise first position)
             const mainPos = acc.positions.find((p) => p.symbol === "TSLA") || acc.positions[0];
@@ -659,11 +667,20 @@ export async function executeJob(jobId: string): Promise<{
         const recommendations = await analyzeCoveredCalls(accountId);
         const { stored, alertsCreated } = await storeCoveredCallRecommendations(recommendations, { createAlerts: true });
         title = job.name;
+        const recLines =
+          recommendations.length > 0
+            ? recommendations.map(
+                (r) =>
+                  `• ${r.symbol} (${r.source}): ${r.recommendation} — ${r.reason}`
+              )
+            : ["• No covered call positions or watchlist calls to analyze."];
         bodyText = [
           `Covered Call Scanner complete`,
           `• Analyzed: ${recommendations.length}`,
           `• Stored: ${stored}`,
           `• Alerts created: ${alertsCreated}`,
+          "",
+          ...recLines,
         ].join("\n");
       } catch (e) {
         console.error("Failed to run Covered Call Scanner:", e);

@@ -156,6 +156,7 @@ describe("Covered Call Analyzer", () => {
       const result = await getCoveredCallPositions();
       expect(result.pairs).toEqual([]);
       expect(result.opportunities).toEqual([]);
+      expect(result.standaloneCalls).toEqual([]);
     });
 
     it("identifies covered call pairs (stock + call same symbol)", async () => {
@@ -388,6 +389,7 @@ describe("Covered Call Analyzer", () => {
         symbol: "TSLA",
         stockPositionId: "stock1",
         callPositionId: "call1",
+        source: "holdings",
       });
       expect(["HOLD", "BUY_TO_CLOSE", "ROLL"]).toContain(result[0].recommendation);
       expect(result[0].metrics).toMatchObject({
@@ -453,6 +455,7 @@ describe("Covered Call Analyzer", () => {
           symbol: "TSLA",
           stockPositionId: "stock1",
           callPositionId: "call1",
+          source: "holdings" as const,
           recommendation: "HOLD" as const,
           confidence: "HIGH" as const,
           reason: "Adequate DTE",

@@ -1,11 +1,13 @@
 /**
  * Covered Call Analyzer Service
- * Identifies covered call positions (long stock + short call) and opportunities (long stock without call).
+ * Identifies covered call positions (long stock + short call), opportunities (long stock without call),
+ * standalone call options from account holdings, and call options from the watchlist.
  * Evaluates and recommends: HOLD, BUY_TO_CLOSE, SELL_NEW_CALL, ROLL, NONE.
  */
 
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
+import type { WatchlistItem } from "@/types/portfolio";
 import {
   getOptionMetrics,
   getOptionChainDetailed,
@@ -51,6 +53,16 @@ export type StockOpportunity = {
   stockShares: number;
   stockPurchasePrice: number;
   stockCurrentPrice?: number;
+};
+
+export type StandaloneCallPosition = {
+  accountId: string;
+  symbol: string;
+  callPositionId: string;
+  callStrike: number;
+  callExpiration: string;
+  callContracts: number;
+  callPremiumReceived: number;
 };
 
 /** Pure function: apply covered call rules. Unit-testable. */
@@ -166,20 +178,25 @@ export function applyCoveredCallRules(
   };
 }
 
-/** Fetch covered call pairs (stock + short call) and opportunities (stock without call). */
+/** Fetch covered call pairs (stock + short call), opportunities (stock without call), and standalone call positions. */
 export async function getCoveredCallPositions(
   accountId?: string
-): Promise<{ pairs: CoveredCallPair[]; opportunities: StockOpportunity[] }> {
+): Promise<{
+  pairs: CoveredCallPair[];
+  opportunities: StockOpportunity[];
+  standaloneCalls: StandaloneCallPosition[];
+}> {
   const db = await getDb();
   const query = accountId ? { _id: new ObjectId(accountId) } : {};
   const accounts = await db.collection<AccountDoc>("accounts").find(query).toArray();
 
   const pairs: CoveredCallPair[] = [];
   const opportunities: StockOpportunity[] = [];
+  const standaloneCalls: StandaloneCallPosition[] = [];
 
   if (accounts.length === 0) {
     console.warn("CoveredCallAnalyzer: no accounts found", accountId ? `(accountId=${accountId})` : "");
-    return { pairs, opportunities };
+    return { pairs, opportunities, standaloneCalls };
   }
 
   for (const acc of accounts) {
@@ -197,6 +214,8 @@ export async function getCoveredCallPositions(
         (p.contracts ?? 0) > 0
     );
 
+    const matchedCallIds = new Set<string>();
+
     for (const stock of stockPositions) {
       const symbol = stock.ticker!.toUpperCase();
       const shares = stock.shares ?? 0;
@@ -207,6 +226,7 @@ export async function getCoveredCallPositions(
         (c) => getUnderlyingFromTicker(c.ticker ?? "") === symbol
       );
       if (matchingCall) {
+        matchedCallIds.add(matchingCall._id ?? `${acc._id}-call-${symbol}-${matchingCall.strike}`);
         pairs.push({
           accountId: acc._id.toString(),
           symbol,
@@ -233,17 +253,46 @@ export async function getCoveredCallPositions(
         });
       }
     }
+
+    for (const call of callPositions) {
+      const callPosId = call._id ?? `${acc._id}-call-${getUnderlyingFromTicker(call.ticker ?? "")}-${call.strike}`;
+      if (matchedCallIds.has(callPosId)) continue;
+      const symbol = getUnderlyingFromTicker(call.ticker ?? "");
+      if (!symbol) continue;
+      standaloneCalls.push({
+        accountId: acc._id.toString(),
+        symbol,
+        callPositionId: callPosId,
+        callStrike: call.strike!,
+        callExpiration: call.expiration!,
+        callContracts: call.contracts ?? 0,
+        callPremiumReceived: call.premium ?? 0,
+      });
+    }
   }
 
   const totalStocks = accounts.reduce((n, a) => n + (a.positions ?? []).filter((p) => p.type === "stock" && (p.shares ?? 0) >= MIN_STOCK_SHARES).length, 0);
   const totalCalls = accounts.reduce((n, a) => n + (a.positions ?? []).filter((p) => p.type === "option" && p.optionType === "call").length, 0);
-  if (pairs.length === 0 && (totalStocks > 0 || totalCalls > 0)) {
+  if (pairs.length === 0 && standaloneCalls.length === 0 && (totalStocks > 0 || totalCalls > 0)) {
     console.warn(
       `CoveredCallAnalyzer: 0 pairs matched (${accounts.length} accounts, ${totalStocks} stocks ≥${MIN_STOCK_SHARES} shares, ${totalCalls} call positions). Check ticker format (use underlying symbol e.g. TSLA, or OCC format TSLA250117C250).`
     );
   }
 
-  return { pairs, opportunities };
+  return { pairs, opportunities, standaloneCalls };
+}
+
+/** Fetch call/covered-call items from watchlist for evaluation. */
+export async function getWatchlistCallItems(): Promise<Array<WatchlistItem & { _id: string }>> {
+  const db = await getDb();
+  const items = await db
+    .collection("watchlist")
+    .find({ $or: [{ type: "call" }, { type: "covered-call" }] })
+    .toArray();
+  return items.map((item) => ({
+    ...item,
+    _id: item._id.toString(),
+  })) as Array<WatchlistItem & { _id: string }>;
 }
 
 function getMoneyness(stockPrice: number, strike: number): "ITM" | "ATM" | "OTM" {
@@ -253,11 +302,12 @@ function getMoneyness(stockPrice: number, strike: number): "ITM" | "ATM" | "OTM"
   return "ATM";
 }
 
-/** Main analysis: evaluate pairs and opportunities, return recommendations. */
+/** Main analysis: evaluate pairs, opportunities, standalone calls, and watchlist calls. */
 export async function analyzeCoveredCalls(
   accountId?: string
 ): Promise<CoveredCallRecommendation[]> {
-  const { pairs, opportunities } = await getCoveredCallPositions(accountId);
+  const { pairs, opportunities, standaloneCalls } = await getCoveredCallPositions(accountId);
+  const watchlistCalls = await getWatchlistCallItems();
   const recommendations: CoveredCallRecommendation[] = [];
 
   for (const pair of pairs) {
@@ -327,6 +377,7 @@ export async function analyzeCoveredCalls(
         symbol: pair.symbol,
         stockPositionId: pair.stockPositionId,
         callPositionId: pair.callPositionId,
+        source: "holdings",
         recommendation,
         confidence,
         reason,
@@ -363,6 +414,7 @@ export async function analyzeCoveredCalls(
         accountId: opp.accountId,
         symbol: opp.symbol,
         stockPositionId: opp.stockPositionId,
+        source: "holdings",
         recommendation: "SELL_NEW_CALL",
         confidence: "MEDIUM",
         reason: `${opp.stockShares} shares with no covered call. Opportunity to generate income.`,
@@ -379,6 +431,179 @@ export async function analyzeCoveredCalls(
       });
     } catch (err) {
       console.error(`CoveredCallAnalyzer: error for opportunity ${opp.symbol}:`, err);
+    }
+  }
+
+  for (const call of standaloneCalls) {
+    try {
+      const metrics = await getOptionMetrics(
+        call.symbol,
+        call.callExpiration,
+        call.callStrike,
+        "call"
+      );
+      if (!metrics) {
+        console.warn(
+          `CoveredCallAnalyzer: no metrics for standalone call ${call.symbol} ${call.callExpiration} ${call.callStrike}`
+        );
+        continue;
+      }
+
+      const stockPrice = metrics.underlyingPrice;
+      const expDate = new Date(call.callExpiration + "T12:00:00Z");
+      const dte = Math.max(0, Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      const callMid = (metrics.bid + metrics.ask) / 2;
+      const extrinsicValue = Math.max(0, callMid - metrics.intrinsicValue);
+      const extrinsicPercentOfPremium =
+        call.callPremiumReceived > 0
+          ? (extrinsicValue / call.callPremiumReceived) * 100
+          : 100;
+      const netPremium = call.callPremiumReceived - callMid;
+      const unrealizedPl = (call.callPremiumReceived - callMid) * 100 * call.callContracts;
+
+      const marketConditions = await getOptionMarketConditions(call.symbol);
+      const ivRank = await getIVRankOrPercentile(call.symbol);
+
+      const account = await getDb().then((db) =>
+        db.collection<AccountDoc>("accounts").findOne({ _id: new ObjectId(call.accountId) })
+      );
+      const riskLevel = account?.riskLevel ?? "medium";
+
+      const { recommendation, confidence, reason } = applyCoveredCallRules({
+        stockPrice,
+        strike: call.callStrike,
+        dte,
+        callBid: metrics.bid,
+        callAsk: metrics.ask,
+        premiumReceived: call.callPremiumReceived,
+        extrinsicPercentOfPremium,
+        unrealizedStockGainPercent: 0,
+        moneyness: getMoneyness(stockPrice, call.callStrike),
+        ivRank,
+        symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
+        riskLevel,
+      });
+
+      recommendations.push({
+        accountId: call.accountId,
+        symbol: call.symbol,
+        callPositionId: call.callPositionId,
+        source: "holdings",
+        recommendation,
+        confidence,
+        reason,
+        metrics: {
+          stockPrice,
+          callBid: metrics.bid,
+          callAsk: metrics.ask,
+          dte,
+          netPremium,
+          unrealizedPl,
+          breakeven: stockPrice,
+          extrinsicValue,
+          extrinsicPercentOfPremium,
+          moneyness: getMoneyness(stockPrice, call.callStrike),
+          iv: metrics.impliedVolatility,
+          ivRank: ivRank ?? undefined,
+        },
+        createdAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error(`CoveredCallAnalyzer: error for standalone call ${call.symbol}:`, err);
+    }
+  }
+
+  for (const item of watchlistCalls) {
+    const rawSymbol = item.underlyingSymbol || item.symbol;
+    if (!rawSymbol) {
+      console.warn(`CoveredCallAnalyzer: watchlist item ${item._id} missing symbol`);
+      continue;
+    }
+    const symbol = rawSymbol.toUpperCase();
+    const strike = item.strikePrice;
+    const expiration = item.expirationDate;
+    if (!strike || !expiration) {
+      console.warn(`CoveredCallAnalyzer: watchlist item ${item._id} missing strike or expiration`);
+      continue;
+    }
+    try {
+      const metrics = await getOptionMetrics(symbol, expiration, strike, "call");
+      if (!metrics) {
+        console.warn(
+          `CoveredCallAnalyzer: no metrics for watchlist call ${symbol} ${expiration} ${strike}`
+        );
+        continue;
+      }
+
+      const stockPrice = metrics.underlyingPrice;
+      const expDate = new Date(expiration + "T12:00:00Z");
+      const dte = Math.max(0, Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      const callMid = (metrics.bid + metrics.ask) / 2;
+      const premiumReceived = item.entryPremium ?? 0;
+      const extrinsicValue = Math.max(0, callMid - metrics.intrinsicValue);
+      const extrinsicPercentOfPremium =
+        premiumReceived > 0 ? (extrinsicValue / premiumReceived) * 100 : 100;
+      const netPremium = premiumReceived - callMid;
+      const contracts = item.quantity || 1;
+      const unrealizedPl = (premiumReceived - callMid) * 100 * contracts;
+      const stockPurchasePrice = item.type === "covered-call" ? item.entryPrice : stockPrice;
+      const unrealizedStockGainPercent =
+        stockPurchasePrice > 0
+          ? ((stockPrice - stockPurchasePrice) / stockPurchasePrice) * 100
+          : 0;
+
+      const marketConditions = await getOptionMarketConditions(symbol);
+      const ivRank = await getIVRankOrPercentile(symbol);
+
+      const accId = item.accountId || (accountId ?? "");
+      const account = accId
+        ? await getDb().then((db) =>
+            db.collection<AccountDoc>("accounts").findOne({ _id: new ObjectId(accId) })
+          )
+        : null;
+      const riskLevel = account?.riskLevel ?? "medium";
+
+      const { recommendation, confidence, reason } = applyCoveredCallRules({
+        stockPrice,
+        strike,
+        dte,
+        callBid: metrics.bid,
+        callAsk: metrics.ask,
+        premiumReceived,
+        extrinsicPercentOfPremium,
+        unrealizedStockGainPercent,
+        moneyness: getMoneyness(stockPrice, strike),
+        ivRank,
+        symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
+        riskLevel,
+      });
+
+      recommendations.push({
+        accountId: accId || "portfolio",
+        symbol,
+        watchlistItemId: item._id,
+        source: "watchlist",
+        recommendation,
+        confidence,
+        reason,
+        metrics: {
+          stockPrice,
+          callBid: metrics.bid,
+          callAsk: metrics.ask,
+          dte,
+          netPremium,
+          unrealizedPl,
+          breakeven: stockPurchasePrice,
+          extrinsicValue,
+          extrinsicPercentOfPremium,
+          moneyness: getMoneyness(stockPrice, strike),
+          iv: metrics.impliedVolatility,
+          ivRank: ivRank ?? undefined,
+        },
+        createdAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error(`CoveredCallAnalyzer: error for watchlist call ${item.symbol}:`, err);
     }
   }
 
@@ -407,7 +632,7 @@ export async function storeCoveredCallRecommendations(
       options?.createAlerts &&
       (rec.recommendation === "BUY_TO_CLOSE" || rec.recommendation === "SELL_NEW_CALL" || rec.recommendation === "ROLL")
     ) {
-      const alert = {
+      const alert: Record<string, unknown> = {
         type: "covered-call",
         accountId: rec.accountId,
         symbol: rec.symbol,
@@ -418,6 +643,8 @@ export async function storeCoveredCallRecommendations(
         createdAt: new Date().toISOString(),
         acknowledged: false,
       };
+      if (rec.watchlistItemId) alert.watchlistItemId = rec.watchlistItemId;
+      if (rec.source) alert.source = rec.source;
       await db.collection("alerts").insertOne(alert);
       alertsCreated++;
     }

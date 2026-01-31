@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Account, Position } from "@/types/portfolio";
 import { AppHeader } from "@/components/AppHeader";
@@ -12,7 +12,6 @@ const POLL_INTERVAL_MS = 30_000;
 
 function HoldingsContent() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const urlAccountId = searchParams.get("accountId");
 
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -23,6 +22,8 @@ function HoldingsContent() {
   const [refreshing, setRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingPosition, setEditingPosition] = useState<Position | undefined>();
+  const [addToWatchlistLoading, setAddToWatchlistLoading] = useState<string | null>(null);
+  const [addToWatchlistMessage, setAddToWatchlistMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -146,28 +147,69 @@ function HoldingsContent() {
   }, [fetchHoldings]);
 
   const handleAddToWatchlist = useCallback(
-    (position: Position) => {
-      const params = new URLSearchParams();
-      params.set("addFromHolding", "1");
-      params.set("accountId", selectedAccountId);
-      params.set("symbol", (position.ticker ?? "").toUpperCase());
-      if (position.type === "stock") {
-        params.set("type", "stock");
-        params.set("strategy", "long-stock");
-        params.set("quantity", String(position.shares ?? 0));
-        params.set("entryPrice", String(position.purchasePrice ?? position.currentPrice ?? 0));
-      } else if (position.type === "option") {
-        params.set("type", position.optionType === "put" ? "put" : "call");
-        params.set("strategy", "leap-call");
-        params.set("quantity", String(position.contracts ?? 0));
-        params.set("entryPrice", String(position.strike ?? 0));
-        if (position.premium != null) params.set("entryPremium", String(position.premium));
-        if (position.strike != null) params.set("strikePrice", String(position.strike));
-        if (position.expiration) params.set("expirationDate", position.expiration);
+    async (position: Position) => {
+      if (!selectedAccountId || position.type === "cash") return;
+      const rawTicker = (position.ticker ?? "").toUpperCase();
+      if (!rawTicker) return;
+
+      // Extract underlying from option ticker (e.g. TSLA250117C250 -> TSLA)
+      const underlying =
+        position.type === "option" && /^\w+\d/.test(rawTicker)
+          ? rawTicker.replace(/\d.*$/, "")
+          : rawTicker;
+      const symbol = position.type === "option" ? underlying : rawTicker;
+
+      setAddToWatchlistLoading(position._id);
+      setAddToWatchlistMessage(null);
+      try {
+        const watchlistsRes = await fetch("/api/watchlists", { cache: "no-store" });
+        if (!watchlistsRes.ok) throw new Error("Failed to fetch watchlists");
+        const watchlists = await watchlistsRes.json();
+        const defaultWatchlist = watchlists.find((w: { name: string }) => w.name === "Default") ?? watchlists[0];
+        if (!defaultWatchlist) throw new Error("No watchlist found");
+
+        const body: Record<string, unknown> = {
+          watchlistId: defaultWatchlist._id,
+          accountId: selectedAccountId,
+          symbol,
+          underlyingSymbol: symbol,
+          quantity: position.type === "stock" ? (position.shares ?? 0) : (position.contracts ?? 0),
+          entryPrice: position.type === "stock"
+            ? (position.purchasePrice ?? position.currentPrice ?? 0)
+            : (position.premium ?? position.strike ?? 0),
+        };
+
+        if (position.type === "stock") {
+          body.type = "stock";
+          body.strategy = "long-stock";
+        } else if (position.type === "option") {
+          body.type = position.optionType === "put" ? "put" : "call";
+          body.strategy = position.optionType === "call" ? "covered-call" : "cash-secured-put";
+          if (position.strike != null) body.strikePrice = position.strike;
+          if (position.expiration) body.expirationDate = position.expiration;
+          if (position.premium != null) body.entryPremium = position.premium;
+        }
+
+        const res = await fetch("/api/watchlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to add to watchlist");
+
+        setAddToWatchlistMessage({ type: "success", text: `Added ${position.type === "option" ? rawTicker : symbol} to watchlist` });
+        setTimeout(() => setAddToWatchlistMessage(null), 3000);
+      } catch (err) {
+        setAddToWatchlistMessage({
+          type: "error",
+          text: err instanceof Error ? err.message : "Failed to add to watchlist",
+        });
+      } finally {
+        setAddToWatchlistLoading(null);
       }
-      router.push(`/watchlist?${params.toString()}`);
     },
-    [selectedAccountId, router]
+    [selectedAccountId]
   );
 
   if (loading) {
@@ -315,6 +357,34 @@ function HoldingsContent() {
               </div>
             </div>
 
+            {addToWatchlistMessage && (
+              <div
+                className={`mb-4 p-3 rounded-lg flex items-center justify-between gap-4 ${
+                  addToWatchlistMessage.type === "success"
+                    ? "bg-green-50 border border-green-200 text-green-800"
+                    : "bg-red-50 border border-red-200 text-red-800"
+                }`}
+              >
+                <p className="font-medium">
+                  {addToWatchlistMessage.text}
+                  {addToWatchlistMessage.type === "success" && (
+                    <Link href="/watchlist" className="ml-2 text-indigo-600 hover:underline font-semibold">
+                      View Watchlist →
+                    </Link>
+                  )}
+                </p>
+                <button
+                  onClick={() => setAddToWatchlistMessage(null)}
+                  className="p-1 hover:opacity-70"
+                  aria-label="Dismiss"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
             {error && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between gap-4">
                 <p className="text-red-800 font-medium">{error}</p>
@@ -349,6 +419,7 @@ function HoldingsContent() {
                 }}
                 onDelete={handleDeletePosition}
                 onAddToWatchlist={handleAddToWatchlist}
+                addToWatchlistLoadingId={addToWatchlistLoading}
                 accountId={selectedAccountId}
               />
             )}

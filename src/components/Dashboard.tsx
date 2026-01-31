@@ -38,6 +38,8 @@ export function Dashboard() {
   const [marketData, setMarketData] = useState<MarketConditionsType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [schedulerLoading, setSchedulerLoading] = useState(false);
+  const [schedulerMessage, setSchedulerMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -76,6 +78,31 @@ export function Dashboard() {
     setIsRefreshing(true);
     await Promise.all([fetchDashboard(), fetchMarket()]);
     setIsRefreshing(false);
+  };
+
+  // Run portfolio scanners (Option Scanner, Covered Call, etc.)
+  const runPortfolioScanners = async () => {
+    setSchedulerMessage("");
+    setSchedulerLoading(true);
+    try {
+      const res = await fetch("/api/scheduler", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "runPortfolio" }),
+      });
+      const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
+      if (res.ok && data.success) {
+        setSchedulerMessage(data.message ?? "Portfolio scanners triggered.");
+        setTimeout(() => setSchedulerMessage(""), 5000);
+        await fetchDashboard();
+      } else {
+        setSchedulerMessage(`Error: ${data.error ?? "Failed to run portfolio scanners"}`);
+      }
+    } catch (err) {
+      setSchedulerMessage("Error: Failed to run portfolio scanners");
+    } finally {
+      setSchedulerLoading(false);
+    }
   };
 
   // Refresh when pathname changes (user navigates back to dashboard)
@@ -174,12 +201,33 @@ export function Dashboard() {
               Last updated: {lastUpdated.toLocaleTimeString()}
             </span>
           )}
+          {schedulerMessage && (
+            <span className={`text-xs ${schedulerMessage.startsWith("Error") ? "text-red-600" : "text-green-600"}`}>
+              {schedulerMessage}
+            </span>
+          )}
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        <div className="flex items-center gap-2">
+          <button
+            onClick={runPortfolioScanners}
+            disabled={schedulerLoading}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {schedulerLoading ? (
+              <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            {schedulerLoading ? "Running…" : "Run scanners"}
+          </button>
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
           <svg
             className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`}
             fill="none"
@@ -195,6 +243,7 @@ export function Dashboard() {
           </svg>
           {isRefreshing ? "Refreshing..." : "Refresh"}
         </button>
+        </div>
       </div>
 
       {/* Quick Stats */}

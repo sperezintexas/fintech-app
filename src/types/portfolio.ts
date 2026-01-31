@@ -565,6 +565,8 @@ export type CoveredCallRecommendation = {
   symbol: string;
   stockPositionId?: string;
   callPositionId?: string;
+  watchlistItemId?: string;
+  source: "holdings" | "watchlist";
   recommendation: CoveredCallRecommendationAction;
   confidence: CoveredCallConfidence;
   reason: string;

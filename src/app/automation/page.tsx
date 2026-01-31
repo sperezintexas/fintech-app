@@ -1967,86 +1967,216 @@ function AutomationContent() {
           </div>
         )}
 
-        {/* Reports tab removed - use Jobs tab with job types */}
         {/* Scheduled Jobs Tab */}
         {activeTab === "jobs" && (
           <div className="space-y-6">
-            {/* Job Types - Run Now for testing */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Job Types</h3>
-              <p className="text-sm text-gray-600 mb-4">Use Run Now to test before scheduling.</p>
-              {runJobTypeMessage && (
-                <div className={`mb-4 p-3 rounded-lg ${runJobTypeMessage.type === "success" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                  {runJobTypeMessage.text}
-                </div>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {jobTypes.filter((t) => t.enabled).map((rt) => {
-                  const isPortfolio = selectedAccountId === "__portfolio__";
-                  const canRun = isPortfolio ? rt.supportsPortfolio : rt.supportsAccount;
-                  return (
-                    <button
-                      key={rt._id}
-                      onClick={() => canRun && handleRunJobType(rt)}
-                      disabled={!canRun || !!runJobTypeLoading || accounts.length === 0}
-                      className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
-                      title={rt.description}
-                    >
-                      {runJobTypeLoading === rt.handlerKey ? (
-                        <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                        </svg>
-                      )}
-                      {rt.name}
-                    </button>
-                  );
-                })}
+            {/* Job Types and Scheduled Jobs - same level */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Job Types - Available job types (jobs reference these) */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">Job Types</h3>
+                <p className="text-sm text-gray-600 mb-4">Available job types. Jobs reference one of these.</p>
+                {runJobTypeMessage && (
+                  <div className={`mb-4 p-3 rounded-lg ${runJobTypeMessage.type === "success" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                    {runJobTypeMessage.text}
+                  </div>
+                )}
+                {jobTypes.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">Loading job types…</div>
+                ) : (
+                  <ul className="space-y-2">
+                    {jobTypes.filter((t) => t.enabled).map((rt) => {
+                      const isPortfolio = selectedAccountId === "__portfolio__";
+                      const canRun = isPortfolio ? rt.supportsPortfolio : rt.supportsAccount;
+                      return (
+                        <li key={rt._id} className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-gray-50">
+                          <div className="min-w-0">
+                            <span className="font-medium text-gray-900">{rt.name}</span>
+                            <p className="text-xs text-gray-500 truncate" title={rt.description}>{rt.description}</p>
+                          </div>
+                          <button
+                            onClick={() => canRun && handleRunJobType(rt)}
+                            disabled={!canRun || !!runJobTypeLoading || accounts.length === 0}
+                            className="shrink-0 px-2 py-1 text-xs rounded border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 flex items-center gap-1"
+                            title="Run now"
+                          >
+                            {runJobTypeLoading === rt.handlerKey ? (
+                              <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                              </svg>
+                            )}
+                            Run
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
-            </div>
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Scheduled Jobs</h3>
-                  <p className="text-sm text-gray-600">Create jobs by choosing a job type and configuring schedule.</p>
+
+              {/* Manage Jobs - CRUD: Create, list, Edit, Delete */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">Manage Jobs</h3>
+                <p className="text-sm text-gray-600 mb-4">Create, edit, and manage jobs. Each job references a job type from the list.</p>
+              <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">Create Job</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Name</label>
+                    <input
+                      value={jobForm.name}
+                      onChange={(e) => setJobForm({ ...jobForm, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                      placeholder="e.g. Daily close report"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Job Type</label>
+                    <select
+                      value={jobForm.jobType}
+                      onChange={(e) => setJobForm({ ...jobForm, jobType: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white text-sm"
+                    >
+                      {(() => {
+                        const isPortfolio = selectedAccountId === "__portfolio__";
+                        const filtered = jobTypes.filter((t) => t.enabled && (isPortfolio ? t.supportsPortfolio : t.supportsAccount));
+                        if (filtered.length === 0) return <option value="">No job types</option>;
+                        return (
+                          <>
+                            <option value="">Select job type</option>
+                            {filtered.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Time</label>
+                    <input
+                      type="time"
+                      value={jobScheduleTime}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setJobScheduleTime(v);
+                        setJobForm({ ...jobForm, scheduleCron: scheduleToCron(v, jobScheduleFreq) });
+                      }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Frequency</label>
+                    <select
+                      value={jobScheduleFreq}
+                      onChange={(e) => {
+                        const v = e.target.value as "daily" | "weekdays";
+                        setJobScheduleFreq(v);
+                        setJobForm({ ...jobForm, scheduleCron: scheduleToCron(jobScheduleTime, v) });
+                      }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white text-sm"
+                    >
+                      <option value="weekdays">Weekdays (Mon–Fri)</option>
+                      <option value="daily">Daily</option>
+                    </select>
+                  </div>
+                </div>
+                {jobTypes.find((t) => t.id === jobForm.jobType) && ["watchlistreport", "smartxai", "portfoliosummary"].includes(jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey ?? "") && (
+                  <div className="mb-4">
+                    <label className="block text-xs text-gray-500 mb-2">Message template</label>
+                    <div className="flex flex-wrap gap-2">
+                      {REPORT_TEMPLATES.map((template) => (
+                        <button
+                          key={template.id}
+                          type="button"
+                          onClick={() => setJobForm({ ...jobForm, templateId: template.id })}
+                          className={`px-3 py-2 rounded-lg border-2 text-sm ${jobForm.templateId === template.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 hover:border-gray-300"}`}
+                        >
+                          {template.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="mb-4">
+                  <label className="block text-xs text-gray-500 mb-2">Delivery channel</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(["slack", "twitter"] as AlertDeliveryChannel[]).map((ch) => {
+                      const checked = jobForm.channels.includes(ch);
+                      return (
+                        <label
+                          key={ch}
+                          className={`px-3 py-2 rounded-lg border cursor-pointer text-sm ${checked ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-700"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mr-2"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) setJobForm({ ...jobForm, channels: [...jobForm.channels, ch] });
+                              else setJobForm({ ...jobForm, channels: jobForm.channels.filter((c) => c !== ch) });
+                            }}
+                          />
+                          {ch === "twitter" ? "X" : "Slack"}
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={runPortfolioScanners}
-                    disabled={schedulerLoading}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
-                  >
-                    {schedulerLoading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Running…
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Run portfolio scanners
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={openNewJob}
-                    disabled={jobTypes.length === 0}
+                    onClick={async () => {
+                      setJobFormError("");
+                      const isPortfolio = selectedAccountId === "__portfolio__";
+                      if (!selectedAccountId || (!isPortfolio && !accounts.some((a) => a._id === selectedAccountId)))
+                        return setJobFormError("Select Portfolio or an account above");
+                      const name = jobForm.name.trim();
+                      if (!name) return setJobFormError("Name is required");
+                      if (!jobForm.jobType) return setJobFormError("Select a job type");
+                      if (!jobForm.scheduleCron.trim()) return setJobFormError("Schedule is required");
+                      if (!jobForm.channels.length) return setJobFormError("Select at least one delivery channel (Slack or X)");
+                      setJobFormSaving(true);
+                      try {
+                        const isPortfolio = selectedAccountId === "__portfolio__";
+                        const body = {
+                          accountId: isPortfolio ? null : selectedAccountId,
+                          name,
+                          jobType: jobForm.jobType,
+                          scheduleCron: jobForm.scheduleCron,
+                          templateId: jobForm.templateId,
+                          channels: jobForm.channels,
+                          status: "active",
+                        };
+                        const res = await fetch("/api/jobs", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(body),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) {
+                          setJobFormError(data.error || "Failed to create job");
+                          return;
+                        }
+                        setJobForm({ ...jobForm, name: "" });
+                        await fetchJobs();
+                      } catch (err) {
+                        setJobFormError("Failed to create job");
+                      } finally {
+                        setJobFormSaving(false);
+                      }
+                    }}
+                    disabled={jobTypes.length === 0 || jobFormSaving}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                   >
-                    New Job
+                    {jobFormSaving ? "Creating…" : "Create Job"}
                   </button>
+                  {jobFormError && !showJobForm && (
+                    <span className="text-sm text-red-600">{jobFormError}</span>
+                  )}
                 </div>
               </div>
-
-              {schedulerMessage && (
-                <div className={`mb-4 p-3 rounded-lg ${schedulerMessage.startsWith("Error") ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
-                  {schedulerMessage}
-                </div>
-              )}
 
               {jobTypes.length === 0 ? (
                 <div className="text-center py-10 text-gray-500">
@@ -2054,7 +2184,7 @@ function AutomationContent() {
                 </div>
               ) : jobs.length === 0 ? (
                 <div className="text-center py-10 text-gray-500">
-                  No jobs yet.
+                  No jobs yet. Create one above.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -2117,6 +2247,7 @@ function AutomationContent() {
                   })}
                 </div>
               )}
+              </div>
             </div>
 
             {showJobForm && (
