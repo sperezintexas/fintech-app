@@ -38,12 +38,13 @@ export async function POST(request: NextRequest) {
     const reportTypeName = (reportTypeDoc as { name?: string } | null)?.name ?? handlerKey;
     const defaultChannels = (reportTypeDoc as { defaultDeliveryChannels?: AlertDeliveryChannel[] } | null)
       ?.defaultDeliveryChannels;
+    const defaultTemplateId = (reportTypeDoc as { defaultTemplateId?: string } | null)?.defaultTemplateId;
     const channels =
       defaultChannels?.length && defaultChannels.every((c) => DEFAULT_DELIVERY_CHANNELS.includes(c))
         ? defaultChannels
         : (["slack"] as AlertDeliveryChannel[]);
 
-    // Create temporary job (jobType + minimal config, use default channels from job type)
+    // Create temporary job (jobType + minimal config, use default channels and template from job type)
     const jobDoc = {
       _id: new ObjectId(),
       name: `Test: ${reportTypeName}`,
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
       accountId,
       scheduleCron: "0 0 1 1 *",
       channels,
+      templateId: defaultTemplateId ?? "concise",
       status: "active" as const,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

@@ -4,13 +4,21 @@ import { getDb } from "@/lib/mongodb";
 import { validateJobConfig } from "@/lib/job-config-schemas";
 import { REPORT_HANDLER_KEYS, type ReportHandlerKey } from "../route";
 import type { AlertDeliveryChannel } from "@/types/portfolio";
+import type { ReportTemplateId } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
 /** Default delivery channels: Slack or X (twitter) only. */
 const DEFAULT_DELIVERY_CHANNELS: AlertDeliveryChannel[] = ["slack", "twitter"];
 
+const VALID_TEMPLATE_IDS = ["concise", "detailed", "actionable", "risk-aware"] as const;
+
 type RouteParams = { params: Promise<{ id: string }> };
+
+function validateTemplateId(templateId: unknown): ReportTemplateId | undefined {
+  if (templateId == null || templateId === "") return undefined;
+  return VALID_TEMPLATE_IDS.includes(templateId as ReportTemplateId) ? (templateId as ReportTemplateId) : undefined;
+}
 
 function validateChannels(channels: unknown): AlertDeliveryChannel[] | undefined {
   if (!Array.isArray(channels) || channels.length === 0) return undefined;
@@ -55,6 +63,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       enabled?: boolean;
       defaultConfig?: Record<string, unknown>;
       defaultDeliveryChannels?: AlertDeliveryChannel[];
+      defaultTemplateId?: ReportTemplateId;
     };
 
     const db = await getDb();
@@ -113,6 +122,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
     if (body.defaultDeliveryChannels !== undefined) {
       update.defaultDeliveryChannels = validateChannels(body.defaultDeliveryChannels);
+    }
+    if (body.defaultTemplateId !== undefined) {
+      update.defaultTemplateId = validateTemplateId(body.defaultTemplateId);
     }
 
     await db.collection("reportTypes").updateOne(query, { $set: update });

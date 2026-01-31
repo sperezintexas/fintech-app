@@ -851,7 +851,7 @@ function AutomationContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
       <AppHeader />
 
       {/* Main Content */}
@@ -987,31 +987,39 @@ function AutomationContent() {
                       </svg>
                     </button>
                   </div>
-                  {/* Alert Details */}
-                  <div className="mt-3 pt-3 border-t border-current/20 grid grid-cols-4 gap-4 text-xs">
-                    <div>
-                      <span className="text-gray-600">Current:</span>
-                      <span className="ml-1 font-medium">{formatCurrency(alert.details.currentPrice)}</span>
+                  {/* Alert Details (optional - some alerts have different structure) */}
+                  {alert.details && (
+                    <div className="mt-3 pt-3 border-t border-current/20 grid grid-cols-4 gap-4 text-xs">
+                      {alert.details.currentPrice != null && (
+                        <div>
+                          <span className="text-gray-600">Current:</span>
+                          <span className="ml-1 font-medium">{formatCurrency(alert.details.currentPrice)}</span>
+                        </div>
+                      )}
+                      {alert.details.entryPrice != null && (
+                        <div>
+                          <span className="text-gray-600">Entry:</span>
+                          <span className="ml-1 font-medium">{formatCurrency(alert.details.entryPrice)}</span>
+                        </div>
+                      )}
+                      {alert.details.priceChangePercent != null && (
+                        <div>
+                          <span className="text-gray-600">Change:</span>
+                          <span className={`ml-1 font-medium ${alert.details.priceChangePercent >= 0 ? "text-green-700" : "text-red-700"}`}>
+                            {formatPercent(alert.details.priceChangePercent)}
+                          </span>
+                        </div>
+                      )}
+                      {alert.details.daysToExpiration !== undefined && (
+                        <div>
+                          <span className="text-gray-600">DTE:</span>
+                          <span className={`ml-1 font-medium ${alert.details.daysToExpiration <= 7 ? "text-red-700" : ""}`}>
+                            {alert.details.daysToExpiration} days
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <span className="text-gray-600">Entry:</span>
-                      <span className="ml-1 font-medium">{formatCurrency(alert.details.entryPrice)}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-600">Change:</span>
-                      <span className={`ml-1 font-medium ${alert.details.priceChangePercent >= 0 ? "text-green-700" : "text-red-700"}`}>
-                        {formatPercent(alert.details.priceChangePercent)}
-                      </span>
-                    </div>
-                    {alert.details.daysToExpiration !== undefined && (
-                      <div>
-                        <span className="text-gray-600">DTE:</span>
-                        <span className={`ml-1 font-medium ${alert.details.daysToExpiration <= 7 ? "text-red-700" : ""}`}>
-                          {alert.details.daysToExpiration} days
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
               ))}
             </div>

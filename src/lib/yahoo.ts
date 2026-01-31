@@ -10,7 +10,7 @@ import YahooFinance from "yahoo-finance2";
 import type { MarketConditions } from "@/types/portfolio";
 
 // Initialize Yahoo Finance instance (v3 requirement)
-const yahooFinance = new YahooFinance();
+const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
 // Major indices ETFs to track
 const INDEX_TICKERS = [

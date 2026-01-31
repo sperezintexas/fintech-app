@@ -8,6 +8,7 @@ import {
   type ReportHandlerKey,
 } from "@/lib/report-type-constants";
 import type { AlertDeliveryChannel } from "@/types/portfolio";
+import type { ReportTemplateId } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ export { REPORT_HANDLER_KEYS, type ReportHandlerKey };
 
 /** Default delivery channels: Slack or X (twitter) only. */
 const DEFAULT_DELIVERY_CHANNELS: AlertDeliveryChannel[] = ["slack", "twitter"];
+
+const VALID_TEMPLATE_IDS = ["concise", "detailed", "actionable", "risk-aware"] as const;
 
 export type ReportType = {
   _id: string;
@@ -32,6 +35,8 @@ export type ReportType = {
   defaultConfig?: Record<string, unknown>;
   /** Default delivery channels (used when creating new jobs) */
   defaultDeliveryChannels?: AlertDeliveryChannel[];
+  /** Message template for report output. Default: concise */
+  defaultTemplateId?: ReportTemplateId;
   createdAt: string;
   updatedAt: string;
 };
@@ -96,6 +101,11 @@ function validateChannels(channels: unknown): AlertDeliveryChannel[] | undefined
   return valid.length > 0 ? valid : undefined;
 }
 
+function validateTemplateId(templateId: unknown): ReportTemplateId | undefined {
+  if (templateId == null || templateId === "") return undefined;
+  return VALID_TEMPLATE_IDS.includes(templateId as ReportTemplateId) ? (templateId as ReportTemplateId) : undefined;
+}
+
 // POST /api/report-types
 export async function POST(request: NextRequest) {
   try {
@@ -109,6 +119,7 @@ export async function POST(request: NextRequest) {
       order?: number;
       defaultConfig?: Record<string, unknown>;
       defaultDeliveryChannels?: AlertDeliveryChannel[];
+      defaultTemplateId?: ReportTemplateId;
     };
 
     const id = (body.id ?? "").trim().toLowerCase().replace(/\s+/g, "-");
@@ -140,6 +151,7 @@ export async function POST(request: NextRequest) {
       }
     }
     const defaultDeliveryChannels = validateChannels(body.defaultDeliveryChannels);
+    const defaultTemplateId = validateTemplateId(body.defaultTemplateId);
 
     const db = await getDb();
     await ensureDefaultReportTypes(db);
@@ -163,6 +175,7 @@ export async function POST(request: NextRequest) {
       enabled: true,
       defaultConfig,
       defaultDeliveryChannels,
+      ...(defaultTemplateId != null && { defaultTemplateId }),
       createdAt: now,
       updatedAt: now,
     };

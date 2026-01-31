@@ -1,8 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { REPORT_HANDLER_KEYS } from "@/lib/report-type-constants";
 import type { AlertDeliveryChannel } from "@/types/portfolio";
+import {
+  REPORT_TEMPLATES,
+  getReportTemplate,
+  type ReportTemplateId,
+} from "@/types/portfolio";
 
 export type JobTypeFormData = {
   id: string;
@@ -15,6 +20,7 @@ export type JobTypeFormData = {
   enabled: boolean;
   defaultConfig?: Record<string, unknown>;
   defaultDeliveryChannels?: AlertDeliveryChannel[];
+  defaultTemplateId?: ReportTemplateId;
 };
 
 type JobType = {
@@ -29,6 +35,7 @@ type JobType = {
   enabled: boolean;
   defaultConfig?: Record<string, unknown>;
   defaultDeliveryChannels?: AlertDeliveryChannel[];
+  defaultTemplateId?: ReportTemplateId;
 };
 
 type JobTypeFormProps = {
@@ -56,6 +63,7 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
     enabled: jobType?.enabled ?? true,
     defaultConfig: jobType?.defaultConfig ?? undefined,
     defaultDeliveryChannels: jobType?.defaultDeliveryChannels ?? ["slack"],
+    defaultTemplateId: jobType?.defaultTemplateId ?? "concise",
   });
 
   const setConfig = (updates: Record<string, unknown>) => {
@@ -80,6 +88,32 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
   const idEditable = !jobType;
   const config = formData.defaultConfig ?? {};
   const channels = formData.defaultDeliveryChannels ?? [];
+  const templateId = formData.defaultTemplateId ?? "concise";
+
+  const previewSample = useMemo(() => {
+    const d = new Date();
+    const dateStr = `${d.toISOString().slice(0, 10)} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+    const template = getReportTemplate(templateId);
+    const vars = {
+      date: dateStr,
+      reportName: formData.name || "Sample Report",
+      account: "Sample Account",
+      stocks: "TSLA • AAPL • NVDA",
+      options: "TSLA260206C00430000 • AAPL260220C00180000",
+    };
+    const slack = template.slackTemplate
+      .replace(/\{date\}/g, vars.date)
+      .replace(/\{reportName\}/g, vars.reportName)
+      .replace(/\{account\}/g, vars.account)
+      .replace(/\{stocks\}/g, vars.stocks)
+      .replace(/\{options\}/g, vars.options);
+    const x = template.xTemplate
+      .replace(/\{date\}/g, vars.date)
+      .replace(/\{reportName\}/g, vars.reportName)
+      .replace(/\{stocks\}/g, vars.stocks)
+      .replace(/\{options\}/g, vars.options);
+    return { slack, x };
+  }, [templateId, formData.name]);
 
   const toggleChannel = (ch: AlertDeliveryChannel) => {
     const next = channels.includes(ch) ? channels.filter((c) => c !== ch) : [...channels, ch];
@@ -190,6 +224,35 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
         />
       </div>
 
+      {/* Message template */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Message template
+        </label>
+        <p className="text-xs text-gray-500 mb-2">
+          Template used for report output (Slack/X). Default: concise.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {REPORT_TEMPLATES.map((t) => (
+            <label
+              key={t.id}
+              className={`px-3 py-2 rounded-lg border cursor-pointer text-sm ${
+                templateId === t.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-700"
+              }`}
+            >
+              <input
+                type="radio"
+                name="template"
+                className="mr-2"
+                checked={templateId === t.id}
+                onChange={() => setFormData((prev) => ({ ...prev, defaultTemplateId: t.id }))}
+              />
+              {t.name}
+            </label>
+          ))}
+        </div>
+      </div>
+
       {/* Default delivery channels (Slack or X only) */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -218,6 +281,34 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
           ))}
         </div>
       </div>
+
+      {/* Delivery channel preview */}
+      {channels.length > 0 && (
+        <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+          <h5 className="text-sm font-medium text-gray-700 mb-3">Delivery preview</h5>
+          <p className="text-xs text-gray-500 mb-3">
+            Sample of how the message will appear for each selected channel.
+          </p>
+          <div className="space-y-3">
+            {channels.includes("slack") && (
+              <div>
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Slack</span>
+                <pre className="mt-1 p-3 bg-white border border-gray-200 rounded-lg text-sm whitespace-pre-wrap break-words font-sans">
+                  {previewSample.slack}
+                </pre>
+              </div>
+            )}
+            {channels.includes("twitter") && (
+              <div>
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">X (Twitter)</span>
+                <pre className="mt-1 p-3 bg-white border border-gray-200 rounded-lg text-sm whitespace-pre-wrap break-words font-sans">
+                  {previewSample.x}
+                </pre>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Type-specific default config */}
       {formData.handlerKey === "coveredCallScanner" && (
