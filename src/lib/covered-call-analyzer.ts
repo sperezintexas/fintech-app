@@ -20,9 +20,10 @@ import type {
   CoveredCallRecommendationAction,
   CoveredCallConfidence,
   RiskLevel,
+  JobConfig,
 } from "@/types/portfolio";
 
-const MIN_STOCK_SHARES = 100;
+const DEFAULT_MIN_STOCK_SHARES = 100;
 
 type AccountDoc = { _id: ObjectId; positions?: Position[]; riskLevel?: RiskLevel };
 
@@ -178,9 +179,19 @@ export function applyCoveredCallRules(
   };
 }
 
+/** Config for covered call scanner (from job.config). */
+export type CoveredCallScannerConfig = {
+  minPremium?: number;
+  maxDelta?: number;
+  symbols?: string[];
+  expirationRange?: { minDays?: number; maxDays?: number };
+  minStockShares?: number;
+};
+
 /** Fetch covered call pairs (stock + short call), opportunities (stock without call), and standalone call positions. */
 export async function getCoveredCallPositions(
-  accountId?: string
+  accountId?: string,
+  config?: CoveredCallScannerConfig | JobConfig
 ): Promise<{
   pairs: CoveredCallPair[];
   opportunities: StockOpportunity[];
@@ -189,6 +200,9 @@ export async function getCoveredCallPositions(
   const db = await getDb();
   const query = accountId ? { _id: new ObjectId(accountId) } : {};
   const accounts = await db.collection<AccountDoc>("accounts").find(query).toArray();
+
+  const minStockShares = (config as CoveredCallScannerConfig)?.minStockShares ?? DEFAULT_MIN_STOCK_SHARES;
+  const symbolFilter = (config as CoveredCallScannerConfig)?.symbols?.map((s) => s.toUpperCase());
 
   const pairs: CoveredCallPair[] = [];
   const opportunities: StockOpportunity[] = [];
@@ -202,7 +216,7 @@ export async function getCoveredCallPositions(
   for (const acc of accounts) {
     const positions = (acc.positions ?? []) as Position[];
     const stockPositions = positions.filter(
-      (p) => p.type === "stock" && p.ticker && (p.shares ?? 0) >= MIN_STOCK_SHARES
+      (p) => p.type === "stock" && p.ticker && (p.shares ?? 0) >= minStockShares
     );
     const callPositions = positions.filter(
       (p) =>
@@ -221,6 +235,8 @@ export async function getCoveredCallPositions(
       const shares = stock.shares ?? 0;
       const purchasePrice = stock.purchasePrice ?? 0;
       const stockPosId = stock._id ?? `${acc._id}-stock-${symbol}`;
+
+      if (symbolFilter && symbolFilter.length > 0 && !symbolFilter.includes(symbol)) continue;
 
       const matchingCall = callPositions.find(
         (c) => getUnderlyingFromTicker(c.ticker ?? "") === symbol
@@ -259,6 +275,8 @@ export async function getCoveredCallPositions(
       if (matchedCallIds.has(callPosId)) continue;
       const symbol = getUnderlyingFromTicker(call.ticker ?? "");
       if (!symbol) continue;
+      if (symbolFilter && symbolFilter.length > 0 && !symbolFilter.includes(symbol)) continue;
+
       standaloneCalls.push({
         accountId: acc._id.toString(),
         symbol,
@@ -271,11 +289,11 @@ export async function getCoveredCallPositions(
     }
   }
 
-  const totalStocks = accounts.reduce((n, a) => n + (a.positions ?? []).filter((p) => p.type === "stock" && (p.shares ?? 0) >= MIN_STOCK_SHARES).length, 0);
+  const totalStocks = accounts.reduce((n, a) => n + (a.positions ?? []).filter((p) => p.type === "stock" && (p.shares ?? 0) >= minStockShares).length, 0);
   const totalCalls = accounts.reduce((n, a) => n + (a.positions ?? []).filter((p) => p.type === "option" && p.optionType === "call").length, 0);
   if (pairs.length === 0 && standaloneCalls.length === 0 && (totalStocks > 0 || totalCalls > 0)) {
     console.warn(
-      `CoveredCallAnalyzer: 0 pairs matched (${accounts.length} accounts, ${totalStocks} stocks ≥${MIN_STOCK_SHARES} shares, ${totalCalls} call positions). Check ticker format (use underlying symbol e.g. TSLA, or OCC format TSLA250117C250).`
+      `CoveredCallAnalyzer: 0 pairs matched (${accounts.length} accounts, ${totalStocks} stocks ≥${minStockShares} shares, ${totalCalls} call positions). Check ticker format (use underlying symbol e.g. TSLA, or OCC format TSLA250117C250).`
     );
   }
 
@@ -304,14 +322,22 @@ function getMoneyness(stockPrice: number, strike: number): "ITM" | "ATM" | "OTM"
 
 /** Main analysis: evaluate pairs, opportunities, standalone calls, and watchlist calls. */
 export async function analyzeCoveredCalls(
-  accountId?: string
+  accountId?: string,
+  config?: CoveredCallScannerConfig | JobConfig
 ): Promise<CoveredCallRecommendation[]> {
-  const { pairs, opportunities, standaloneCalls } = await getCoveredCallPositions(accountId);
+  const { pairs, opportunities, standaloneCalls } = await getCoveredCallPositions(accountId, config);
   const watchlistCalls = await getWatchlistCallItems();
   const recommendations: CoveredCallRecommendation[] = [];
+  const cfg = config as CoveredCallScannerConfig | undefined;
 
   for (const pair of pairs) {
     try {
+      const expDate = new Date(pair.callExpiration + "T12:00:00Z");
+      const dte = Math.max(0, Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      if (cfg?.minPremium != null && pair.callPremiumReceived < cfg.minPremium) continue;
+      if (cfg?.expirationRange?.minDays != null && dte < cfg.expirationRange.minDays) continue;
+      if (cfg?.expirationRange?.maxDays != null && dte > cfg.expirationRange.maxDays) continue;
+
       const metrics = await getOptionMetrics(
         pair.symbol,
         pair.callExpiration,
@@ -326,8 +352,6 @@ export async function analyzeCoveredCalls(
       }
 
       const stockPrice = metrics.underlyingPrice;
-      const expDate = new Date(pair.callExpiration + "T12:00:00Z");
-      const dte = Math.max(0, Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
       const callMid = (metrics.bid + metrics.ask) / 2;
       const extrinsicValue = Math.max(0, callMid - metrics.intrinsicValue);
       const extrinsicPercentOfPremium =
@@ -350,6 +374,9 @@ export async function analyzeCoveredCalls(
         .collection<AccountDoc>("accounts")
         .findOne({ _id: new ObjectId(pair.accountId) });
       const riskLevel = account?.riskLevel ?? "medium";
+
+      const delta = (metrics as { delta?: number }).delta;
+      if (cfg?.maxDelta != null && delta != null && delta > cfg.maxDelta) continue;
 
       const { recommendation, confidence, reason } = applyCoveredCallRules({
         stockPrice,
@@ -436,6 +463,12 @@ export async function analyzeCoveredCalls(
 
   for (const call of standaloneCalls) {
     try {
+      const expDate = new Date(call.callExpiration + "T12:00:00Z");
+      const dte = Math.max(0, Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      if (cfg?.minPremium != null && call.callPremiumReceived < cfg.minPremium) continue;
+      if (cfg?.expirationRange?.minDays != null && dte < cfg.expirationRange.minDays) continue;
+      if (cfg?.expirationRange?.maxDays != null && dte > cfg.expirationRange.maxDays) continue;
+
       const metrics = await getOptionMetrics(
         call.symbol,
         call.callExpiration,
@@ -450,8 +483,6 @@ export async function analyzeCoveredCalls(
       }
 
       const stockPrice = metrics.underlyingPrice;
-      const expDate = new Date(call.callExpiration + "T12:00:00Z");
-      const dte = Math.max(0, Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
       const callMid = (metrics.bid + metrics.ask) / 2;
       const extrinsicValue = Math.max(0, callMid - metrics.intrinsicValue);
       const extrinsicPercentOfPremium =
@@ -520,6 +551,8 @@ export async function analyzeCoveredCalls(
       continue;
     }
     const symbol = rawSymbol.toUpperCase();
+    if (cfg?.symbols?.length && !cfg.symbols.map((s) => s.toUpperCase()).includes(symbol)) continue;
+
     const strike = item.strikePrice;
     const expiration = item.expirationDate;
     if (!strike || !expiration) {

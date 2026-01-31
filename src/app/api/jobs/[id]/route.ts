@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { getAgenda, executeJob } from "@/lib/scheduler";
-import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig } from "@/types/portfolio";
+import { validateJobConfig } from "@/lib/job-config-schemas";
+import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, JobConfig } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
@@ -65,24 +66,43 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const body = (await request.json()) as Partial<{
       name: string;
       jobType: string;
+      messageTemplate: string;
+      config: JobConfig;
       templateId: ReportTemplateId;
       customSlackTemplate: string;
       customXTemplate: string;
       scannerConfig: OptionScannerConfig;
       scheduleCron: string;
       channels: AlertDeliveryChannel[];
+      deliveryChannels: AlertDeliveryChannel[];
       status: "active" | "paused";
     }>;
 
+    const db = await getDb();
     const update: Partial<Job> & { updatedAt: string } = { updatedAt: new Date().toISOString() };
     if (body.name !== undefined) update.name = body.name.trim();
     if (body.jobType !== undefined) update.jobType = body.jobType.trim();
+    if (body.messageTemplate !== undefined) update.messageTemplate = body.messageTemplate?.trim() || undefined;
+    if (body.config !== undefined) {
+      const existing = await db.collection("reportJobs").findOne({ _id: new ObjectId(id) });
+      const existingJob = existing as Job | null;
+      const typeDoc = existingJob
+        ? await db.collection("reportTypes").findOne({ id: existingJob.jobType })
+        : null;
+      const handlerKey = (typeDoc as { handlerKey?: string } | null)?.handlerKey ?? body.jobType ?? "";
+      try {
+        update.config = validateJobConfig(body.jobType ?? existingJob?.jobType ?? "", handlerKey, body.config) as JobConfig | undefined;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Invalid config";
+        return NextResponse.json({ error: `Config validation failed: ${msg}` }, { status: 400 });
+      }
+    }
     if (body.templateId !== undefined) update.templateId = body.templateId;
     if (body.customSlackTemplate !== undefined) update.customSlackTemplate = body.customSlackTemplate;
     if (body.customXTemplate !== undefined) update.customXTemplate = body.customXTemplate;
     if (body.scannerConfig !== undefined) update.scannerConfig = body.scannerConfig;
     if (body.scheduleCron !== undefined) update.scheduleCron = body.scheduleCron.trim();
-    if (body.channels !== undefined) update.channels = body.channels;
+    if (body.deliveryChannels !== undefined || body.channels !== undefined) update.channels = body.deliveryChannels ?? body.channels ?? [];
     if (body.status !== undefined) update.status = body.status;
 
     if (update.name !== undefined && !update.name) {
@@ -92,7 +112,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "scheduleCron cannot be empty" }, { status: 400 });
     }
 
-    const db = await getDb();
     if (update.jobType) {
       const typeDoc = await db.collection("reportTypes").findOne({ id: update.jobType });
       if (!typeDoc || !(typeDoc as { enabled?: boolean }).enabled) {

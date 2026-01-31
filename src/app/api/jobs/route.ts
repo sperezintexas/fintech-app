@@ -3,7 +3,8 @@ import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { getAgenda } from "@/lib/scheduler";
 import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
-import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig } from "@/types/portfolio";
+import { validateJobConfig } from "@/lib/job-config-schemas";
+import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, JobConfig } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
@@ -66,12 +67,15 @@ export async function POST(request: NextRequest) {
       accountId?: string | null;
       name?: string;
       jobType?: string;
+      messageTemplate?: string;
+      config?: JobConfig;
       templateId?: ReportTemplateId;
       customSlackTemplate?: string;
       customXTemplate?: string;
       scannerConfig?: OptionScannerConfig;
       scheduleCron?: string;
       channels?: AlertDeliveryChannel[];
+      deliveryChannels?: AlertDeliveryChannel[];
       status?: "active" | "paused";
     };
 
@@ -83,7 +87,7 @@ export async function POST(request: NextRequest) {
     const name = (body.name ?? "").trim();
     const jobType = body.jobType?.trim();
     const scheduleCron = (body.scheduleCron ?? "").trim();
-    const channels = body.channels ?? [];
+    const channels = body.deliveryChannels ?? body.channels ?? [];
     const status = body.status ?? "active";
 
     if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -102,9 +106,22 @@ export async function POST(request: NextRequest) {
       enabled?: boolean;
       supportsPortfolio?: boolean;
       supportsAccount?: boolean;
+      handlerKey?: string;
     } | null;
     if (!typeDoc || !typeDoc.enabled) {
       return NextResponse.json({ error: "Invalid or disabled job type" }, { status: 400 });
+    }
+
+    let validatedConfig: JobConfig | undefined;
+    try {
+      validatedConfig = validateJobConfig(
+        jobType,
+        typeDoc.handlerKey ?? jobType,
+        body.config
+      ) as JobConfig | undefined;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Invalid config";
+      return NextResponse.json({ error: `Config validation failed: ${msg}` }, { status: 400 });
     }
     if (accountId === null && !typeDoc.supportsPortfolio) {
       return NextResponse.json({ error: "This job type does not support portfolio-level jobs" }, { status: 400 });
@@ -118,6 +135,8 @@ export async function POST(request: NextRequest) {
       accountId,
       name,
       jobType,
+      messageTemplate: body.messageTemplate?.trim() || undefined,
+      config: validatedConfig,
       templateId: body.templateId,
       customSlackTemplate: body.customSlackTemplate,
       customXTemplate: body.customXTemplate,

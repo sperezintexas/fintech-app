@@ -17,9 +17,17 @@ import type {
   ProtectivePutRecommendationAction,
   ProtectivePutConfidence,
   RiskLevel,
+  JobConfig,
 } from "@/types/portfolio";
 
-const MIN_STOCK_SHARES = 100;
+const DEFAULT_MIN_STOCK_SHARES = 100;
+
+export type CspAnalysisConfig = {
+  minYield?: number;
+  riskTolerance?: "low" | "medium" | "high";
+  watchlistId?: string;
+  minStockShares?: number;
+};
 
 type AccountDoc = { _id: ObjectId; positions?: Position[]; riskLevel?: RiskLevel };
 
@@ -185,19 +193,21 @@ export function applyProtectivePutRules(
 
 /** Fetch protective put pairs (stock + long put) and opportunities (stock without put). */
 export async function getProtectivePutPositions(
-  accountId?: string
+  accountId?: string,
+  config?: CspAnalysisConfig | JobConfig
 ): Promise<{ pairs: ProtectivePutPair[]; opportunities: StockWithoutPut[] }> {
   const db = await getDb();
   const query = accountId ? { _id: new ObjectId(accountId) } : {};
   const accounts = await db.collection<AccountDoc>("accounts").find(query).toArray();
 
+  const minStockShares = (config as CspAnalysisConfig)?.minStockShares ?? DEFAULT_MIN_STOCK_SHARES;
   const pairs: ProtectivePutPair[] = [];
   const opportunities: StockWithoutPut[] = [];
 
   for (const acc of accounts) {
     const positions = (acc.positions ?? []) as Position[];
     const stockPositions = positions.filter(
-      (p) => p.type === "stock" && p.ticker && (p.shares ?? 0) >= MIN_STOCK_SHARES
+      (p) => p.type === "stock" && p.ticker && (p.shares ?? 0) >= minStockShares
     );
     const putPositions = positions.filter(
       (p) =>
@@ -252,9 +262,10 @@ export async function getProtectivePutPositions(
 
 /** Main analysis: evaluate pairs and opportunities, return recommendations. */
 export async function analyzeProtectivePuts(
-  accountId?: string
+  accountId?: string,
+  config?: CspAnalysisConfig | JobConfig
 ): Promise<ProtectivePutRecommendation[]> {
-  const { pairs, opportunities } = await getProtectivePutPositions(accountId);
+  const { pairs, opportunities } = await getProtectivePutPositions(accountId, config);
   const recommendations: ProtectivePutRecommendation[] = [];
 
   for (const pair of pairs) {

@@ -664,7 +664,8 @@ export async function executeJob(jobId: string): Promise<{
     } else if (handlerKey === "coveredCallScanner") {
       try {
         const accountId = job.accountId ?? undefined;
-        const recommendations = await analyzeCoveredCalls(accountId);
+        const config = job.config;
+        const recommendations = await analyzeCoveredCalls(accountId, config);
         const { stored, alertsCreated } = await storeCoveredCallRecommendations(recommendations, { createAlerts: true });
         title = job.name;
         const recLines =
@@ -709,7 +710,8 @@ export async function executeJob(jobId: string): Promise<{
     } else if (handlerKey === "protectivePutScanner") {
       try {
         const accountId = job.accountId ?? undefined;
-        const recommendations = await analyzeProtectivePuts(accountId);
+        const config = job.config;
+        const recommendations = await analyzeProtectivePuts(accountId, config);
         const { stored, alertsCreated } = await storeProtectivePutRecommendations(recommendations, { createAlerts: true });
         title = job.name;
         bodyText = [

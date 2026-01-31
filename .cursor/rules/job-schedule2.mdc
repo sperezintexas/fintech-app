@@ -1,0 +1,50 @@
+---
+description: Job/Report Configuration and Management
+globs:
+alwaysApply: false
+---
+# Job/Report Configuration Feature
+
+## Overview
+Enable users to configure and manage various job/report types (e.g., covered call scanner) via a unified interface. Each job includes core options plus type-specific configurations stored as JSON.
+
+## Core Options (All Jobs)
+- **name**: String - Unique job name.
+- **messageTemplate**: String - Template for alert/report messages (e.g., Handlebars/Mustache syntax for dynamic fields).
+- **jobType**: Enum/String - Type identifier (e.g., "covered-call-scanner", "csp-analysis").
+- **frequency**: String - Cron schedule or human-readable (e.g., "daily at 4 PM", parsed to cron via library like cron-parser).
+- **deliveryChannel**: Enum/Array - Channels like "slack", "push", "twitter", "email".
+
+## Type-Specific Options
+- Stored as **config: JSON object** in the job entity.
+- Examples by jobType:
+  - "covered-call-scanner":
+    - minPremium: number - Minimum premium threshold.
+    - maxDelta: number - Maximum delta for options.
+    - symbols: string[] - List of stock symbols to scan.
+    - expirationRange: { minDays: number, maxDays: number } - Option expiration window.
+  - "csp-analysis" (cash-secured puts):
+    - minYield: number - Minimum annualized yield.
+    - riskTolerance: "low" | "medium" | "high" - Adjusts strike selection.
+    - watchlistId: string - Reference to watchlist for symbols.
+- Validate config JSON against jobType-specific schemas (use Zod or similar for runtime validation).
+
+## Data Model (MongoDB Schema Suggestion)
+Use Mongoose or MongoDB schema in `/lib/mongodb.ts` or new `/models/job.ts`:
+```typescript
+interface JobConfig {
+  [key: string]: any; // Type-specific fields
+}
+
+interface Job {
+  _id: ObjectId;
+  name: string;
+  messageTemplate: string;
+  jobType: string;
+  frequency: string; // Cron string
+  deliveryChannels: string[]; // Array for multiple
+  config: JobConfig; // JSON object
+  createdAt: Date;
+  updatedAt: Date;
+  userId: ObjectId; // If multi-user
+}

@@ -466,6 +466,9 @@ export type ReportDefinition = {
 // Scheduled Jobs (job type + config, no report definitions)
 export type JobStatus = "active" | "paused";
 
+/** Type-specific job config (JSON). Validated by Zod per jobType. */
+export type JobConfig = Record<string, unknown>;
+
 export type Job = {
   _id: string;
   /** null = portfolio (all accounts) */
@@ -473,13 +476,18 @@ export type Job = {
   name: string;
   /** Job type id from jobTypes/reportTypes collection (e.g. smartxai, OptionScanner) */
   jobType: string;
-  /** Message template for watchlist/smartxai/portfoliosummary */
+  /** Message template (Handlebars/Mustache) for alert/report messages */
+  messageTemplate?: string;
+  /** Type-specific config (coveredCallScanner, csp-analysis, etc.) */
+  config?: JobConfig;
+  /** Message template for watchlist/smartxai/portfoliosummary (legacy) */
   templateId?: ReportTemplateId;
   customSlackTemplate?: string;
   customXTemplate?: string;
-  /** Scanner config for OptionScanner job type */
+  /** Scanner config for OptionScanner job type (legacy) */
   scannerConfig?: OptionScannerConfig;
   scheduleCron: string;
+  /** Delivery channels (slack, push, twitter, email) */
   channels: AlertDeliveryChannel[];
   status: JobStatus;
   lastRunAt?: string;
@@ -515,6 +523,9 @@ export type OptionRecommendation = {
   recommendation: OptionRecommendationAction;
   reason: string;
   metrics: OptionRecommendationMetrics;
+  source?: "rules" | "grok";
+  preliminaryRecommendation?: OptionRecommendationAction;
+  preliminaryReason?: string;
   createdAt: string;
 };
 
@@ -532,6 +543,16 @@ export type OptionScannerConfig = {
   highVolatilityPercent?: number;
   /** Account risk profile: conservative = BTC earlier. */
   riskProfile?: RiskLevel;
+  /** Hybrid Grok: enable Grok for edge candidates. Default true. */
+  grokEnabled?: boolean;
+  /** Hybrid: send to Grok if |P/L| > this %. Default 12. */
+  grokCandidatesPlPercent?: number;
+  /** Hybrid: send to Grok if DTE < this. Default 14. */
+  grokCandidatesDteMax?: number;
+  /** Hybrid: send to Grok if IV > this. Default 55. */
+  grokCandidatesIvMin?: number;
+  /** Hybrid: max parallel Grok calls. Default 6. */
+  grokMaxParallel?: number;
 };
 
 // Covered Call Analyzer Types
