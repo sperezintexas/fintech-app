@@ -140,6 +140,22 @@ export function ContractSelector({
 
   const canReview = !!expiration && !!selectedStrike;
 
+  const effectivePremium = useMemo(() => {
+    const lp = parseFloat(limitPrice);
+    if (Number.isFinite(lp) && lp > 0) return lp;
+    return premium;
+  }, [limitPrice, premium]);
+
+  const assignmentCost = useMemo(() => {
+    if (!selectedStrike || !quantity) return null;
+    const gross = selectedStrike * 100 * quantity;
+    const prem = effectivePremium * 100 * quantity;
+    if (contractType === 'put') {
+      return { label: 'Net cost if assigned', value: gross - prem };
+    }
+    return { label: 'Total proceeds if called away', value: gross + prem };
+  }, [selectedStrike, quantity, effectivePremium, contractType]);
+
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold">Step 4: Choose contract</h2>
@@ -256,6 +272,21 @@ export function ContractSelector({
           />
         </div>
       </div>
+
+      {/* Total cost if assigned / called away */}
+      {assignmentCost && selectedStrike && (
+        <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-200">
+          <p className="text-sm font-medium text-indigo-900">{assignmentCost.label}</p>
+          <p className="text-2xl font-bold text-indigo-700 mt-1">
+            ${assignmentCost.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <p className="text-xs text-indigo-600 mt-1">
+            {contractType === 'put'
+              ? `Strike $${selectedStrike.toFixed(2)} × 100 × ${quantity} − premium $${(effectivePremium * 100 * quantity).toFixed(2)}`
+              : `Strike $${selectedStrike.toFixed(2)} × 100 × ${quantity} + premium $${(effectivePremium * 100 * quantity).toFixed(2)}`}
+          </p>
+        </div>
+      )}
 
       {/* Contract type toggle */}
       <div className="flex gap-2">
