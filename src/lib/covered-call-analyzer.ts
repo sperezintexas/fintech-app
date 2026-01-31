@@ -14,11 +14,13 @@ import {
   getIVRankOrPercentile,
   getOptionMarketConditions,
 } from "@/lib/yahoo";
+import { callCoveredCallDecision } from "@/lib/xai-grok";
 import type {
   Position,
   CoveredCallRecommendation,
   CoveredCallRecommendationAction,
   CoveredCallConfidence,
+  CoveredCallRecommendationMetrics,
   RiskLevel,
   JobConfig,
 } from "@/types/portfolio";
@@ -179,6 +181,35 @@ export function applyCoveredCallRules(
   };
 }
 
+/** Map rule-based confidence to numeric for Grok threshold. */
+function confidenceToNum(c: CoveredCallConfidence): number {
+  if (c === "HIGH") return 90;
+  if (c === "MEDIUM") return 70;
+  return 50;
+}
+
+/** Filter candidates for Grok: low confidence, low DTE, high IV, or ATM. */
+export function isGrokCandidate(
+  rec: {
+    confidence: CoveredCallConfidence;
+    metrics: Pick<CoveredCallRecommendationMetrics, "dte"> &
+      Partial<Pick<CoveredCallRecommendationMetrics, "ivRank" | "moneyness">>;
+  },
+  cfg?: CoveredCallScannerConfig
+): boolean {
+  const minConf = cfg?.grokConfidenceMin ?? 70;
+  const maxDte = cfg?.grokDteMax ?? 14;
+  const minIvRank = cfg?.grokIvRankMin ?? 50;
+  const confNum = confidenceToNum(rec.confidence);
+  const ivRank = rec.metrics.ivRank ?? 0;
+  return (
+    confNum < minConf ||
+    rec.metrics.dte < maxDte ||
+    ivRank >= minIvRank ||
+    rec.metrics.moneyness === "ATM"
+  );
+}
+
 /** Config for covered call scanner (from job.config). */
 export type CoveredCallScannerConfig = {
   minPremium?: number;
@@ -186,6 +217,11 @@ export type CoveredCallScannerConfig = {
   symbols?: string[];
   expirationRange?: { minDays?: number; maxDays?: number };
   minStockShares?: number;
+  grokEnabled?: boolean;
+  grokConfidenceMin?: number;
+  grokDteMax?: number;
+  grokIvRankMin?: number;
+  grokMaxParallel?: number;
 };
 
 /** Fetch covered call pairs (stock + short call), opportunities (stock without call), and standalone call positions. */
@@ -408,6 +444,9 @@ export async function analyzeCoveredCalls(
         recommendation,
         confidence,
         reason,
+        strikePrice: pair.callStrike,
+        expirationDate: pair.callExpiration,
+        entryPremium: pair.callPremiumReceived,
         metrics: {
           stockPrice,
           callBid: metrics.bid,
@@ -523,6 +562,9 @@ export async function analyzeCoveredCalls(
         recommendation,
         confidence,
         reason,
+        strikePrice: call.callStrike,
+        expirationDate: call.callExpiration,
+        entryPremium: call.callPremiumReceived,
         metrics: {
           stockPrice,
           callBid: metrics.bid,
@@ -589,11 +631,12 @@ export async function analyzeCoveredCalls(
       const ivRank = await getIVRankOrPercentile(symbol);
 
       const accId = item.accountId || (accountId ?? "");
-      const account = accId
-        ? await getDb().then((db) =>
-            db.collection<AccountDoc>("accounts").findOne({ _id: new ObjectId(accId) })
-          )
-        : null;
+      const account =
+        accId && ObjectId.isValid(accId) && accId.length === 24
+          ? await getDb().then((db) =>
+              db.collection<AccountDoc>("accounts").findOne({ _id: new ObjectId(accId) })
+            )
+          : null;
       const riskLevel = account?.riskLevel ?? "medium";
 
       const { recommendation, confidence, reason } = applyCoveredCallRules({
@@ -619,6 +662,9 @@ export async function analyzeCoveredCalls(
         recommendation,
         confidence,
         reason,
+        strikePrice: strike,
+        expirationDate: expiration,
+        entryPremium: premiumReceived,
         metrics: {
           stockPrice,
           callBid: metrics.bid,
@@ -640,7 +686,214 @@ export async function analyzeCoveredCalls(
     }
   }
 
-  return recommendations;
+  return enhanceRecommendationsWithGrok(recommendations, cfg);
+}
+
+/** Post-process: enhance borderline candidates with Grok. */
+async function enhanceRecommendationsWithGrok(
+  recs: CoveredCallRecommendation[],
+  cfg?: CoveredCallScannerConfig
+): Promise<CoveredCallRecommendation[]> {
+  if (cfg?.grokEnabled === false) return recs;
+  const candidates = recs.filter((r) => r.strikePrice != null && r.expirationDate != null && isGrokCandidate(r, cfg));
+  if (candidates.length === 0) return recs;
+
+  const grokMax = cfg?.grokMaxParallel ?? 6;
+  const results = new Map<number, CoveredCallRecommendation | null>();
+
+  for (let i = 0; i < candidates.length; i += grokMax) {
+    const batch = candidates.slice(i, i + grokMax);
+    const grokPromises = batch.map(async (rec, batchIdx) => {
+      const globalIdx = recs.indexOf(rec);
+      try {
+        const grokResult = await callCoveredCallDecision({
+          position: {
+            symbol: rec.symbol,
+            strike: rec.strikePrice!,
+            expiration: rec.expirationDate!,
+            premiumReceived: rec.entryPremium ?? rec.metrics.callBid,
+            quantity: 1,
+          },
+          marketData: {
+            stockPrice: rec.metrics.stockPrice,
+            callBid: rec.metrics.callBid,
+            callAsk: rec.metrics.callAsk,
+            dte: rec.metrics.dte,
+            unrealizedPl: rec.metrics.unrealizedPl,
+            extrinsicPercentOfPremium: rec.metrics.extrinsicPercentOfPremium,
+            ivRank: rec.metrics.ivRank,
+            moneyness: rec.metrics.moneyness,
+          },
+          preliminary: { recommendation: rec.recommendation, reason: rec.reason },
+        });
+        if (grokResult) {
+          const grokConf: CoveredCallConfidence =
+            grokResult.confidence >= 0.8 ? "HIGH" : grokResult.confidence >= 0.6 ? "MEDIUM" : "LOW";
+          return {
+            ...rec,
+            recommendation: grokResult.recommendation as CoveredCallRecommendationAction,
+            confidence: grokConf,
+            reason: grokResult.reasoning || rec.reason,
+            grokEvaluated: true,
+            grokReasoning: grokResult.reasoning,
+          };
+        }
+      } catch (err) {
+        console.error(`CoveredCallAnalyzer: Grok failed for ${rec.symbol}:`, err);
+      }
+      return null;
+    });
+    const batchResults = await Promise.all(grokPromises);
+    batchResults.forEach((r, batchIdx) => {
+      if (r) results.set(recs.indexOf(batch[batchIdx]), r);
+    });
+  }
+
+  return recs.map((rec, idx) => results.get(idx) ?? rec);
+}
+
+export type AdHocOptionInput = {
+  symbol: string;
+  strike: number;
+  expiration: string;
+  entryPremium?: number;
+  quantity?: number;
+  stockPurchasePrice?: number;
+  accountId?: string;
+};
+
+/** Analyze a single option (e.g. from xStrategyBuilder Review Order). Uses same rules as full scanner. */
+export async function analyzeCoveredCallForOption(
+  input: AdHocOptionInput,
+  config?: CoveredCallScannerConfig | JobConfig
+): Promise<CoveredCallRecommendation[]> {
+  const { symbol, strike, expiration, entryPremium = 0, quantity = 1, stockPurchasePrice, accountId } = input;
+  const sym = symbol.toUpperCase();
+  const cfg = config as CoveredCallScannerConfig | undefined;
+
+  if (cfg?.symbols?.length && !cfg.symbols.map((s) => s.toUpperCase()).includes(sym)) {
+    return [];
+  }
+
+  const metrics = await getOptionMetrics(sym, expiration, strike, "call");
+  if (!metrics) {
+    console.warn(`CoveredCallAnalyzer: no metrics for ${sym} ${expiration} ${strike}`);
+    return [];
+  }
+
+  const stockPrice = metrics.underlyingPrice;
+  const expDate = new Date(expiration + "T12:00:00Z");
+  const dte = Math.max(0, Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+  const callMid = (metrics.bid + metrics.ask) / 2;
+  const premiumReceived = entryPremium > 0 ? entryPremium : callMid;
+  const extrinsicValue = Math.max(0, callMid - metrics.intrinsicValue);
+  const extrinsicPercentOfPremium =
+    premiumReceived > 0 ? (extrinsicValue / premiumReceived) * 100 : 100;
+  const stockPurchase = stockPurchasePrice ?? stockPrice;
+  const unrealizedStockGainPercent =
+    stockPurchase > 0 ? ((stockPrice - stockPurchase) / stockPurchase) * 100 : 0;
+
+  if (cfg?.minPremium != null && premiumReceived < cfg.minPremium) return [];
+  if (cfg?.expirationRange?.minDays != null && dte < cfg.expirationRange.minDays) return [];
+  if (cfg?.expirationRange?.maxDays != null && dte > cfg.expirationRange.maxDays) return [];
+
+  const delta = (metrics as { delta?: number }).delta;
+  if (cfg?.maxDelta != null && delta != null && delta > cfg.maxDelta) return [];
+
+  const marketConditions = await getOptionMarketConditions(sym);
+  const ivRank = await getIVRankOrPercentile(sym);
+
+  const accId = accountId ?? "";
+  const account =
+    accId && ObjectId.isValid(accId) && accId.length === 24
+      ? await getDb().then((db) =>
+          db.collection<AccountDoc>("accounts").findOne({ _id: new ObjectId(accId) })
+        )
+      : null;
+  const riskLevel = account?.riskLevel ?? "medium";
+
+  const { recommendation, confidence, reason } = applyCoveredCallRules({
+    stockPrice,
+    strike,
+    dte,
+    callBid: metrics.bid,
+    callAsk: metrics.ask,
+    premiumReceived,
+    extrinsicPercentOfPremium,
+    unrealizedStockGainPercent,
+    moneyness: getMoneyness(stockPrice, strike),
+    ivRank,
+    symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
+    riskLevel,
+  });
+
+  const baseRec: CoveredCallRecommendation = {
+    accountId: accId || "portfolio",
+    symbol: sym,
+    source: "watchlist",
+    recommendation,
+    confidence,
+    reason,
+    metrics: {
+      stockPrice,
+      callBid: metrics.bid,
+      callAsk: metrics.ask,
+      dte,
+      netPremium: premiumReceived - callMid,
+      unrealizedPl: (premiumReceived - callMid) * 100 * quantity,
+      breakeven: stockPurchase,
+      extrinsicValue,
+      extrinsicPercentOfPremium,
+      moneyness: getMoneyness(stockPrice, strike),
+      iv: metrics.impliedVolatility,
+      ivRank: ivRank ?? undefined,
+    },
+    createdAt: new Date().toISOString(),
+  };
+
+  if (cfg?.grokEnabled !== false && isGrokCandidate(baseRec, cfg)) {
+    try {
+      const grokResult = await callCoveredCallDecision({
+        position: {
+          symbol: sym,
+          strike,
+          expiration,
+          premiumReceived,
+          quantity,
+        },
+        marketData: {
+          stockPrice,
+          callBid: metrics.bid,
+          callAsk: metrics.ask,
+          dte,
+          unrealizedPl: (premiumReceived - callMid) * 100 * quantity,
+          extrinsicPercentOfPremium,
+          ivRank: ivRank ?? undefined,
+          moneyness: getMoneyness(stockPrice, strike),
+        },
+        preliminary: { recommendation, reason },
+        accountContext: account ? { riskProfile: account.riskLevel } : undefined,
+      });
+      if (grokResult) {
+        const grokConf: CoveredCallConfidence =
+          grokResult.confidence >= 0.8 ? "HIGH" : grokResult.confidence >= 0.6 ? "MEDIUM" : "LOW";
+        return [
+          {
+            ...baseRec,
+            recommendation: grokResult.recommendation as CoveredCallRecommendationAction,
+            confidence: grokConf,
+            reason: grokResult.reasoning || baseRec.reason,
+            grokEvaluated: true,
+            grokReasoning: grokResult.reasoning,
+          },
+        ];
+      }
+    } catch (err) {
+      console.error("CoveredCallAnalyzer: Grok evaluation failed, using rule-based:", err);
+    }
+  }
+
+  return [baseRec];
 }
 
 /** Store recommendations in coveredCallRecommendations collection and create alerts. */

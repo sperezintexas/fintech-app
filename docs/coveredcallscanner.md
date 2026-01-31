@@ -2,9 +2,9 @@
 
 ## Overview
 
-The **Covered Call Scanner** is a rule-based service that evaluates covered call positions and opportunities across account holdings and the watchlist. It produces actionable recommendations (HOLD, BUY_TO_CLOSE, SELL_NEW_CALL, ROLL) with confidence levels and reasoning.
+The **Covered Call Scanner** is a **hybrid** service: Stage 1 applies rule-based logic; Stage 2 uses Grok (xAI) to refine borderline/edge cases. It evaluates covered call positions and opportunities across account holdings and the watchlist. It produces actionable recommendations (HOLD, BUY_TO_CLOSE, SELL_NEW_CALL, ROLL) with confidence levels and reasoning.
 
-**Core purpose:** Identify covered call positions (long stock + short call), standalone calls, and watchlist call targets; apply evaluation rules; persist recommendations and create alerts for delivery via Slack/X.
+**Core purpose:** Identify covered call positions (long stock + short call), standalone calls, and watchlist call targets; apply evaluation rules; optionally enhance with Grok for edge cases; persist recommendations and create alerts for delivery via Slack/X.
 
 ---
 
@@ -32,6 +32,8 @@ The **Covered Call Scanner** is a rule-based service that evaluates covered call
 ```
 
 **Main module:** `src/lib/covered-call-analyzer.ts`
+
+**Hybrid flow:** After `applyCoveredCallRules`, candidates meeting Grok criteria (low confidence, low DTE, high IV rank, or ATM) are sent to Grok for refined recommendation. If Grok fails, the rule-based result is kept. Grok-influenced recs are flagged with `grokEvaluated: true` and `grokReasoning`.
 
 ---
 

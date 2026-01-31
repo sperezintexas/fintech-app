@@ -18,6 +18,17 @@ describe("job-config-schemas", () => {
       expect(coveredCallScannerConfigSchema.parse(config)).toEqual(config);
     });
 
+    it("accepts Grok config", () => {
+      const config = {
+        grokEnabled: true,
+        grokConfidenceMin: 70,
+        grokDteMax: 14,
+        grokIvRankMin: 50,
+        grokMaxParallel: 6,
+      };
+      expect(coveredCallScannerConfigSchema.parse(config)).toEqual(config);
+    });
+
     it("accepts empty/partial config", () => {
       expect(coveredCallScannerConfigSchema.parse(undefined)).toBeUndefined();
       expect(coveredCallScannerConfigSchema.parse({})).toEqual({});

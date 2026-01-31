@@ -235,3 +235,91 @@ Output JSON only, no markdown: {"recommendation":"HOLD"|"BUY_TO_CLOSE","confiden
     return null;
   }
 }
+
+/** Context for covered call decision (used by Covered Call Scanner hybrid). */
+export type CoveredCallDecisionContext = {
+  position: {
+    symbol: string;
+    strike: number;
+    expiration: string;
+    premiumReceived: number;
+    quantity: number;
+  };
+  marketData: {
+    stockPrice: number;
+    callBid: number;
+    callAsk: number;
+    dte: number;
+    unrealizedPl: number;
+    extrinsicPercentOfPremium?: number;
+    ivRank?: number;
+    moneyness?: string;
+  };
+  preliminary: { recommendation: string; reason: string };
+  accountContext?: { riskProfile?: string };
+};
+
+/** Grok response for covered call decision. */
+export type CoveredCallDecisionResult = {
+  recommendation: "HOLD" | "BUY_TO_CLOSE" | "SELL_NEW_CALL" | "ROLL" | "NONE";
+  confidence: number;
+  reasoning: string;
+};
+
+/**
+ * Call Grok for covered call HOLD/BTC/SELL_NEW_CALL/ROLL decision. Used by Covered Call Scanner hybrid stage.
+ */
+export async function callCoveredCallDecision(
+  context: CoveredCallDecisionContext
+): Promise<CoveredCallDecisionResult | null> {
+  const client = getXaiClient();
+  if (!client) return null;
+
+  const { position, marketData, preliminary } = context;
+  const prompt = `You are a conservative covered call advisor. Given this position and market data, decide: HOLD, BUY_TO_CLOSE, SELL_NEW_CALL, or ROLL. Be concise, risk-aware.
+
+Position: ${position.symbol} call @ $${position.strike}, exp ${position.expiration}, premium received $${position.premiumReceived}, ${position.quantity} contracts
+Market: stock $${marketData.stockPrice}, call bid $${marketData.callBid}/ask $${marketData.callAsk}, DTE ${marketData.dte}, unrealized P/L $${marketData.unrealizedPl}${marketData.ivRank != null ? `, IV rank ${marketData.ivRank}` : ""}${marketData.moneyness ? `, ${marketData.moneyness}` : ""}
+Preliminary: ${preliminary.recommendation} — ${preliminary.reason}
+${context.accountContext?.riskProfile ? `Account risk: ${context.accountContext.riskProfile}` : ""}
+
+Output JSON only, no markdown: {"recommendation":"HOLD"|"BUY_TO_CLOSE"|"SELL_NEW_CALL"|"ROLL"|"NONE","confidence":0.0-1.0,"reasoning":"..."}`;
+
+  try {
+    const completion = await client.chat.completions.create({
+      model: XAI_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 512,
+    });
+
+    const text = completion.choices[0]?.message?.content?.trim();
+    if (!text) return null;
+
+    const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+    const parsed = JSON.parse(cleaned) as {
+      recommendation?: string;
+      confidence?: number;
+      reasoning?: string;
+      explanation?: string;
+    };
+
+    const rec = parsed.recommendation?.toUpperCase();
+    const validActions = ["HOLD", "BUY_TO_CLOSE", "SELL_NEW_CALL", "ROLL", "NONE"] as const;
+    const action = validActions.includes(rec as (typeof validActions)[number])
+      ? (rec as (typeof validActions)[number])
+      : "HOLD";
+    const confidence =
+      typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0.5;
+    const reasoning =
+      typeof parsed.reasoning === "string"
+        ? parsed.reasoning
+        : typeof parsed.explanation === "string"
+          ? parsed.explanation
+          : "";
+
+    return { recommendation: action, confidence, reasoning };
+  } catch (err) {
+    console.error("callCoveredCallDecision error:", err);
+    return null;
+  }
+}

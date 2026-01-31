@@ -593,8 +593,16 @@ export type CoveredCallRecommendation = {
   reason: string;
   suggestedStrike?: number;
   suggestedExpiration?: string;
+  /** Strike/expiration for Grok context (set when building rec). */
+  strikePrice?: number;
+  expirationDate?: string;
+  entryPremium?: number;
   metrics: CoveredCallRecommendationMetrics;
   createdAt: string;
+  /** True if Grok was used to refine this recommendation. */
+  grokEvaluated?: boolean;
+  /** Grok's reasoning when grokEvaluated is true. */
+  grokReasoning?: string;
 };
 
 // Protective Put Analyzer Types

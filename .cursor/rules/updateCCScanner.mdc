@@ -1,0 +1,39 @@
+---
+alwaysApply: false
+---
+# Update Covered Call Scanner with Grok Integration
+
+## Objective
+Integrate Grok (xAI API) into the Covered Call Scanner for hybrid recommendations: Apply rule-based logic first (Stage 1), then use Grok for refining borderline/edge cases (Stage 2), similar to Option Scanner. Focus on simplicity—add minimal changes to `covered-call-analyzer.ts`, types, and configs.
+
+## Key Changes
+- **Hybrid Flow**: After `applyCoveredCallRules`, filter candidates for Grok if they meet criteria (e.g., confidence < 70%, DTE < 14, IVRank > 50, or moneyness near 0).
+- **Grok Call**: Use existing Grok API wrapper (assume `/lib/grok-client.ts` or similar; create if missing) to query for refined recommendation/action/reasoning.
+- **Prompt Design**: Craft a concise prompt for Grok: Include position metrics (stockPrice, strike, DTE, IVRank, unrealizedPl, extrinsicPercent), ask for { action: CoveredCallRecommendationAction, confidence: number, reasoning: string }.
+- **Fallback**: If Grok fails, keep rule-based recommendation.
+- **Config**: Add grok thresholds to job config schema (e.g., grokConfidenceMin: 70, grokDteMax: 14, grokIvRankMin: 50).
+- **Types**: Extend `CoveredCallRecommendation` with `grokEvaluated: boolean`, `grokReasoning: string`.
+- **Storage**: Flag Grok-influenced recs in `coveredCallRecommendations`.
+- **Alerts**: Optionally escalate Grok-based alerts (e.g., higher severity).
+
+## Implementation Steps (Execute Sequentially)
+1. Update `src/types/portfolio.ts`: Add fields to types.
+2. Update `src/lib/job-config-schemas.ts`: Extend covered-call-scanner config.
+3. Update `src/lib/covered-call-analyzer.ts`:
+   - Add `isGrokCandidate` function.
+   - After rules, filter and call `evaluateWithGrok` async.
+   - Merge Grok response into recommendation.
+4. Add/test `evaluateWithGrok` (use OpenAI-compatible client for xAI Grok).
+5. Update API/docs (coveredcallscanner.md) to reflect hybrid approach.
+
+## Code Style
+- Keep rules pure/unchanged; Grok as optional enhancer.
+- Handle API errors gracefully (log, fallback).
+- Unit test new logic: Mock Grok response, test filtering.
+
+## Verification
+After changes:
+- Run `npm test src/lib/covered-call-analyzer.test.ts`
+- Typecheck: `tsc --noEmit`
+- Lint: `npm run lint -- --fix`
+- Manual: Run scheduler job, check recommendations for Grok flags.

@@ -4,6 +4,8 @@ import {
   getCoveredCallPositions,
   analyzeCoveredCalls,
   storeCoveredCallRecommendations,
+  isGrokCandidate,
+  analyzeCoveredCallForOption,
 } from "../covered-call-analyzer";
 
 vi.mock("../mongodb", () => ({
@@ -17,9 +19,13 @@ vi.mock("../yahoo", () => ({
   getOptionMarketConditions: vi.fn(),
 }));
 
+vi.mock("../xai-grok", () => ({
+  callCoveredCallDecision: vi.fn(),
+}));
+
 const { getDb } = await import("../mongodb");
-const { getOptionMetrics, getOptionChainDetailed, getIVRankOrPercentile, getOptionMarketConditions } =
-  await import("../yahoo");
+const { getOptionMetrics, getIVRankOrPercentile, getOptionMarketConditions } = await import("../yahoo");
+const { callCoveredCallDecision } = await import("../xai-grok");
 
 describe("Covered Call Analyzer", () => {
   beforeEach(() => {
@@ -140,6 +146,48 @@ describe("Covered Call Analyzer", () => {
       });
       expect(result.recommendation).toBe("HOLD");
       expect(result.reason).toContain("Adequate DTE");
+    });
+  });
+
+  describe("isGrokCandidate", () => {
+    it("returns true when confidence is below threshold", () => {
+      const rec = {
+        confidence: "LOW" as const,
+        metrics: { dte: 30, ivRank: 20, moneyness: "OTM" as const },
+      };
+      expect(isGrokCandidate(rec, { grokConfidenceMin: 70 })).toBe(true);
+    });
+
+    it("returns true when DTE < grokDteMax", () => {
+      const rec = {
+        confidence: "HIGH" as const,
+        metrics: { dte: 10, ivRank: 20, moneyness: "OTM" as const },
+      };
+      expect(isGrokCandidate(rec, { grokDteMax: 14 })).toBe(true);
+    });
+
+    it("returns true when IV rank >= grokIvRankMin", () => {
+      const rec = {
+        confidence: "HIGH" as const,
+        metrics: { dte: 30, ivRank: 60, moneyness: "OTM" as const },
+      };
+      expect(isGrokCandidate(rec, { grokIvRankMin: 50 })).toBe(true);
+    });
+
+    it("returns true when moneyness is ATM", () => {
+      const rec = {
+        confidence: "HIGH" as const,
+        metrics: { dte: 30, ivRank: 20, moneyness: "ATM" as const },
+      };
+      expect(isGrokCandidate(rec)).toBe(true);
+    });
+
+    it("returns false when none of the criteria match", () => {
+      const rec = {
+        confidence: "HIGH" as const,
+        metrics: { dte: 30, ivRank: 20, moneyness: "OTM" as const },
+      };
+      expect(isGrokCandidate(rec, { grokConfidenceMin: 70, grokDteMax: 14, grokIvRankMin: 50 })).toBe(false);
     });
   });
 
@@ -401,6 +449,81 @@ describe("Covered Call Analyzer", () => {
     });
   });
 
+  describe("analyzeCoveredCallForOption", () => {
+    it("returns rule-based recommendation when Grok disabled", async () => {
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          findOne: vi.fn().mockResolvedValue({ riskLevel: "medium" }),
+        }),
+      } as never);
+      vi.mocked(getOptionMetrics).mockResolvedValue({
+        price: 3,
+        bid: 2.8,
+        ask: 3.2,
+        underlyingPrice: 255,
+        impliedVolatility: 28,
+        intrinsicValue: 5,
+        timeValue: 0,
+      });
+      vi.mocked(getOptionMarketConditions).mockResolvedValue({
+        vix: 18,
+        vixLevel: "moderate",
+        trend: "up",
+        symbolChangePercent: 2,
+      });
+      vi.mocked(getIVRankOrPercentile).mockResolvedValue(45);
+
+      const result = await analyzeCoveredCallForOption(
+        { symbol: "TSLA", strike: 250, expiration: "2026-02-20", entryPremium: 5, quantity: 1 },
+        { grokEnabled: false }
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].grokEvaluated).toBeUndefined();
+      expect(["HOLD", "BUY_TO_CLOSE", "ROLL"]).toContain(result[0].recommendation);
+    });
+
+    it("uses Grok result when grokEnabled and isGrokCandidate", async () => {
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          findOne: vi.fn().mockResolvedValue({ riskLevel: "medium" }),
+        }),
+      } as never);
+      vi.mocked(getOptionMetrics).mockResolvedValue({
+        price: 3,
+        bid: 2.8,
+        ask: 3.2,
+        underlyingPrice: 248,
+        impliedVolatility: 28,
+        intrinsicValue: 0,
+        timeValue: 3,
+      });
+      vi.mocked(getOptionMarketConditions).mockResolvedValue({
+        vix: 18,
+        vixLevel: "moderate",
+        trend: "up",
+        symbolChangePercent: 2,
+      });
+      vi.mocked(getIVRankOrPercentile).mockResolvedValue(55);
+
+      vi.mocked(callCoveredCallDecision).mockResolvedValue({
+        recommendation: "BUY_TO_CLOSE",
+        confidence: 0.85,
+        reasoning: "Grok: High IV rank suggests premium decay risk.",
+      });
+
+      const result = await analyzeCoveredCallForOption(
+        { symbol: "TSLA", strike: 250, expiration: "2026-02-20", entryPremium: 5, quantity: 1 },
+        { grokEnabled: true, grokIvRankMin: 50 }
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].grokEvaluated).toBe(true);
+      expect(result[0].grokReasoning).toBe("Grok: High IV rank suggests premium decay risk.");
+      expect(result[0].recommendation).toBe("BUY_TO_CLOSE");
+    });
+  });
+
   describe("storeCoveredCallRecommendations", () => {
     it("stores recommendations and creates alerts for actionable recs", async () => {
       const mockInsertOne = vi.fn().mockResolvedValue({ insertedId: "id1" });
@@ -416,6 +539,7 @@ describe("Covered Call Analyzer", () => {
           symbol: "TSLA",
           stockPositionId: "stock1",
           callPositionId: "call1",
+          source: "holdings" as const,
           recommendation: "BUY_TO_CLOSE" as const,
           confidence: "HIGH" as const,
           reason: "Deep ITM",

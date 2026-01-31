@@ -18,6 +18,11 @@ export const coveredCallScannerConfigSchema = z
       })
       .optional(),
     minStockShares: z.number().min(1).max(10000).optional(),
+    grokEnabled: z.boolean().optional(),
+    grokConfidenceMin: z.number().min(0).max(100).optional(),
+    grokDteMax: z.number().min(0).optional(),
+    grokIvRankMin: z.number().min(0).max(100).optional(),
+    grokMaxParallel: z.number().min(1).max(20).optional(),
   })
   .strict()
   .optional();
