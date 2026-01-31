@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   applyOptionRules,
+  clearMarketCache,
   getOptionPositions,
   scanOptions,
   storeOptionRecommendations,
@@ -21,6 +22,7 @@ const { getOptionMetrics, getOptionMarketConditions } = await import("../yahoo")
 describe("Option Scanner", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearMarketCache();
   });
 
   describe("applyOptionRules", () => {

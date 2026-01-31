@@ -1,12 +1,13 @@
 /**
  * Option Scanner Service
- * Evaluates options positions, fetches market data, and generates HOLD/BUY_TO_CLOSE recommendations.
- * Configurable rules via OptionScannerConfig. Integrates with scheduler and stores in alerts.
+ * Hybrid: Stage 1 rule-based scan, Stage 2 Grok for edge candidates.
+ * Evaluates options positions, fetches market data, generates HOLD/BUY_TO_CLOSE recommendations.
  */
 
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { getOptionMetrics, getOptionMarketConditions } from "@/lib/yahoo";
+import { callOptionDecision } from "@/lib/xai-grok";
 import type {
   Account,
   Position,
@@ -15,6 +16,23 @@ import type {
   OptionScannerConfig,
   RiskLevel,
 } from "@/types/portfolio";
+
+const MARKET_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+const marketCache = new Map<string, { data: unknown; expires: number }>();
+
+/** Clear market cache (for tests). */
+export function clearMarketCache(): void {
+  marketCache.clear();
+}
+
+function getCachedOrFetch<T>(key: string, fetch: () => Promise<T>): Promise<T> {
+  const entry = marketCache.get(key);
+  if (entry && Date.now() < entry.expires) return Promise.resolve(entry.data as T);
+  return fetch().then((data) => {
+    marketCache.set(key, { data, expires: Date.now() + MARKET_CACHE_TTL_MS });
+    return data;
+  });
+}
 
 export type OptionPositionInput = {
   positionId: string;
@@ -40,6 +58,11 @@ const DEFAULT_CONFIG: Required<Omit<OptionScannerConfig, "riskProfile">> & {
   btcStopLossPercent: -50,
   holdTimeValuePercentMin: 20,
   highVolatilityPercent: 30,
+  grokEnabled: true,
+  grokCandidatesPlPercent: 12,
+  grokCandidatesDteMax: 14,
+  grokCandidatesIvMin: 55,
+  grokMaxParallel: 6,
 };
 
 /** Pure function: apply rules to metrics and return recommendation. Unit-testable. */
@@ -154,25 +177,31 @@ export async function getOptionPositions(accountId?: string): Promise<OptionPosi
   return result;
 }
 
-/** Main scan: fetch positions, get metrics, apply rules, return recommendations. */
-export async function scanOptions(
-  accountId?: string,
-  config?: OptionScannerConfig
-): Promise<OptionRecommendation[]> {
-  const positions = await getOptionPositions(accountId);
-  if (positions.length === 0) return [];
+type PrelimResult = {
+  pos: OptionPositionInput;
+  underlying: string;
+  metrics: NonNullable<Awaited<ReturnType<typeof getOptionMetrics>>>;
+  dte: number;
+  pl: number;
+  plPercent: number;
+  prelim: { recommendation: OptionRecommendationAction; reason: string };
+  symbol: string;
+};
 
-  const recommendations: OptionRecommendation[] = [];
+/** Stage 1: Fast rule-based scan. Returns preliminary recommendations with metrics. */
+async function fastRuleBasedScan(
+  positions: OptionPositionInput[],
+  config: OptionScannerConfig
+): Promise<PrelimResult[]> {
   const cfg = { ...DEFAULT_CONFIG, ...config };
+  const results: PrelimResult[] = [];
 
   for (const pos of positions) {
     try {
       const underlying = getUnderlyingFromTicker(pos.ticker);
-      const metrics = await getOptionMetrics(
-        underlying,
-        pos.expiration,
-        pos.strike,
-        pos.optionType
+      const cacheKey = `metrics:${underlying}:${pos.expiration}:${pos.strike}:${pos.optionType}`;
+      const metrics = await getCachedOrFetch(cacheKey, () =>
+        getOptionMetrics(underlying, pos.expiration, pos.strike, pos.optionType)
       );
       if (!metrics) {
         console.warn(`OptionScanner: no metrics for ${pos.ticker} (${underlying}) ${pos.expiration} ${pos.strike}`);
@@ -186,9 +215,11 @@ export async function scanOptions(
       const pl = marketValue - totalCost;
       const plPercent = totalCost > 0 ? (pl / totalCost) * 100 : 0;
 
-      const marketConditions = await getOptionMarketConditions(underlying);
+      const marketConditions = await getCachedOrFetch(`market:${underlying}`, () =>
+        getOptionMarketConditions(underlying)
+      );
 
-      const { recommendation, reason } = applyOptionRules(
+      const prelim = applyOptionRules(
         {
           dte,
           plPercent,
@@ -203,33 +234,127 @@ export async function scanOptions(
       );
 
       const symbol = `${pos.ticker} ${pos.expiration} ${pos.optionType === "call" ? "C" : "P"} $${pos.strike}`;
-      recommendations.push({
-        positionId: pos.positionId,
-        accountId: pos.accountId,
-        symbol,
-        underlyingSymbol: pos.ticker,
-        strike: pos.strike,
-        expiration: pos.expiration,
-        optionType: pos.optionType,
-        contracts: pos.contracts,
-        recommendation,
-        reason,
-        metrics: {
-          price: metrics.price,
-          underlyingPrice: metrics.underlyingPrice,
-          dte,
-          pl,
-          plPercent,
-          intrinsicValue: metrics.intrinsicValue,
-          timeValue: metrics.timeValue,
-          impliedVolatility: metrics.impliedVolatility,
-        },
-        createdAt: new Date().toISOString(),
-      });
+      results.push({ pos, underlying, metrics, dte, pl, plPercent, prelim, symbol });
     } catch (err) {
       console.error(`OptionScanner: error for ${pos.ticker} ${pos.expiration}:`, err);
     }
   }
+
+  return results;
+}
+
+/** Filter candidates for Grok stage: high P/L, low DTE, high IV. */
+function isGrokCandidate(
+  r: PrelimResult,
+  config: OptionScannerConfig
+): boolean {
+  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const plAbs = Math.abs(r.plPercent);
+  const iv = r.metrics.impliedVolatility ?? 0;
+  return (
+    plAbs >= (cfg.grokCandidatesPlPercent ?? 12) ||
+    r.dte < (cfg.grokCandidatesDteMax ?? 14) ||
+    iv >= (cfg.grokCandidatesIvMin ?? 55)
+  );
+}
+
+/** Main scan: Stage 1 rules, Stage 2 Grok for candidates. */
+export async function scanOptions(
+  accountId?: string,
+  config?: OptionScannerConfig
+): Promise<OptionRecommendation[]> {
+  const positions = await getOptionPositions(accountId);
+  if (positions.length === 0) return [];
+
+  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const prelimResults = await fastRuleBasedScan(positions, cfg);
+
+  const candidates = cfg.grokEnabled
+    ? prelimResults.filter((r) => isGrokCandidate(r, cfg))
+    : [];
+
+  const grokMax = cfg.grokMaxParallel ?? 6;
+  const grokResults = new Map<number, { recommendation: OptionRecommendationAction; reason: string } | null>();
+
+  if (candidates.length > 0) {
+    const batches: PrelimResult[][] = [];
+    for (let i = 0; i < candidates.length; i += grokMax) {
+      batches.push(candidates.slice(i, i + grokMax));
+    }
+    for (const batch of batches) {
+      const promises = batch.map(async (r, idx) => {
+        const globalIdx = prelimResults.indexOf(r);
+        const account =
+          ObjectId.isValid(r.pos.accountId) && r.pos.accountId.length === 24
+            ? await getDb().then((db) =>
+                db.collection("accounts").findOne({ _id: new ObjectId(r.pos.accountId) })
+              )
+            : null;
+        const riskProfile = (account as { riskLevel?: string })?.riskLevel ?? "medium";
+
+        const grokResult = await callOptionDecision({
+          position: {
+            type: r.pos.ticker,
+            strike: r.pos.strike,
+            expiration: r.pos.expiration,
+            qty: r.pos.contracts,
+            costBasis: r.pos.premium * 100,
+            optionType: r.pos.optionType,
+          },
+          marketData: {
+            underlyingPrice: r.metrics.underlyingPrice,
+            optionPrice: r.metrics.price,
+            iv: r.metrics.impliedVolatility,
+            dte: r.dte,
+            plPercent: r.plPercent,
+          },
+          preliminary: r.prelim,
+          accountContext: { riskProfile },
+        });
+
+        if (grokResult) {
+          grokResults.set(globalIdx, {
+            recommendation: grokResult.recommendation,
+            reason: grokResult.explanation || r.prelim.reason,
+          });
+        } else {
+          grokResults.set(globalIdx, null);
+        }
+      });
+      await Promise.all(promises);
+    }
+  }
+
+  const recommendations: OptionRecommendation[] = prelimResults.map((r, idx) => {
+    const grok = grokResults.get(idx);
+    const useGrok = candidates.includes(r) && grok;
+    return {
+      positionId: r.pos.positionId,
+      accountId: r.pos.accountId,
+      symbol: r.symbol,
+      underlyingSymbol: r.pos.ticker,
+      strike: r.pos.strike,
+      expiration: r.pos.expiration,
+      optionType: r.pos.optionType,
+      contracts: r.pos.contracts,
+      recommendation: useGrok ? grok.recommendation : r.prelim.recommendation,
+      reason: useGrok ? grok.reason : r.prelim.reason + (candidates.includes(r) && !grok ? " (Grok unavailable)" : ""),
+      source: useGrok ? "grok" : "rules",
+      preliminaryRecommendation: r.prelim.recommendation,
+      preliminaryReason: r.prelim.reason,
+      metrics: {
+        price: r.metrics.price,
+        underlyingPrice: r.metrics.underlyingPrice,
+        dte: r.dte,
+        pl: r.pl,
+        plPercent: r.plPercent,
+        intrinsicValue: r.metrics.intrinsicValue,
+        timeValue: r.metrics.timeValue,
+        impliedVolatility: r.metrics.impliedVolatility,
+      },
+      createdAt: new Date().toISOString(),
+    };
+  });
 
   return recommendations;
 }

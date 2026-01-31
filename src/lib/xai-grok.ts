@@ -151,3 +151,87 @@ export async function callGrokWithTools(
 
   return "Tool loop limit reached. Please try a simpler query.";
 }
+
+/** Context for option decision (used by OptionScanner hybrid). */
+export type OptionDecisionContext = {
+  position: {
+    type: string;
+    strike: number;
+    expiration: string;
+    qty: number;
+    costBasis: number;
+    optionType: "call" | "put";
+  };
+  marketData: {
+    underlyingPrice: number;
+    optionPrice: number;
+    iv?: number;
+    delta?: number;
+    theta?: number;
+    dte: number;
+    plPercent: number;
+  };
+  preliminary: { recommendation: string; reason: string };
+  accountContext?: { riskProfile?: string; strategyGoals?: string };
+};
+
+/** Grok response for option decision. */
+export type OptionDecisionResult = {
+  recommendation: "HOLD" | "BUY_TO_CLOSE";
+  confidence: number;
+  explanation: string;
+};
+
+/**
+ * Call Grok for option HOLD/BTC decision. Used by OptionScanner hybrid stage.
+ * Returns JSON: { recommendation, confidence, explanation }.
+ */
+export async function callOptionDecision(
+  context: OptionDecisionContext
+): Promise<OptionDecisionResult | null> {
+  const client = getXaiClient();
+  if (!client) return null;
+
+  const prompt = `You are a conservative options trading advisor. Given this position and current market data, decide whether to HOLD or BUY_TO_CLOSE. Be concise, risk-aware, explain reasoning step-by-step.
+
+Position: ${context.position.optionType} ${context.position.type} @ $${context.position.strike}, exp ${context.position.expiration}, ${context.position.qty} contracts, cost basis $${context.position.costBasis}
+Market: underlying $${context.marketData.underlyingPrice}, option $${context.marketData.optionPrice}, DTE ${context.marketData.dte}, P/L ${context.marketData.plPercent.toFixed(1)}%${context.marketData.iv != null ? `, IV ${context.marketData.iv.toFixed(1)}%` : ""}
+Preliminary: ${context.preliminary.recommendation} — ${context.preliminary.reason}
+${context.accountContext?.riskProfile ? `Account risk: ${context.accountContext.riskProfile}` : ""}
+
+Output JSON only, no markdown: {"recommendation":"HOLD"|"BUY_TO_CLOSE","confidence":0.0-1.0,"explanation":"..."}`;
+
+  try {
+    const completion = await client.chat.completions.create({
+      model: XAI_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 512,
+    });
+
+    const text = completion.choices[0]?.message?.content?.trim();
+    if (!text) return null;
+
+    const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+    const parsed = JSON.parse(cleaned) as {
+      recommendation?: string;
+      confidence?: number;
+      explanation?: string;
+      reason?: string;
+    };
+
+    const rec = parsed.recommendation?.toUpperCase();
+    const action = rec === "BUY_TO_CLOSE" ? "BUY_TO_CLOSE" : "HOLD";
+    const confidence = typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0.5;
+    const explanation =
+      typeof parsed.explanation === "string"
+        ? parsed.explanation
+        : typeof parsed.reason === "string"
+          ? parsed.reason
+          : "";
+
+    return { recommendation: action, confidence, explanation };
+  } catch (err) {
+    console.error("callOptionDecision error:", err);
+    return null;
+  }
+}

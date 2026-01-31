@@ -325,7 +325,16 @@ function analyzeCoveredCall(
     severity,
     reason: reason.trim(),
     details,
-    riskWarning: RISK_DISCLOSURES["covered-call"].risks[0],
+    riskWarning: (() => {
+  const rsiStr = technicals?.rsi ? `RSI ${technicals.rsi.toFixed(0)}` : 'RSI N/A';
+  const moneynessPct = ((stockPrice - strikePrice) / strikePrice) * 100;
+  let probStr: string;
+  if (moneynessPct > 5) probStr = '>80%';
+  else if (moneynessPct > 0) probStr = '60-80%';
+  else if (moneynessPct > -5) probStr = '30-60%';
+  else probStr = '<30%';
+  return `Risk: Stock may be called away if price rises above strike (${probStr} est. prob). ${rsiStr}.`;
+})(),
     suggestedActions: actions,
     confidence,
   };
