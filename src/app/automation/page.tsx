@@ -49,8 +49,6 @@ function AutomationContent() {
   // Jobs state
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobTypes, setJobTypes] = useState<Array<{ _id: string; id: string; name: string; description: string; handlerKey: string; supportsPortfolio: boolean; supportsAccount: boolean; order: number; enabled: boolean }>>([]);
-  const [runJobTypeLoading, setRunJobTypeLoading] = useState<string | null>(null);
-  const [runJobTypeMessage, setRunJobTypeMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showJobForm, setShowJobForm] = useState(false);
   const [jobFormError, setJobFormError] = useState<string>("");
   const [jobFormSaving, setJobFormSaving] = useState(false);
@@ -485,35 +483,6 @@ function AutomationContent() {
       fetchJobs();
     }
   }, [activeTab, fetchJobTypes, fetchJobs]);
-
-  const handleRunJobType = async (rt: (typeof jobTypes)[0]) => {
-    if (accounts.length === 0) {
-      setRunJobTypeMessage({ type: "error", text: "Add an account first. Slack webhook is configured per account in Alert Settings." });
-      return;
-    }
-    setRunJobTypeLoading(rt.handlerKey);
-    setRunJobTypeMessage(null);
-    try {
-      const res = await fetch("/api/report-types/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          handlerKey: rt.handlerKey,
-          accountId: selectedAccountId === "__portfolio__" ? null : selectedAccountId || null,
-        }),
-      });
-      const data = (await res.json()) as { success?: boolean; error?: string; message?: string };
-      if (data.success) {
-        setRunJobTypeMessage({ type: "success", text: data.message ?? "Sent to Slack" });
-      } else {
-        setRunJobTypeMessage({ type: "error", text: data.error ?? "Run failed" });
-      }
-    } catch (err) {
-      setRunJobTypeMessage({ type: "error", text: err instanceof Error ? err.message : "Request failed" });
-    } finally {
-      setRunJobTypeLoading(null);
-    }
-  };
 
   const scheduleToCron = (time: string, freq: "daily" | "weekdays"): string => {
     const [h, m] = time.split(":").map((x) => parseInt(x, 10) || 0);
@@ -1978,56 +1947,14 @@ function AutomationContent() {
         {/* Scheduled Jobs Tab */}
         {activeTab === "jobs" && (
           <div className="space-y-6">
-            {/* Job Types and Scheduled Jobs - same level */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Job Types - Available job types (jobs reference these) */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">Job Types</h3>
-                <p className="text-sm text-gray-600 mb-4">Available job types. Jobs reference one of these.</p>
-                {runJobTypeMessage && (
-                  <div className={`mb-4 p-3 rounded-lg ${runJobTypeMessage.type === "success" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                    {runJobTypeMessage.text}
-                  </div>
-                )}
-                {jobTypes.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">Loading job types…</div>
-                ) : (
-                  <ul className="space-y-2">
-                    {jobTypes.filter((t) => t.enabled).map((rt) => {
-                      const isPortfolio = selectedAccountId === "__portfolio__";
-                      const canRun = isPortfolio ? rt.supportsPortfolio : rt.supportsAccount;
-                      return (
-                        <li key={rt._id} className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-gray-50">
-                          <div className="min-w-0">
-                            <span className="font-medium text-gray-900">{rt.name}</span>
-                            <p className="text-xs text-gray-500 truncate" title={rt.description}>{rt.description}</p>
-                          </div>
-                          <button
-                            onClick={() => canRun && handleRunJobType(rt)}
-                            disabled={!canRun || !!runJobTypeLoading || accounts.length === 0}
-                            className="shrink-0 px-2 py-1 text-xs rounded border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 flex items-center gap-1"
-                            title="Run now"
-                          >
-                            {runJobTypeLoading === rt.handlerKey ? (
-                              <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                            ) : (
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                              </svg>
-                            )}
-                            Run
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-
-              {/* Manage Jobs - CRUD: Create, list, Edit, Delete */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-1">Manage Jobs</h3>
-                <p className="text-sm text-gray-600 mb-4">Create, edit, and manage jobs. Each job references a job type from the list.</p>
+                <p className="text-sm text-gray-600 mb-4">
+                  Create, edit, and manage jobs. Each job references a job type.{" "}
+                  <Link href="/job-types" className="text-blue-600 hover:underline">
+                    Manage job types
+                  </Link>
+                </p>
               <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <h4 className="text-sm font-medium text-gray-700 mb-3">Create Job</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -2400,7 +2327,6 @@ function AutomationContent() {
                 </div>
               )}
               </div>
-            </div>
 
             {showJobForm && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

@@ -58,7 +58,7 @@ describe("Automation Page", () => {
     expect(screen.getByText("No Active Alerts")).toBeInTheDocument();
   });
 
-  it("renders Job Types and Manage Jobs when Scheduled Jobs tab is active", async () => {
+  it("renders Manage Jobs when Scheduled Jobs tab is active", async () => {
     render(<AutomationPage />);
 
     await waitFor(() => {
@@ -71,8 +71,8 @@ describe("Automation Page", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Job Types")).toBeInTheDocument();
+      expect(screen.getByText("Manage Jobs")).toBeInTheDocument();
     });
-    expect(screen.getByText("Manage Jobs")).toBeInTheDocument();
+    expect(screen.getByText("Manage job types")).toBeInTheDocument();
   });
 });

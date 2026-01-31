@@ -15,6 +15,7 @@ const NAV: NavItem[] = [
   { href: "/watchlist", label: "Watchlist", isActive: (p) => p.startsWith("/watchlist") },
   { href: "/holdings", label: "Holdings", isActive: (p) => p.startsWith("/holdings") || p.startsWith("/positions") },
   { href: "/find-profits", label: "xAIProfitBuilder", isActive: (p) => p.startsWith("/find-profits") },
+  { href: "/job-types", label: "Job Types", isActive: (p) => p.startsWith("/job-types") },
 ];
 
 export function AppHeader() {

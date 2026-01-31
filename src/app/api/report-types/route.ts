@@ -2,24 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
+import {
+  REPORT_HANDLER_KEYS,
+  type ReportHandlerKey,
+} from "@/lib/report-type-constants";
 
 export const dynamic = "force-dynamic";
 
-/** Handler keys that have backend implementations. New report types must use one of these. */
-export const REPORT_HANDLER_KEYS = [
-  "smartxai",
-  "portfoliosummary",
-  "watchlistreport",
-  "cleanup",
-  "daily-analysis",
-  "OptionScanner",
-  "coveredCallScanner",
-  "protectivePutScanner",
-  "deliverAlerts",
-  "straddleStrangleScanner",
-] as const;
-
-export type ReportHandlerKey = (typeof REPORT_HANDLER_KEYS)[number];
+export { REPORT_HANDLER_KEYS, type ReportHandlerKey };
 
 export type ReportType = {
   _id: string;
