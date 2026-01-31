@@ -21,7 +21,7 @@ describe("xStrategyBuilder Page", () => {
     render(<XStrategyBuilderPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("xStrategyBuilder")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "xStrategyBuilder" })).toBeInTheDocument();
     });
     expect(screen.getByText("Strategy Wizard")).toBeInTheDocument();
     expect(screen.getByText("Strategy Preview")).toBeInTheDocument();

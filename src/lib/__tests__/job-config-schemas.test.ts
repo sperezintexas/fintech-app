@@ -25,6 +25,7 @@ describe("job-config-schemas", () => {
         grokDteMax: 14,
         grokIvRankMin: 50,
         grokMaxParallel: 6,
+        grokSystemPromptOverride: "Custom prompt for covered call decisions.",
       };
       expect(coveredCallScannerConfigSchema.parse(config)).toEqual(config);
     });

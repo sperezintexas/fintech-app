@@ -553,6 +553,8 @@ export type OptionScannerConfig = {
   grokCandidatesIvMin?: number;
   /** Hybrid: max parallel Grok calls. Default 6. */
   grokMaxParallel?: number;
+  /** Override Grok system prompt for HOLD/BTC decisions. Leave empty for default. */
+  grokSystemPromptOverride?: string;
 };
 
 // Covered Call Analyzer Types

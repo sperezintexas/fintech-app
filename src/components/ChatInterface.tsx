@@ -9,16 +9,57 @@ type Message = {
   timestamp: Date;
 };
 
+type GrokChatConfig = {
+  tools: { webSearch: boolean; marketData: boolean; portfolio: boolean };
+  context: { riskProfile?: string; strategyGoals?: string; systemPromptOverride?: string };
+};
+
+const DEFAULT_CONFIG: GrokChatConfig = {
+  tools: { webSearch: true, marketData: true, portfolio: true },
+  context: { riskProfile: "medium", strategyGoals: "", systemPromptOverride: "" },
+};
+
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [config, setConfig] = useState<GrokChatConfig>(DEFAULT_CONFIG);
+  const [configSaving, setConfigSaving] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    fetch("/api/chat/config")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.tools || data?.context) {
+          setConfig({
+            tools: { ...DEFAULT_CONFIG.tools, ...data.tools },
+            context: { ...DEFAULT_CONFIG.context, ...data.context },
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const saveConfig = async () => {
+    setConfigSaving(true);
+    try {
+      const res = await fetch("/api/chat/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      });
+      if (res.ok) setConfigOpen(false);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +106,132 @@ export function ChatInterface() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-12rem)] min-h-[400px] bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
+        <h3 className="font-medium text-gray-700">Chat</h3>
+        <button
+          type="button"
+          onClick={() => setConfigOpen((o) => !o)}
+          className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          title="Configure tools and Grok context"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+      </div>
+      {configOpen && (
+        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 space-y-3">
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Tools</p>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.tools.webSearch}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      tools: { ...c.tools, webSearch: e.target.checked },
+                    }))
+                  }
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm">Web Search</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.tools.marketData}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      tools: { ...c.tools, marketData: e.target.checked },
+                    }))
+                  }
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm">Market Data</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.tools.portfolio}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      tools: { ...c.tools, portfolio: e.target.checked },
+                    }))
+                  }
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm">Portfolio</span>
+              </label>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Grok Context</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Risk profile</label>
+                <select
+                  value={config.context.riskProfile ?? "medium"}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      context: { ...c.context, riskProfile: e.target.value },
+                    }))
+                  }
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="aggressive">Aggressive</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Strategy goals</label>
+                <input
+                  type="text"
+                  value={config.context.strategyGoals ?? ""}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      context: { ...c.context, strategyGoals: e.target.value },
+                    }))
+                  }
+                  placeholder="e.g. Growth by 2030"
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200"
+                />
+              </div>
+            </div>
+            <details className="mt-2">
+              <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Advanced: System prompt override</summary>
+              <textarea
+                value={config.context.systemPromptOverride ?? ""}
+                onChange={(e) =>
+                  setConfig((c) => ({
+                    ...c,
+                    context: { ...c.context, systemPromptOverride: e.target.value },
+                  }))
+                }
+                placeholder="Override default Grok system prompt (leave empty for default)"
+                rows={3}
+                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-gray-200 font-mono"
+              />
+            </details>
+          </div>
+          <button
+            type="button"
+            onClick={saveConfig}
+            disabled={configSaving}
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {configSaving ? "Saving…" : "Save config"}
+          </button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
           <div className="text-center py-12 text-gray-500">

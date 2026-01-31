@@ -40,14 +40,44 @@ export const WEB_SEARCH_TOOL: OpenAI.Chat.ChatCompletionTool = {
   },
 };
 
-export function getXaiClient(): OpenAI | null {
+const DEFAULT_TIMEOUT_MS = 60_000;
+const DECISION_TIMEOUT_MS = 120_000; // Scanner Grok calls need longer
+const RETRY_DELAYS_MS = [2000, 4000];
+
+export function getXaiClient(timeoutMs?: number): OpenAI | null {
   const key = process.env.XAI_API_KEY;
   if (!key?.trim()) return null;
   return new OpenAI({
     apiKey: key,
     baseURL: "https://api.x.ai/v1",
-    timeout: 60_000,
+    timeout: timeoutMs ?? DEFAULT_TIMEOUT_MS,
   });
+}
+
+/** Retry wrapper for Grok API calls that may timeout. */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string
+): Promise<T | null> {
+  let lastErr: unknown;
+  for (let i = 0; i <= RETRY_DELAYS_MS.length; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const isTimeout =
+        err instanceof Error &&
+        (err.message?.toLowerCase().includes("timeout") ||
+          err.message?.toLowerCase().includes("timed out"));
+      if (i < RETRY_DELAYS_MS.length && isTimeout) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[i]));
+      } else {
+        break;
+      }
+    }
+  }
+  console.error(`${label} error:`, lastErr);
+  return null;
 }
 
 /** Execute web_search tool and return formatted result. */
@@ -86,10 +116,21 @@ export async function callGrokWithTools(
   }
 
   const tools = options?.tools ?? [WEB_SEARCH_TOOL];
+  const useTools = Array.isArray(tools) && tools.length > 0;
   const messages: GrokMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userContent },
   ];
+
+  if (!useTools) {
+    const completion = await client.chat.completions.create({
+      model: XAI_MODEL,
+      messages,
+      max_tokens: 1024,
+    });
+    const text = completion.choices[0]?.message?.content?.trim();
+    return text || "No response from Grok.";
+  }
 
   const maxToolRounds = 3;
   let round = 0;
@@ -182,17 +223,22 @@ export type OptionDecisionResult = {
   explanation: string;
 };
 
+const DEFAULT_OPTION_DECISION_PROMPT = `You are a conservative options trading advisor. Given this position and current market data, decide whether to HOLD or BUY_TO_CLOSE. Be concise, risk-aware, explain reasoning step-by-step.`;
+
 /**
  * Call Grok for option HOLD/BTC decision. Used by OptionScanner hybrid stage.
  * Returns JSON: { recommendation, confidence, explanation }.
  */
 export async function callOptionDecision(
-  context: OptionDecisionContext
+  context: OptionDecisionContext,
+  options?: { grokSystemPromptOverride?: string }
 ): Promise<OptionDecisionResult | null> {
-  const client = getXaiClient();
+  const client = getXaiClient(DECISION_TIMEOUT_MS);
   if (!client) return null;
 
-  const prompt = `You are a conservative options trading advisor. Given this position and current market data, decide whether to HOLD or BUY_TO_CLOSE. Be concise, risk-aware, explain reasoning step-by-step.
+  const systemPart =
+    options?.grokSystemPromptOverride?.trim() || DEFAULT_OPTION_DECISION_PROMPT;
+  const prompt = `${systemPart}
 
 Position: ${context.position.optionType} ${context.position.type} @ $${context.position.strike}, exp ${context.position.expiration}, ${context.position.qty} contracts, cost basis $${context.position.costBasis}
 Market: underlying $${context.marketData.underlyingPrice}, option $${context.marketData.optionPrice}, DTE ${context.marketData.dte}, P/L ${context.marketData.plPercent.toFixed(1)}%${context.marketData.iv != null ? `, IV ${context.marketData.iv.toFixed(1)}%` : ""}
@@ -201,8 +247,8 @@ ${context.accountContext?.riskProfile ? `Account risk: ${context.accountContext.
 
 Output JSON only, no markdown: {"recommendation":"HOLD"|"BUY_TO_CLOSE","confidence":0.0-1.0,"explanation":"..."}`;
 
-  try {
-    const completion = await client.chat.completions.create({
+  const result = await withRetry(async () => {
+    const completion = await client!.chat.completions.create({
       model: XAI_MODEL,
       messages: [{ role: "user", content: prompt }],
       max_tokens: 512,
@@ -220,7 +266,8 @@ Output JSON only, no markdown: {"recommendation":"HOLD"|"BUY_TO_CLOSE","confiden
     };
 
     const rec = parsed.recommendation?.toUpperCase();
-    const action = rec === "BUY_TO_CLOSE" ? "BUY_TO_CLOSE" : "HOLD";
+    const action: OptionDecisionResult["recommendation"] =
+      rec === "BUY_TO_CLOSE" ? "BUY_TO_CLOSE" : "HOLD";
     const confidence = typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0.5;
     const explanation =
       typeof parsed.explanation === "string"
@@ -230,10 +277,9 @@ Output JSON only, no markdown: {"recommendation":"HOLD"|"BUY_TO_CLOSE","confiden
           : "";
 
     return { recommendation: action, confidence, explanation };
-  } catch (err) {
-    console.error("callOptionDecision error:", err);
-    return null;
-  }
+  }, "callOptionDecision");
+
+  return result;
 }
 
 /** Context for covered call decision (used by Covered Call Scanner hybrid). */
@@ -266,17 +312,22 @@ export type CoveredCallDecisionResult = {
   reasoning: string;
 };
 
+const DEFAULT_COVERED_CALL_DECISION_PROMPT = `You are a conservative covered call advisor. Given this position and market data, decide: HOLD, BUY_TO_CLOSE, SELL_NEW_CALL, or ROLL. Be concise, risk-aware.`;
+
 /**
  * Call Grok for covered call HOLD/BTC/SELL_NEW_CALL/ROLL decision. Used by Covered Call Scanner hybrid stage.
  */
 export async function callCoveredCallDecision(
-  context: CoveredCallDecisionContext
+  context: CoveredCallDecisionContext,
+  options?: { grokSystemPromptOverride?: string }
 ): Promise<CoveredCallDecisionResult | null> {
-  const client = getXaiClient();
+  const client = getXaiClient(DECISION_TIMEOUT_MS);
   if (!client) return null;
 
   const { position, marketData, preliminary } = context;
-  const prompt = `You are a conservative covered call advisor. Given this position and market data, decide: HOLD, BUY_TO_CLOSE, SELL_NEW_CALL, or ROLL. Be concise, risk-aware.
+  const systemPart =
+    options?.grokSystemPromptOverride?.trim() || DEFAULT_COVERED_CALL_DECISION_PROMPT;
+  const prompt = `${systemPart}
 
 Position: ${position.symbol} call @ $${position.strike}, exp ${position.expiration}, premium received $${position.premiumReceived}, ${position.quantity} contracts
 Market: stock $${marketData.stockPrice}, call bid $${marketData.callBid}/ask $${marketData.callAsk}, DTE ${marketData.dte}, unrealized P/L $${marketData.unrealizedPl}${marketData.ivRank != null ? `, IV rank ${marketData.ivRank}` : ""}${marketData.moneyness ? `, ${marketData.moneyness}` : ""}
@@ -285,8 +336,8 @@ ${context.accountContext?.riskProfile ? `Account risk: ${context.accountContext.
 
 Output JSON only, no markdown: {"recommendation":"HOLD"|"BUY_TO_CLOSE"|"SELL_NEW_CALL"|"ROLL"|"NONE","confidence":0.0-1.0,"reasoning":"..."}`;
 
-  try {
-    const completion = await client.chat.completions.create({
+  const result = await withRetry(async () => {
+    const completion = await client!.chat.completions.create({
       model: XAI_MODEL,
       messages: [{ role: "user", content: prompt }],
       max_tokens: 512,
@@ -318,8 +369,7 @@ Output JSON only, no markdown: {"recommendation":"HOLD"|"BUY_TO_CLOSE"|"SELL_NEW
           : "";
 
     return { recommendation: action, confidence, reasoning };
-  } catch (err) {
-    console.error("callCoveredCallDecision error:", err);
-    return null;
-  }
+  }, "callCoveredCallDecision");
+
+  return result;
 }

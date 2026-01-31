@@ -23,6 +23,7 @@ export const coveredCallScannerConfigSchema = z
     grokDteMax: z.number().min(0).optional(),
     grokIvRankMin: z.number().min(0).max(100).optional(),
     grokMaxParallel: z.number().min(1).max(20).optional(),
+    grokSystemPromptOverride: z.string().max(4000).optional(),
   })
   .strict()
   .optional();

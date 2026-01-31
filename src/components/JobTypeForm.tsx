@@ -402,6 +402,20 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
               />
             </div>
           </div>
+          <div className="mt-3 sm:col-span-3">
+            <label className="block text-xs text-gray-500 mb-1">Grok system prompt override</label>
+            <textarea
+              value={(config.grokSystemPromptOverride as string) ?? ""}
+              onChange={(e) =>
+                setConfig({
+                  grokSystemPromptOverride: e.target.value.trim() || undefined,
+                })
+              }
+              placeholder="Override Grok prompt for HOLD/BTC/SELL_NEW_CALL/ROLL decisions (leave empty for default)"
+              rows={3}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm font-mono"
+            />
+          </div>
         </div>
       )}
 
@@ -514,6 +528,20 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
                 className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
               />
             </div>
+          </div>
+          <div className="mt-3 sm:col-span-3">
+            <label className="block text-xs text-gray-500 mb-1">Grok system prompt override</label>
+            <textarea
+              value={(config.grokSystemPromptOverride as string) ?? ""}
+              onChange={(e) =>
+                setConfig({
+                  grokSystemPromptOverride: e.target.value.trim() || undefined,
+                })
+              }
+              placeholder="Override Grok prompt for HOLD/BTC decisions (leave empty for default)"
+              rows={3}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm font-mono"
+            />
           </div>
         </div>
       )}

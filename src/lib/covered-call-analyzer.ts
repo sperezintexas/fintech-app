@@ -222,6 +222,7 @@ export type CoveredCallScannerConfig = {
   grokDteMax?: number;
   grokIvRankMin?: number;
   grokMaxParallel?: number;
+  grokSystemPromptOverride?: string;
 };
 
 /** Fetch covered call pairs (stock + short call), opportunities (stock without call), and standalone call positions. */
@@ -706,26 +707,29 @@ async function enhanceRecommendationsWithGrok(
     const grokPromises = batch.map(async (rec, batchIdx) => {
       const globalIdx = recs.indexOf(rec);
       try {
-        const grokResult = await callCoveredCallDecision({
-          position: {
-            symbol: rec.symbol,
-            strike: rec.strikePrice!,
-            expiration: rec.expirationDate!,
-            premiumReceived: rec.entryPremium ?? rec.metrics.callBid,
-            quantity: 1,
+        const grokResult = await callCoveredCallDecision(
+          {
+            position: {
+              symbol: rec.symbol,
+              strike: rec.strikePrice!,
+              expiration: rec.expirationDate!,
+              premiumReceived: rec.entryPremium ?? rec.metrics.callBid,
+              quantity: 1,
+            },
+            marketData: {
+              stockPrice: rec.metrics.stockPrice,
+              callBid: rec.metrics.callBid,
+              callAsk: rec.metrics.callAsk,
+              dte: rec.metrics.dte,
+              unrealizedPl: rec.metrics.unrealizedPl,
+              extrinsicPercentOfPremium: rec.metrics.extrinsicPercentOfPremium,
+              ivRank: rec.metrics.ivRank,
+              moneyness: rec.metrics.moneyness,
+            },
+            preliminary: { recommendation: rec.recommendation, reason: rec.reason },
           },
-          marketData: {
-            stockPrice: rec.metrics.stockPrice,
-            callBid: rec.metrics.callBid,
-            callAsk: rec.metrics.callAsk,
-            dte: rec.metrics.dte,
-            unrealizedPl: rec.metrics.unrealizedPl,
-            extrinsicPercentOfPremium: rec.metrics.extrinsicPercentOfPremium,
-            ivRank: rec.metrics.ivRank,
-            moneyness: rec.metrics.moneyness,
-          },
-          preliminary: { recommendation: rec.recommendation, reason: rec.reason },
-        });
+          { grokSystemPromptOverride: cfg?.grokSystemPromptOverride }
+        );
         if (grokResult) {
           const grokConf: CoveredCallConfidence =
             grokResult.confidence >= 0.8 ? "HIGH" : grokResult.confidence >= 0.6 ? "MEDIUM" : "LOW";
@@ -853,27 +857,30 @@ export async function analyzeCoveredCallForOption(
 
   if (cfg?.grokEnabled !== false && isGrokCandidate(baseRec, cfg)) {
     try {
-      const grokResult = await callCoveredCallDecision({
-        position: {
-          symbol: sym,
-          strike,
-          expiration,
-          premiumReceived,
-          quantity,
+      const grokResult = await callCoveredCallDecision(
+        {
+          position: {
+            symbol: sym,
+            strike,
+            expiration,
+            premiumReceived,
+            quantity,
+          },
+          marketData: {
+            stockPrice,
+            callBid: metrics.bid,
+            callAsk: metrics.ask,
+            dte,
+            unrealizedPl: (premiumReceived - callMid) * 100 * quantity,
+            extrinsicPercentOfPremium,
+            ivRank: ivRank ?? undefined,
+            moneyness: getMoneyness(stockPrice, strike),
+          },
+          preliminary: { recommendation, reason },
+          accountContext: account ? { riskProfile: account.riskLevel } : undefined,
         },
-        marketData: {
-          stockPrice,
-          callBid: metrics.bid,
-          callAsk: metrics.ask,
-          dte,
-          unrealizedPl: (premiumReceived - callMid) * 100 * quantity,
-          extrinsicPercentOfPremium,
-          ivRank: ivRank ?? undefined,
-          moneyness: getMoneyness(stockPrice, strike),
-        },
-        preliminary: { recommendation, reason },
-        accountContext: account ? { riskProfile: account.riskLevel } : undefined,
-      });
+        { grokSystemPromptOverride: cfg?.grokSystemPromptOverride }
+      );
       if (grokResult) {
         const grokConf: CoveredCallConfidence =
           grokResult.confidence >= 0.8 ? "HIGH" : grokResult.confidence >= 0.6 ? "MEDIUM" : "LOW";

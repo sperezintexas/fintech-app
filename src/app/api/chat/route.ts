@@ -3,7 +3,8 @@ import { getMarketNewsAndOutlook, getStockAndOptionPrices } from "@/lib/yahoo";
 import { getDb } from "@/lib/mongodb";
 import type { Account } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
-import { callGrokWithTools } from "@/lib/xai-grok";
+import { callGrokWithTools, WEB_SEARCH_TOOL } from "@/lib/xai-grok";
+import { getGrokChatConfig } from "@/lib/grok-chat-config";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,6 @@ const SYMBOL_REGEX = /\b([A-Z]{1,5})\b/g;
 
 function extractSymbols(text: string): string[] {
   const matches = text.match(SYMBOL_REGEX) ?? [];
-  const known = new Set(["SPY", "QQQ", "DIA", "IWM", "AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "META", "NVDA"]);
   return [...new Set(matches.filter((s) => s.length >= 2 && s.length <= 5))];
 }
 
@@ -135,9 +135,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const grokConfig = await getGrokChatConfig();
+    const { tools: toolConfig, context: ctxConfig } = grokConfig;
+
     const toolResults: { marketNews?: unknown; stockPrices?: unknown; portfolio?: unknown } = {};
 
-    if (needsPortfolioTool(message)) {
+    if (toolConfig.portfolio && needsPortfolioTool(message)) {
       try {
         const db = await getDb();
         type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
@@ -164,7 +167,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (needsNewsTool(message)) {
+    if (toolConfig.marketData && needsNewsTool(message)) {
       try {
         toolResults.marketNews = await getMarketNewsAndOutlook({ limit: 10, region: "US" });
       } catch (e) {
@@ -173,7 +176,7 @@ export async function POST(request: NextRequest) {
     }
 
     const symbols = extractSymbols(message);
-    if (needsPriceTool(message) && symbols.length > 0) {
+    if (toolConfig.marketData && needsPriceTool(message) && symbols.length > 0) {
       const symbol = symbols[0];
       try {
         const prices = await getStockAndOptionPrices(symbol, {
@@ -190,17 +193,27 @@ export async function POST(request: NextRequest) {
     let response: string;
 
     try {
-      const systemPrompt = `You are Grok, a leading financial expert for myInvestments. You advise on maximizing profits using current, mid, and future potential earnings for valuable companies like TESLA. Provide brief, direct answers with no leading intro; offer more details when asked. Focus on moderate and aggressive suggestions, sound options strategies around TSLA, SpaceX proxies, xAI/Grok proxies, and defense investments.
+      const basePrompt = ctxConfig.systemPromptOverride?.trim()
+        ? ctxConfig.systemPromptOverride
+        : `You are Grok, a leading financial expert for myInvestments. You advise on maximizing profits using current, mid, and future potential earnings for valuable companies like TESLA. Provide brief, direct answers with no leading intro; offer more details when asked. Focus on moderate and aggressive suggestions, sound options strategies around TSLA, SpaceX proxies, xAI/Grok proxies, and defense investments.`;
 
-Use tools when needed: call web_search for queries about weather, news, general facts, or real-time data outside portfolio/market. Use the provided market/portfolio context when available. Reason step-by-step internally when combining multiple data sources.
-
-Always include a brief disclaimer that this is not financial advice.`;
+      const riskLine = ctxConfig.riskProfile
+        ? `\nUser risk profile: ${ctxConfig.riskProfile}. Tailor advice accordingly.`
+        : "";
+      const goalsLine = ctxConfig.strategyGoals?.trim()
+        ? `\nUser strategy goals: ${ctxConfig.strategyGoals}`
+        : "";
+      const toolsLine = toolConfig.webSearch
+        ? "\nUse web_search for weather, news, general facts, or real-time data outside portfolio/market."
+        : "";
+      const systemPrompt = `${basePrompt}${riskLine}${goalsLine}${toolsLine}\nUse the provided market/portfolio context when available. Reason step-by-step internally when combining multiple data sources.\nAlways include a brief disclaimer that this is not financial advice.`;
 
       const userContent = toolContext.trim()
         ? `[Context from tools]\n${toolContext}\n\n[User question]\n${message}`
         : message;
 
-      response = await callGrokWithTools(systemPrompt, userContent);
+      const grokTools = toolConfig.webSearch ? [WEB_SEARCH_TOOL] : [];
+      response = await callGrokWithTools(systemPrompt, userContent, { tools: grokTools });
       if (!response?.trim() || response.includes("Tool loop limit")) {
         response = buildFallbackResponse(toolResults);
       }

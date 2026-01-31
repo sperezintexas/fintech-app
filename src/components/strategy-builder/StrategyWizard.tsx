@@ -118,19 +118,27 @@ export function StrategyWizard() {
       const data = await res.json();
       const raw = (data.expirationDates ?? []) as string[];
       const today = new Date();
+      today.setHours(0, 0, 0, 0);
       const maxDate = new Date(today);
       maxDate.setDate(maxDate.getDate() + 52 * 7);
 
-      const filtered = raw.filter((d) => {
+      // Prefer Fridays (weekly expirations); fallback to all future dates if none
+      const fridays = raw.filter((d) => {
         const date = new Date(d + 'T12:00:00Z');
         if (date < today) return false;
         if (date > maxDate) return false;
         return date.getUTCDay() === 5;
       });
+      const fallback = raw.filter((d) => {
+        const date = new Date(d + 'T12:00:00Z');
+        return date >= today && date <= maxDate;
+      });
+      const filtered = fridays.length > 0 ? fridays : fallback;
+      const sorted = [...filtered].sort((a, b) => a.localeCompare(b));
 
-      setExpirations(filtered);
-      if (filtered.length > 0) {
-        setExpiration(filtered[0]);
+      setExpirations(sorted);
+      if (sorted.length > 0) {
+        setExpiration(sorted[0]);
       } else {
         setExpiration(null);
       }
@@ -167,6 +175,13 @@ export function StrategyWizard() {
       fetchExpirations(selectedSymbol.symbol);
     }
   }, [selectedSymbol, step, fetchExpirations]);
+
+  // Default to puts when Cash-Secured Put is selected
+  useEffect(() => {
+    if (step === 4 && strategyId === 'cash-secured-put') {
+      setContractType('put');
+    }
+  }, [step, strategyId]);
 
   useEffect(() => {
     if (expiration && step === 4) setStrike(null);

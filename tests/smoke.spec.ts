@@ -20,6 +20,9 @@ test.describe("Smoke tests", () => {
 
     await page.getByRole("link", { name: /Job Types/i }).click();
     await expect(page).toHaveURL(/\/job-types/);
+
+    await page.getByRole("link", { name: /Smart Grok/i }).click();
+    await expect(page).toHaveURL(/\/chat/);
   });
 
   test("xStrategyBuilder page loads and shows wizard", async ({ page }) => {
@@ -73,5 +76,15 @@ test.describe("Smoke tests", () => {
   test("Watchlist page loads", async ({ page }) => {
     await page.goto("/watchlist");
     await expect(page.getByText(/Watchlists|Select a watchlist|create one to get started/i).first()).toBeVisible();
+  });
+
+  test("Chat page loads and shows config", async ({ page }) => {
+    await page.goto("/chat");
+    await expect(page.getByRole("heading", { name: /Smart Grok Chat/i })).toBeVisible();
+    await expect(page.getByPlaceholder(/Ask about stocks/i)).toBeVisible();
+    await page.getByTitle(/Configure tools and Grok context/i).click();
+    await expect(page.getByText(/Tools/i)).toBeVisible();
+    await expect(page.getByText(/Web Search/i)).toBeVisible();
+    await expect(page.getByText(/Risk profile/i)).toBeVisible();
   });
 });

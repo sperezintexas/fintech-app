@@ -12,12 +12,12 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", isActive: (p) => p === "/" },
-  { href: "/watchlist", label: "Watchlist", isActive: (p) => p.startsWith("/watchlist") },
-  { href: "/holdings", label: "Holdings", isActive: (p) => p.startsWith("/holdings") || p.startsWith("/positions") },
-  { href: "/find-profits", label: "xAIProfitBuilder", isActive: (p) => p.startsWith("/find-profits") },
-  { href: "/xstrategybuilder", label: "xStrategyBuilder", isActive: (p) => p.startsWith("/xstrategybuilder") },
-  { href: "/automation", label: "Automation", isActive: (p) => p.startsWith("/automation") },
-  { href: "/job-types", label: "Job Types", isActive: (p) => p.startsWith("/job-types") },
+  { href: "/watchlist", label: "Watchlist", isActive: (p) => (p ?? "").startsWith("/watchlist") },
+  { href: "/holdings", label: "Holdings", isActive: (p) => (p ?? "").startsWith("/holdings") || (p ?? "").startsWith("/positions") },
+  { href: "/find-profits", label: "xAIProfitBuilder", isActive: (p) => (p ?? "").startsWith("/find-profits") },
+  { href: "/xstrategybuilder", label: "xStrategyBuilder", isActive: (p) => (p ?? "").startsWith("/xstrategybuilder") },
+  { href: "/automation", label: "Automation", isActive: (p) => (p ?? "").startsWith("/automation") },
+  { href: "/job-types", label: "Job Types", isActive: (p) => (p ?? "").startsWith("/job-types") },
 ];
 
 export function AppHeader() {
@@ -87,14 +87,14 @@ export function AppHeader() {
             </Link>
             <Link
               href="/chat"
-              className={`p-2 rounded-lg transition-colors ${pathname.startsWith("/chat") ? "bg-blue-50 ring-2 ring-blue-500/30" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
+              className={`p-2 rounded-lg transition-colors ${(pathname ?? "").startsWith("/chat") ? "bg-blue-50 ring-2 ring-blue-500/30" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
               aria-label="Smart Grok"
             >
               <img src="/apple-icon.svg" alt="" width={20} height={20} className="w-5 h-5" />
             </Link>
             <Link
               href="/automation"
-              className={`p-2 rounded-lg transition-colors ${pathname.startsWith("/automation") ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
+              className={`p-2 rounded-lg transition-colors ${(pathname ?? "").startsWith("/automation") ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
               aria-label="Setup"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

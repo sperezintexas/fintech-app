@@ -12,11 +12,12 @@ describe("xai-grok", () => {
 
   describe("WEB_SEARCH_TOOL", () => {
     it("has correct schema", () => {
-      expect(WEB_SEARCH_TOOL.type).toBe("function");
-      expect(WEB_SEARCH_TOOL.function.name).toBe("web_search");
-      expect(WEB_SEARCH_TOOL.function.parameters.required).toContain("query");
-      expect(WEB_SEARCH_TOOL.function.parameters.properties).toHaveProperty("query");
-      expect(WEB_SEARCH_TOOL.function.parameters.properties).toHaveProperty("num_results");
+      const tool = WEB_SEARCH_TOOL as { type: string; function: { name: string; parameters: { required?: string[]; properties?: Record<string, unknown> } } };
+      expect(tool.type).toBe("function");
+      expect(tool.function.name).toBe("web_search");
+      expect(tool.function.parameters.required).toContain("query");
+      expect(tool.function.parameters.properties).toHaveProperty("query");
+      expect(tool.function.parameters.properties).toHaveProperty("num_results");
     });
   });
 

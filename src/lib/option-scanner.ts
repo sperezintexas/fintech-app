@@ -50,8 +50,9 @@ function getUnderlyingFromTicker(ticker: string): string {
   return ticker?.replace(/\d.*$/, "").toUpperCase() ?? ticker?.toUpperCase() ?? "";
 }
 
-const DEFAULT_CONFIG: Required<Omit<OptionScannerConfig, "riskProfile">> & {
+const DEFAULT_CONFIG: Required<Omit<OptionScannerConfig, "riskProfile" | "grokSystemPromptOverride">> & {
   riskProfile?: RiskLevel;
+  grokSystemPromptOverride?: string;
 } = {
   holdDteMin: 14,
   btcDteMax: 7,
@@ -292,25 +293,28 @@ export async function scanOptions(
             : null;
         const riskProfile = (account as { riskLevel?: string })?.riskLevel ?? "medium";
 
-        const grokResult = await callOptionDecision({
-          position: {
-            type: r.pos.ticker,
-            strike: r.pos.strike,
-            expiration: r.pos.expiration,
-            qty: r.pos.contracts,
-            costBasis: r.pos.premium * 100,
-            optionType: r.pos.optionType,
+        const grokResult = await callOptionDecision(
+          {
+            position: {
+              type: r.pos.ticker,
+              strike: r.pos.strike,
+              expiration: r.pos.expiration,
+              qty: r.pos.contracts,
+              costBasis: r.pos.premium * 100,
+              optionType: r.pos.optionType,
+            },
+            marketData: {
+              underlyingPrice: r.metrics.underlyingPrice,
+              optionPrice: r.metrics.price,
+              iv: r.metrics.impliedVolatility,
+              dte: r.dte,
+              plPercent: r.plPercent,
+            },
+            preliminary: r.prelim,
+            accountContext: { riskProfile },
           },
-          marketData: {
-            underlyingPrice: r.metrics.underlyingPrice,
-            optionPrice: r.metrics.price,
-            iv: r.metrics.impliedVolatility,
-            dte: r.dte,
-            plPercent: r.plPercent,
-          },
-          preliminary: r.prelim,
-          accountContext: { riskProfile },
-        });
+          { grokSystemPromptOverride: cfg.grokSystemPromptOverride }
+        );
 
         if (grokResult) {
           grokResults.set(globalIdx, {
