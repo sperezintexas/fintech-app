@@ -159,60 +159,64 @@ export default function JobTypesPage() {
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
       <AppHeader />
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-3xl font-bold text-gray-900">Job Types</h2>
-            <p className="text-gray-600 mt-1">
-              Manage report/job types used by scheduled jobs. Create, edit, enable, or disable types.
-            </p>
-          </div>
-          {!showForm && (
-            <button
-              onClick={() => setShowForm(true)}
-              className="px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Job Type
-            </button>
+      <main className="flex min-h-[calc(100vh-4rem)]">
+        <div className="flex-1 overflow-auto p-4 sm:p-6">
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {error}
+            </div>
           )}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Job Types</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Manage report/job types used by scheduled jobs.
+                </p>
+              </div>
+              {!showForm && (
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="px-3 py-1.5 text-sm bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  New
+                </button>
+              )}
+            </div>
+
+            {showForm && (
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900 mb-4">
+                  {editingJobType ? "Edit Job Type" : "Create New Job Type"}
+                </h3>
+                <JobTypeForm
+                  jobType={editingJobType}
+                  onSubmit={handleSubmit}
+                  onCancel={handleCancel}
+                  isLoading={isSaving}
+                />
+              </div>
+            )}
+
+            {isLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <JobTypeList
+                jobTypes={jobTypes}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onToggleEnabled={handleToggleEnabled}
+                isDeleting={isDeleting}
+                isToggling={isToggling}
+              />
+            )}
+          </div>
         </div>
-
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">{error}</div>
-        )}
-
-        {showForm && (
-          <div className="mb-8 bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <h3 className="text-xl font-semibold text-gray-900 mb-6">
-              {editingJobType ? "Edit Job Type" : "Create New Job Type"}
-            </h3>
-            <JobTypeForm
-              jobType={editingJobType}
-              onSubmit={handleSubmit}
-              onCancel={handleCancel}
-              isLoading={isSaving}
-            />
-          </div>
-        )}
-
-        {isLoading ? (
-          <div className="text-center py-12">
-            <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <p className="mt-4 text-gray-500">Loading job types...</p>
-          </div>
-        ) : (
-          <JobTypeList
-            jobTypes={jobTypes}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            onToggleEnabled={handleToggleEnabled}
-            isDeleting={isDeleting}
-            isToggling={isToggling}
-          />
-        )}
       </main>
     </div>
   );

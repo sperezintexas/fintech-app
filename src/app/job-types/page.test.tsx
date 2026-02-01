@@ -34,11 +34,11 @@ describe("Job Types Page", () => {
     expect(screen.getByText("Covered Call Scanner")).toBeInTheDocument();
   });
 
-  it("shows New Job Type button", async () => {
+  it("shows New button", async () => {
     render(<JobTypesPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("New Job Type")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /New/i })).toBeInTheDocument();
     });
   });
 });

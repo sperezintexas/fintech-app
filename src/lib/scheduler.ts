@@ -49,108 +49,6 @@ export async function getAgenda(): Promise<Agenda> {
 
 // Define all scheduled job types
 function defineJobs(agenda: Agenda) {
-  // Daily watchlist analysis job
-  agenda.define("daily-analysis", async (job: AgendaJob) => {
-    console.log("Running daily watchlist analysis...", new Date().toISOString());
-
-    const data = job.attrs.data as { accountId?: string } | undefined;
-    const accountId = data?.accountId;
-
-    try {
-      const result = await runWatchlistAnalysis(accountId);
-      console.log("Daily analysis complete:", result);
-
-      // Store result in job data for history
-      job.attrs.data = {
-        ...job.attrs.data,
-        lastRun: new Date().toISOString(),
-        result,
-      };
-      await job.save();
-    } catch (error) {
-      console.error("Daily analysis failed:", error);
-      throw error; // Let Agenda handle retry
-    }
-  });
-
-  // Cleanup old alerts job
-  agenda.define("cleanup-alerts", async (_job: AgendaJob) => {
-    console.log("Running alert cleanup...", new Date().toISOString());
-
-    try {
-      const db = await getDb();
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-      const result = await db.collection("alerts").deleteMany({
-        acknowledged: true,
-        acknowledgedAt: { $lt: thirtyDaysAgo.toISOString() },
-      });
-
-      console.log(`Cleaned up ${result.deletedCount} old alerts`);
-    } catch (error) {
-      console.error("Alert cleanup failed:", error);
-      throw error;
-    }
-  });
-
-  // Option Scanner job - evaluates options positions, generates HOLD/BTC recommendations
-  agenda.define("OptionScanner", async (job: AgendaJob) => {
-    console.log("Running Option Scanner...", new Date().toISOString());
-
-    const data = job.attrs.data as { accountId?: string; config?: OptionScannerConfig } | undefined;
-    const accountId = data?.accountId;
-    const config = data?.config;
-
-    try {
-      const recommendations = await scanOptions(accountId, config);
-      const { stored, alertsCreated } = await storeOptionRecommendations(recommendations, {
-        createAlerts: true,
-      });
-
-      job.attrs.data = {
-        ...job.attrs.data,
-        lastRun: new Date().toISOString(),
-        result: { scanned: recommendations.length, stored, alertsCreated },
-      };
-      await job.save();
-
-      console.log(`Option Scanner complete: ${recommendations.length} scanned, ${stored} stored, ${alertsCreated} alerts`);
-    } catch (error) {
-      console.error("Option Scanner failed:", error);
-      throw error;
-    }
-  });
-
-  // Covered Call Scanner job - evaluates covered call positions and opportunities
-  agenda.define("coveredCallScanner", async (job: AgendaJob) => {
-    console.log("Running Covered Call Scanner...", new Date().toISOString());
-
-    const data = job.attrs.data as { accountId?: string } | undefined;
-    const accountId = data?.accountId;
-
-    try {
-      const recommendations = await analyzeCoveredCalls(accountId);
-      const { stored, alertsCreated } = await storeCoveredCallRecommendations(recommendations, {
-        createAlerts: true,
-      });
-
-      job.attrs.data = {
-        ...job.attrs.data,
-        lastRun: new Date().toISOString(),
-        result: { analyzed: recommendations.length, stored, alertsCreated },
-      };
-      await job.save();
-
-      console.log(
-        `Covered Call Scanner complete: ${recommendations.length} analyzed, ${stored} stored, ${alertsCreated} alerts`
-      );
-    } catch (error) {
-      console.error("Covered Call Scanner failed:", error);
-      throw error;
-    }
-  });
-
   // Deliver Alerts job - sends pending alerts to Slack/X per AlertConfig
   agenda.define("deliverAlerts", async (job: AgendaJob) => {
     console.log("Running Alert Delivery...", new Date().toISOString());
@@ -173,35 +71,6 @@ function defineJobs(agenda: Agenda) {
       );
     } catch (error) {
       console.error("Alert Delivery failed:", error);
-      throw error;
-    }
-  });
-
-  // Straddle/Strangle Scanner job - evaluates long straddle and strangle positions
-  agenda.define("straddleStrangleScanner", async (job: AgendaJob) => {
-    console.log("Running Straddle/Strangle Scanner...", new Date().toISOString());
-
-    const data = job.attrs.data as { accountId?: string } | undefined;
-    const accountId = data?.accountId;
-
-    try {
-      const recommendations = await analyzeStraddlesAndStrangles(accountId);
-      const { stored, alertsCreated } = await storeStraddleStrangleRecommendations(recommendations, {
-        createAlerts: true,
-      });
-
-      job.attrs.data = {
-        ...job.attrs.data,
-        lastRun: new Date().toISOString(),
-        result: { analyzed: recommendations.length, stored, alertsCreated },
-      };
-      await job.save();
-
-      console.log(
-        `Straddle/Strangle Scanner complete: ${recommendations.length} analyzed, ${stored} stored, ${alertsCreated} alerts`
-      );
-    } catch (error) {
-      console.error("Straddle/Strangle Scanner failed:", error);
       throw error;
     }
   });
@@ -233,32 +102,29 @@ function defineJobs(agenda: Agenda) {
     }
   });
 
-  // Protective Put Scanner job - evaluates protective put positions and opportunities
-  agenda.define("protectivePutScanner", async (job: AgendaJob) => {
-    console.log("Running Protective Put Scanner...", new Date().toISOString());
-
+  // Watchlist report (ad-hoc run via runJobNow; also used by report jobs via scheduled-report)
+  agenda.define("watchlistreport", async (job: AgendaJob) => {
     const data = job.attrs.data as { accountId?: string } | undefined;
     const accountId = data?.accountId;
-
+    if (!accountId) {
+      console.log("Watchlist report skipped: no accountId");
+      return;
+    }
+    const db = await getDb();
+    const tempJob = {
+      _id: new ObjectId(),
+      accountId,
+      name: "Watchlist Report (Run Now)",
+      jobType: "watchlistreport",
+      templateId: "concise" as const,
+      channels: ["slack"],
+      status: "active" as const,
+    };
+    await db.collection("reportJobs").insertOne(tempJob);
     try {
-      const recommendations = await analyzeProtectivePuts(accountId);
-      const { stored, alertsCreated } = await storeProtectivePutRecommendations(recommendations, {
-        createAlerts: true,
-      });
-
-      job.attrs.data = {
-        ...job.attrs.data,
-        lastRun: new Date().toISOString(),
-        result: { analyzed: recommendations.length, stored, alertsCreated },
-      };
-      await job.save();
-
-      console.log(
-        `Protective Put Scanner complete: ${recommendations.length} analyzed, ${stored} stored, ${alertsCreated} alerts`
-      );
-    } catch (error) {
-      console.error("Protective Put Scanner failed:", error);
-      throw error;
+      await executeJob(tempJob._id.toString());
+    } finally {
+      await db.collection("reportJobs").deleteOne({ _id: tempJob._id });
     }
   });
 
@@ -1059,6 +925,19 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
   }
 
   return { analyzed, alertsCreated, errors };
+}
+
+/** Schedule a report job by ID (used when creating/updating jobs in reportJobs). */
+export async function upsertReportJobSchedule(jobId: string, cron: string): Promise<void> {
+  const ag = await getAgenda();
+  await ag.cancel({ name: "scheduled-report", "data.jobId": jobId });
+  await ag.every(cron, "scheduled-report", { jobId });
+}
+
+/** Cancel scheduled-report jobs for a given report job ID. */
+export async function cancelReportJobSchedule(jobId: string): Promise<void> {
+  const ag = await getAgenda();
+  await ag.cancel({ name: "scheduled-report", "data.jobId": jobId });
 }
 
 // Schedule management functions

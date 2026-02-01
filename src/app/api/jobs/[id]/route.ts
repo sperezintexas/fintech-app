@@ -1,24 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { getAgenda, executeJob } from "@/lib/scheduler";
+import { executeJob, upsertReportJobSchedule, cancelReportJobSchedule } from "@/lib/scheduler";
 import { validateJobConfig } from "@/lib/job-config-schemas";
 import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, JobConfig } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
 type RouteParams = { params: Promise<{ id: string }> };
-
-async function upsertAgendaSchedule(jobId: string, cron: string): Promise<void> {
-  const agenda = await getAgenda();
-  await agenda.cancel({ name: "scheduled-report", "data.jobId": jobId });
-  await agenda.every(cron, "scheduled-report", { jobId });
-}
-
-async function cancelAgendaSchedule(jobId: string): Promise<void> {
-  const agenda = await getAgenda();
-  await agenda.cancel({ name: "scheduled-report", "data.jobId": jobId });
-}
 
 // POST /api/jobs/[id] - Run job now
 export async function POST(_request: NextRequest, { params }: RouteParams) {
@@ -131,9 +120,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const status = (updated?.status ?? "paused") as "active" | "paused";
     const cron = (updated?.scheduleCron ?? "") as string;
     if (status === "active" && cron) {
-      await upsertAgendaSchedule(id, cron);
+      await upsertReportJobSchedule(id, cron);
     } else {
-      await cancelAgendaSchedule(id);
+      await cancelReportJobSchedule(id);
     }
 
     return NextResponse.json({ ...updated, _id: (updated as { _id: ObjectId })?._id.toString() });
@@ -157,7 +146,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
-    await cancelAgendaSchedule(id);
+    await cancelReportJobSchedule(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to delete job:", error);

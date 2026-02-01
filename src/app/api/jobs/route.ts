@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { getAgenda } from "@/lib/scheduler";
+import { getAgenda, upsertReportJobSchedule } from "@/lib/scheduler";
 import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
 import { validateJobConfig } from "@/lib/job-config-schemas";
 import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, JobConfig } from "@/types/portfolio";
@@ -9,12 +9,6 @@ import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, 
 export const dynamic = "force-dynamic";
 
 type JobDoc = Omit<Job, "_id"> & { _id: ObjectId };
-
-async function upsertAgendaSchedule(jobId: string, cron: string): Promise<void> {
-  const agenda = await getAgenda();
-  await agenda.cancel({ name: "scheduled-report", "data.jobId": jobId });
-  await agenda.every(cron, "scheduled-report", { jobId });
-}
 
 // GET /api/jobs?accountId=... (omit accountId for portfolio-level)
 export async function GET(request: NextRequest) {
@@ -152,7 +146,7 @@ export async function POST(request: NextRequest) {
     const jobId = result.insertedId.toString();
 
     if (status === "active") {
-      await upsertAgendaSchedule(jobId, scheduleCron);
+      await upsertReportJobSchedule(jobId, scheduleCron);
     }
 
     return NextResponse.json({ ...jobDoc, _id: jobId }, { status: 201 });

@@ -1636,7 +1636,7 @@ function AutomationContent() {
               {/* Quick Actions */}
               <div className="flex flex-wrap gap-3 mb-6">
                 <button
-                  onClick={() => handleSchedulerAction("setup-defaults")}
+                  onClick={() => handleSchedulerAction("createRecommendedJobs")}
                   disabled={schedulerLoading}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
                 >
@@ -1646,7 +1646,7 @@ function AutomationContent() {
                   Setup Default Schedule
                 </button>
                 <button
-                  onClick={() => handleSchedulerAction("run", "daily-analysis")}
+                  onClick={() => handleSchedulerAction("runPortfolio")}
                   disabled={schedulerLoading}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
                 >
@@ -1654,7 +1654,7 @@ function AutomationContent() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Run Analysis Now
+                  Run Portfolio Now
                 </button>
                 <button
                   onClick={fetchSchedulerStatus}
@@ -1764,8 +1764,11 @@ function AutomationContent() {
               <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                 <h4 className="font-medium text-blue-900 mb-2">Default Schedules</h4>
                 <ul className="text-sm text-blue-800 space-y-1">
-                  <li><strong>daily-analysis:</strong> 4:00 PM Mon-Fri (market close)</li>
-                  <li><strong>cleanup-alerts:</strong> 2:00 AM Sunday (removes old acknowledged alerts)</li>
+                  <li><strong>Weekly Portfolio:</strong> Sun 6 PM</li>
+                  <li><strong>Daily Options Scanner:</strong> Mon–Fri 4 PM</li>
+                  <li><strong>Watchlist Snapshot:</strong> Mon–Fri 9 AM &amp; 4 PM</li>
+                  <li><strong>Deliver Alerts:</strong> Mon–Fri 4:30 PM</li>
+                  <li><strong>Data Cleanup:</strong> Daily 3 AM</li>
                 </ul>
                 <p className="text-xs text-blue-700 mt-2">
                   Jobs are stored in MongoDB and persist across app restarts.

@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:scanner": "vitest run src/lib/__tests__/option-scanner.test.ts src/lib/__tests__/covered-call-analyzer.test.ts src/lib/__tests__/protective-put-analyzer.test.ts src/lib/__tests__/straddle-strangle-analyzer.test.ts src/lib/__tests__/unified-options-scanner.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },

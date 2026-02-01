@@ -1,50 +1,37 @@
 ---
-description: Job/Report Configuration and Management
-globs:
 alwaysApply: false
 ---
 # Job/Report Configuration Feature
 
 ## Overview
-Enable users to configure and manage various job/report types (e.g., covered call scanner) via a unified interface. Each job includes core options plus type-specific configurations stored as JSON.
+Unified job configuration: jobs stored in `reportJobs` collection, scheduled via Agenda `scheduled-report`, executed by `executeJob`. Use report types from `reportTypes` collection; deprecated types (OptionScanner, coveredCallScanner, etc.) are disabled—prefer `unifiedOptionsScanner` and `watchlistreport`.
 
 ## Core Options (All Jobs)
 - **name**: String - Unique job name.
-- **messageTemplate**: String - Template for alert/report messages (e.g., Handlebars/Mustache syntax for dynamic fields).
-- **jobType**: Enum/String - Type identifier (e.g., "covered-call-scanner", "csp-analysis").
-- **frequency**: String - Cron schedule or human-readable (e.g., "daily at 4 PM", parsed to cron via library like cron-parser).
-- **deliveryChannel**: Enum/Array - Channels like "slack", "push", "twitter", "email".
+- **jobType**: String - Type id from reportTypes (e.g. `unifiedOptionsScanner`, `watchlistreport`, `portfoliosummary`).
+- **scheduleCron**: String - Cron schedule (e.g. `0 16 * * 1-5` for Mon–Fri 4 PM).
+- **channels**: Array - Delivery channels: `slack`, `twitter`.
+- **config**: Record<string, unknown> - Type-specific JSON (validated by Zod per handlerKey).
+- **accountId**: string | null - null = portfolio-level; string = single account.
 
-## Type-Specific Options
-- Stored as **config: JSON object** in the job entity.
-- Examples by jobType:
-  - "covered-call-scanner":
-    - minPremium: number - Minimum premium threshold.
-    - maxDelta: number - Maximum delta for options.
-    - symbols: string[] - List of stock symbols to scan.
-    - expirationRange: { minDays: number, maxDays: number } - Option expiration window.
-  - "csp-analysis" (cash-secured puts):
-    - minYield: number - Minimum annualized yield.
-    - riskTolerance: "low" | "medium" | "high" - Adjusts strike selection.
-    - watchlistId: string - Reference to watchlist for symbols.
-- Validate config JSON against jobType-specific schemas (use Zod or similar for runtime validation).
+## Recommended Job Types (enabled)
+- **unifiedOptionsScanner** - Runs Option, Covered Call, Protective Put, Straddle/Strangle scanners in one job.
+- **watchlistreport** - Market snapshot + rationale; runs daily analysis and creates alerts.
+- **portfoliosummary** - Multi-account overview; optional `includeAiInsights`.
+- **deliverAlerts** - Sends pending alerts to Slack/X.
+- **cleanup** - Purges old reports/alerts when storage nears limit.
 
-## Data Model (MongoDB Schema Suggestion)
-Use Mongoose or MongoDB schema in `/lib/mongodb.ts` or new `/models/job.ts`:
-```typescript
-interface JobConfig {
-  [key: string]: any; // Type-specific fields
-}
+## Deprecated (enabled: false)
+- daily-analysis, OptionScanner, coveredCallScanner, protectivePutScanner, straddleStrangleScanner.
+- Use unifiedOptionsScanner or watchlistreport instead.
 
-interface Job {
-  _id: ObjectId;
-  name: string;
-  messageTemplate: string;
-  jobType: string;
-  frequency: string; // Cron string
-  deliveryChannels: string[]; // Array for multiple
-  config: JobConfig; // JSON object
-  createdAt: Date;
-  updatedAt: Date;
-  userId: ObjectId; // If multi-user
-}
+## Data Model
+- **reportJobs** - Jobs with name, jobType, scheduleCron, channels, config, accountId.
+- **reportTypes** - Job type definitions (handlerKey, enabled, defaultConfig).
+- **scheduled-report** - Agenda job; data.jobId → executeJob(jobId).
+
+## Implementation
+- API: `/api/jobs` (GET/POST), `/api/jobs/[id]` (PUT/DELETE/POST for Run Now).
+- Scheduler: `upsertReportJobSchedule(jobId, cron)`, `cancelReportJobSchedule(jobId)`.
+- Create recommended jobs: POST /api/scheduler `{ action: "createRecommendedJobs" }`.
+- Run portfolio: POST /api/scheduler `{ action: "runPortfolio" }` (unifiedOptionsScanner + watchlistreport + deliverAlerts).
