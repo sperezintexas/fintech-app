@@ -14,7 +14,7 @@ type ReportTypeSeed = {
 const DEFAULT_REPORT_TYPES: ReportTypeSeed[] = [
   { id: "smartxai", handlerKey: "smartxai", name: "SmartXAI Report", description: "AI-powered position analysis and sentiment", supportsPortfolio: false, supportsAccount: true, order: 0, enabled: true },
   { id: "portfoliosummary", handlerKey: "portfoliosummary", name: "Portfolio Summary", description: "Multi-account portfolio overview", supportsPortfolio: true, supportsAccount: true, order: 1, enabled: true },
-  { id: "watchlistreport", handlerKey: "watchlistreport", name: "Watchlist Report", description: "Market snapshot + rationale per item; runs daily analysis and creates alerts", supportsPortfolio: false, supportsAccount: true, order: 2, enabled: true },
+  { id: "watchlistreport", handlerKey: "watchlistreport", name: "Watchlist Report", description: "Market snapshot + rationale per item; one post per watchlist to configured channels; runs daily analysis and creates alerts", supportsPortfolio: true, supportsAccount: true, order: 2, enabled: true },
   { id: "cleanup", handlerKey: "cleanup", name: "Data Cleanup", description: "Delete old reports and alerts (30+ days)", supportsPortfolio: true, supportsAccount: true, order: 3, enabled: true },
   { id: "unifiedOptionsScanner", handlerKey: "unifiedOptionsScanner", name: "Unified Options Scanner", description: "Runs Option, Covered Call, Protective Put, and Straddle/Strangle scanners in one job", supportsPortfolio: false, supportsAccount: true, order: 4, enabled: true },
   { id: "deliverAlerts", handlerKey: "deliverAlerts", name: "Deliver Alerts", description: "Sends pending alerts to Slack/X per AlertConfig", supportsPortfolio: true, supportsAccount: true, order: 5, enabled: true },
@@ -40,6 +40,11 @@ export async function ensureDefaultReportTypes(db: Awaited<ReturnType<typeof get
         createdAt: now,
         updatedAt: now,
       });
+    } else if (t.id === "watchlistreport" && !(exists as { supportsPortfolio?: boolean }).supportsPortfolio) {
+      await coll.updateOne(
+        { id: t.id },
+        { $set: { supportsPortfolio: true, description: t.description, updatedAt: now } }
+      );
     }
   }
 }

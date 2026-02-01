@@ -101,11 +101,7 @@ function defineJobs(agenda: Agenda) {
   // Watchlist report (ad-hoc run via runJobNow; also used by report jobs via scheduled-report)
   agenda.define("watchlistreport", async (job: AgendaJob) => {
     const data = job.attrs.data as { accountId?: string } | undefined;
-    const accountId = data?.accountId;
-    if (!accountId) {
-      console.log("Watchlist report skipped: no accountId");
-      return;
-    }
+    const accountId = data?.accountId ?? null;
     const db = await getDb();
     const tempJob = {
       _id: new ObjectId(),
@@ -133,15 +129,10 @@ function defineJobs(agenda: Agenda) {
   });
 }
 
-/** Build concise per-item watchlist block (stocks + options) for Slack. */
-async function buildWatchlistConciseBlock(
-  accountId: string
-): Promise<{ stocksBlock: string; optionsBlock: string }> {
-  const db = await getDb();
-  const rawItems = (await db
-    .collection("watchlist")
-    .find({ accountId })
-    .toArray()) as (WatchlistItem & { _id: ObjectId })[];
+/** Build concise block from watchlist items (shared core). */
+async function buildWatchlistConciseBlockFromItems(
+  rawItems: (WatchlistItem & { _id: ObjectId })[]
+): Promise<{ stocksBlock: string; optionsBlock: string; itemCount: number }> {
   const seenStocks = new Set<string>();
   const seenOptions = new Set<string>();
   const stocks = rawItems
@@ -208,7 +199,46 @@ async function buildWatchlistConciseBlock(
       ? options.map((o) => formatLine(o, o.symbol)).join("\n")
       : "No options";
 
+  return { stocksBlock, optionsBlock, itemCount: rawItems.length };
+}
+
+/** Build concise per-item watchlist block by accountId (account-level). */
+async function _buildWatchlistConciseBlock(accountId: string): Promise<{ stocksBlock: string; optionsBlock: string }> {
+  const db = await getDb();
+  const rawItems = (await db
+    .collection("watchlist")
+    .find({ accountId })
+    .toArray()) as (WatchlistItem & { _id: ObjectId })[];
+  const { stocksBlock, optionsBlock } = await buildWatchlistConciseBlockFromItems(rawItems);
   return { stocksBlock, optionsBlock };
+}
+
+/** Build concise per-item watchlist block by watchlistId (portfolio-level, one per watchlist). */
+async function buildWatchlistConciseBlockForWatchlist(
+  watchlistId: string,
+  _watchlistName: string
+): Promise<{ stocksBlock: string; optionsBlock: string; itemCount: number }> {
+  const db = await getDb();
+  const defaultWatchlist = await db.collection("watchlists").findOne({ name: "Default" });
+  const isDefault = defaultWatchlist && watchlistId === defaultWatchlist._id.toString();
+  const watchlistIdObj = ObjectId.isValid(watchlistId) ? new ObjectId(watchlistId) : null;
+  const query = isDefault
+    ? {
+        $or: [
+          { watchlistId },
+          ...(watchlistIdObj ? [{ watchlistId: watchlistIdObj }] : []),
+          { watchlistId: { $exists: false } },
+          { watchlistId: "" },
+        ],
+      }
+    : watchlistIdObj
+      ? { $or: [{ watchlistId }, { watchlistId: watchlistIdObj }] }
+      : { watchlistId };
+  const rawItems = (await db
+    .collection("watchlist")
+    .find(query)
+    .toArray()) as (WatchlistItem & { _id: ObjectId })[];
+  return buildWatchlistConciseBlockFromItems(rawItems);
 }
 
 /** Execute a job synchronously (used by Run Now and scheduled runs). Returns { success, error?, deliveredChannels?, failedChannels?, summary? }. */
@@ -236,7 +266,9 @@ export async function executeJob(jobId: string): Promise<{
     let bodyText = "";
     let reportLink: string | null = null;
     let xTitle: string | null = null;
-    let xBodyText: string | null = null;
+    const xBodyText: string | null = null;
+    /** One post per watchlist when portfolio-level watchlistreport */
+    let watchlistPosts: Array<{ title: string; bodyText: string; xBodyText?: string }> | null = null;
 
     if (handlerKey === "smartxai") {
       try {
@@ -458,42 +490,61 @@ export async function executeJob(jobId: string): Promise<{
       }
     } else if (handlerKey === "watchlistreport") {
       try {
-        const accountId = job.accountId;
-        if (!accountId) {
-          bodyText = "Watchlist report: no account configured.";
-          title = job.name;
-        } else {
-          // Run daily analysis first (creates alerts) - consolidated with watchlist report
-          const analysisResult = await runWatchlistAnalysis(accountId);
+        const d = new Date();
+        const dateStr = `${d.toISOString().slice(0, 10)} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+        const template = getReportTemplate(job.templateId ?? "concise");
+        const slackTemplate = job.customSlackTemplate ?? template.slackTemplate;
+        const xTemplate = job.customXTemplate ?? template.xTemplate;
 
-          const accountDoc = await db.collection("accounts").findOne({ _id: new ObjectId(accountId) });
-          const accountName = (accountDoc as { name?: string } | null)?.name ?? "Account";
-          const { stocksBlock, optionsBlock } = await buildWatchlistConciseBlock(accountId);
+        // Watchlist items use watchlistId (not accountId). Always use one post per watchlist.
+        const analysisResult = await runWatchlistAnalysis(undefined);
+        let watchlists = (await db.collection("watchlists").find({}).sort({ name: 1 }).toArray()) as Array<{ _id: ObjectId; name: string }>;
 
-          const d = new Date();
-          const dateStr = `${d.toISOString().slice(0, 10)} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-          const template = getReportTemplate(job.templateId ?? "concise");
-          const slackTemplate =
-            job.customSlackTemplate ?? template.slackTemplate;
-          const xTemplate =
-            job.customXTemplate ?? template.xTemplate;
-          let body = slackTemplate
-            .replace(/\{date\}/g, dateStr)
-            .replace(/\{reportName\}/g, job.name)
-            .replace(/\{account\}/g, accountName)
-            .replace(/\{stocks\}/g, stocksBlock)
-            .replace(/\{options\}/g, optionsBlock);
-          xBodyText = xTemplate
-            .replace(/\{date\}/g, dateStr)
-            .replace(/\{reportName\}/g, job.name)
-            .replace(/\{stocks\}/g, stocksBlock)
-            .replace(/\{options\}/g, optionsBlock);
-          title = job.name;
-          // Append analysis summary if alerts were created
+        // Ensure Default watchlist exists for legacy items (no watchlistId) - they only show in Default
+        const hasDefault = watchlists.some((w) => w.name === "Default");
+        const orphanedCount = await db.collection("watchlist").countDocuments({
+          $or: [{ watchlistId: { $exists: false } }, { watchlistId: "" }],
+        });
+        if (!hasDefault && orphanedCount > 0) {
+          const now = new Date().toISOString();
+          const defaultWatchlist = {
+            _id: new ObjectId(),
+            name: "Default",
+            purpose: "Legacy items (no watchlist assigned)",
+            createdAt: now,
+            updatedAt: now,
+          };
+          await db.collection("watchlists").insertOne(defaultWatchlist);
+          watchlists = [defaultWatchlist, ...watchlists].sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        const posts: Array<{ title: string; bodyText: string; xBodyText?: string }> = [];
+        for (const w of watchlists) {
+            const watchlistId = w._id.toString();
+            const { stocksBlock, optionsBlock, itemCount } = await buildWatchlistConciseBlockForWatchlist(watchlistId, w.name);
+            if (itemCount === 0) continue;
+            const body = slackTemplate
+              .replace(/\{date\}/g, dateStr)
+              .replace(/\{reportName\}/g, job.name)
+              .replace(/\{account\}/g, w.name)
+              .replace(/\{stocks\}/g, stocksBlock)
+              .replace(/\{options\}/g, optionsBlock);
+            const xBody = xTemplate
+              .replace(/\{date\}/g, dateStr)
+              .replace(/\{reportName\}/g, job.name)
+              .replace(/\{stocks\}/g, stocksBlock)
+              .replace(/\{options\}/g, optionsBlock);
+            posts.push({ title: `${job.name} – ${w.name}`, bodyText: body, xBodyText: xBody });
+        }
+        if (posts.length > 0) {
           if (analysisResult.alertsCreated > 0) {
-            body += `\n\n📋 Alerts created: ${analysisResult.alertsCreated} (analyzed ${analysisResult.analyzed} items)`;
+            const lastPost = posts[posts.length - 1];
+            lastPost.bodyText += `\n\n📋 Alerts created: ${analysisResult.alertsCreated} (analyzed ${analysisResult.analyzed} items)`;
           }
-          bodyText = body;
+          watchlistPosts = posts;
+        } else {
+          bodyText = "Watchlist report: no watchlists with items.";
+          title = job.name;
         }
       } catch (e) {
         console.error("Failed to generate Watchlist report for scheduled job:", e);
@@ -601,23 +652,29 @@ export async function executeJob(jobId: string): Promise<{
     const slackConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "slack");
     const twitterConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "twitter");
 
+    const postsToSend = watchlistPosts && watchlistPosts.length > 0
+      ? watchlistPosts
+      : [{ title, bodyText, xBodyText: xBodyText ?? undefined }];
+
     if (job.channels.includes("slack")) {
       if (!slackConfig?.target) {
         return { success: false, error: "Slack not configured. Go to Automation → Settings → Alert Settings and add a Slack webhook URL." };
       }
       try {
-        const slackText =
-          handlerKey === "watchlistreport"
-            ? bodyText
-            : `*${title}*\n${bodyText}${reportLink ? `\n\nView: ${reportLink}` : ""}`;
-        const slackRes = await fetch(slackConfig.target, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: slackText }),
-        });
-        if (!slackRes.ok) {
-          const errBody = await slackRes.text();
-          return { success: false, error: `Slack webhook failed (${slackRes.status}): ${errBody.slice(0, 200)}` };
+        for (const p of postsToSend) {
+          const slackText =
+            handlerKey === "watchlistreport"
+              ? p.bodyText
+              : `*${p.title}*\n${p.bodyText}${reportLink ? `\n\nView: ${reportLink}` : ""}`;
+          const slackRes = await fetch(slackConfig.target, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: slackText }),
+          });
+          if (!slackRes.ok) {
+            const errBody = await slackRes.text();
+            return { success: false, error: `Slack webhook failed (${slackRes.status}): ${errBody.slice(0, 200)}` };
+          }
         }
         deliveredChannels.push("Slack");
       } catch (e) {
@@ -629,10 +686,12 @@ export async function executeJob(jobId: string): Promise<{
 
     if (job.channels.includes("twitter") && twitterConfig?.target) {
       try {
-        const tweetTitle = xTitle ?? title;
-        const tweetBody = xBodyText ?? bodyText;
-        const fullText = `${tweetTitle}\n\n${tweetBody}${reportLink ? `\n\n${reportLink}` : ""}`;
-        await postToXThread(fullText);
+        for (const p of postsToSend) {
+          const tweetTitle = xTitle ?? p.title;
+          const tweetBody = p.xBodyText ?? p.bodyText;
+          const fullText = `${tweetTitle}\n\n${tweetBody}${reportLink ? `\n\n${reportLink}` : ""}`;
+          await postToXThread(fullText);
+        }
         deliveredChannels.push("X");
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
