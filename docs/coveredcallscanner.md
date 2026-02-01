@@ -127,28 +127,13 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `callBid`, 
 
 - **Report type:** `coveredCallScanner` (id, handlerKey, name, description)
 - **Alerts:** `type: "covered-call"` in alerts collection
-- **Evaluate API:** `POST /api/covered-call/evaluate` — separate, uses `covered-call-monitor.ts` for single-position evaluation (find-profits flow)
+- **Scan API:** `POST /api/covered-call/scan` — single-option scan (e.g. from xStrategyBuilder Review Order)
 
 ### UI
 
 - **Automation page:** Job config for `coveredCallScanner` (minPremium, maxDelta, symbols, etc.)
 - **Job Types page:** Covered Call Scanner as report type
-- **Find-profits:** Uses `covered-call-monitor` for ad-hoc evaluation, not the scanner
-
----
-
-## Covered Call Monitor vs Covered Call Analyzer
-
-| Aspect | `covered-call-analyzer.ts` | `covered-call-monitor.ts` |
-|--------|----------------------------|----------------------------|
-| **Scope** | All positions + watchlist | Single position |
-| **Use case** | Scheduled scan, batch analysis | Ad-hoc evaluate (find-profits) |
-| **Input** | Account ID, config | Position + market data |
-| **Recommendations** | HOLD, BUY_TO_CLOSE, SELL_NEW_CALL, ROLL, NONE | HOLD, BTC, LET_EXPIRE, ROLL_OUT, ROLL_UP, ROLL_UP_OUT |
-| **Data** | Yahoo option metrics, IV rank | Estimated or passed-in bid/ask |
-| **Output** | `CoveredCallRecommendation[]` | `CoveredCallEvaluation` |
-
-The **analyzer** is the scanner; the **monitor** is a lighter, single-position evaluator for the find-profits UI.
+- **xStrategyBuilder:** Uses Covered Call Scanner for Review Order flow
 
 ---
 
@@ -200,9 +185,8 @@ Each `CoveredCallRecommendation` includes:
 | File | Role |
 |------|------|
 | `src/lib/covered-call-analyzer.ts` | Core logic, rules, analysis |
-| `src/lib/covered-call-monitor.ts` | Single-position evaluation (find-profits) |
 | `src/lib/job-config-schemas.ts` | Config validation |
 | `src/lib/scheduler.ts` | Job definition, report-types run |
 | `src/types/portfolio.ts` | `CoveredCallRecommendation`, `CoveredCallRecommendationAction`, etc. |
 | `src/app/api/report-types/route.ts` | Report type registration |
-| `src/app/api/covered-call/evaluate/route.ts` | Evaluate API (uses monitor) |
+| `src/app/api/covered-call/scan/route.ts` | Single-option scan (xStrategyBuilder) |

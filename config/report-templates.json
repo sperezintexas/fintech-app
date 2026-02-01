@@ -4,30 +4,30 @@
       "id": "concise",
       "name": "Concise",
       "description": "Short, punchy watchlist summary",
-      "slackTemplate": "📊 {reportName} – {account} | {date} Spotting Profit Plays! 💎🤝\n{stocks}\n{options}\nWhat's your top pick today?\n#stocks #options #trading #TeslaTo1M",
-      "xTemplate": "📊 {date} Spotting Profit Plays! 💎🤝\n{stocks}\n{options}\nWhat's your top pick today? DM me @atxbogart\n#stocks #options #trading #TeslaTo1M"
+      "slackTemplate": "📊 {reportName} – {account} | {date} Spotting Profit Plays! 💎🤝\n{stocks}\nWhat's your top pick today?\n#stocks #trading #TeslaTo1M",
+      "xTemplate": "📊 {date} Spotting Profit Plays! 💎🤝\n{stocks}\nWhat's your top pick today? DM me @atxbogart\n#stocks #trading #TeslaTo1M"
 
     },
     {
       "id": "detailed",
       "name": "Detailed",
       "description": "Full context with sections and labels",
-      "slackTemplate": "📊 *{reportName} – {account}* | {date}\n_Stocks on watchlist:_\n{stocks}\n\n_Options on watchlist:_\n{options}\n\nReview positions and adjust entries. Full details in the app.",
-      "xTemplate": "📊 {date}\n_Stocks on watchlist:_\n{stocks}\n\n_Options on watchlist:_\n{options}\n\nReview positions and adjust entries. Full details in the app."
+      "slackTemplate": "📊 *{reportName} – {account}* | {date}\n_Stocks on watchlist:_\n{stocks}\n\nReview positions and adjust entries. Full details in the app.",
+      "xTemplate": "📊 {date}\n_Stocks on watchlist:_\n{stocks}\n\nReview positions and adjust entries. Full details in the app."
     },
     {
       "id": "actionable",
       "name": "Actionable",
       "description": "Action-focused with clear next steps",
-      "slackTemplate": "📋 {reportName} – {account} | {date}\nStocks: {stocks}\nOptions: {options}\n→ Check app for entry/exit signals.",
-      "xTemplate": "📋 {reportName} | {date}\nStocks: {stocks}\nOptions: {options}\n→ Check app for entry/exit signals."
+      "slackTemplate": "📋 {reportName} – {account} | {date}\nStocks: {stocks}\n→ Check app for entry/exit signals.",
+      "xTemplate": "📋 {reportName} | {date}\nStocks: {stocks}\n→ Check app for entry/exit signals."
     },
     {
       "id": "risk-aware",
       "name": "Risk-Aware",
       "description": "Emphasizes risk and due diligence",
-      "slackTemplate": "⚠️ {reportName} – {account} | {date}\nStocks: {stocks}\nOptions: {options}\nDo your own research. Options involve substantial risk.",
-      "xTemplate": "⚠️ {reportName} | {date}\nStocks: {stocks}\nOptions: {options}\nDo your own research. Options involve substantial risk."
+      "slackTemplate": "⚠️ {reportName} – {account} | {date}\nStocks: {stocks}\nDo your own research.",
+      "xTemplate": "⚠️ {reportName} | {date}\nStocks: {stocks}\nDo your own research."
     }
   ]
 }

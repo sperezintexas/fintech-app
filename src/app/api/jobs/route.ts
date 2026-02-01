@@ -10,17 +10,20 @@ export const dynamic = "force-dynamic";
 
 type JobDoc = Omit<Job, "_id"> & { _id: ObjectId };
 
-// GET /api/jobs?accountId=... (omit accountId for portfolio-level)
+// GET /api/jobs?accountId=... (omit for portfolio-level) | ?all=1 (all jobs for schedule management)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const accountIdParam = searchParams.get("accountId");
+    const allParam = searchParams.get("all");
 
     const db = await getDb();
     const query: Record<string, unknown> =
-      accountIdParam === null || accountIdParam === ""
-        ? { accountId: null }
-        : { accountId: accountIdParam };
+      allParam === "1" || allParam === "true"
+        ? {}
+        : accountIdParam === null || accountIdParam === ""
+          ? { accountId: null }
+          : { accountId: accountIdParam };
 
     const jobs = await db
       .collection<JobDoc>("reportJobs")

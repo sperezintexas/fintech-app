@@ -18,9 +18,6 @@ test.describe("Smoke tests", () => {
     await page.getByRole("link", { name: /Holdings/i }).click();
     await expect(page).toHaveURL(/\/holdings/);
 
-    await page.getByRole("link", { name: /xAIProfitBuilder/i }).click();
-    await expect(page).toHaveURL(/\/find-profits/);
-
     await page.getByRole("link", { name: /xStrategyBuilder/i }).click();
     await expect(page).toHaveURL(/\/xstrategybuilder/);
 
@@ -45,10 +42,6 @@ test.describe("Smoke tests", () => {
     await page.getByRole("link", { name: /Holdings/i }).click();
     await expect(page).toHaveURL(/\/holdings/);
     await expect(page.getByRole("heading", { name: /Holdings/i })).toBeVisible();
-
-    await page.getByRole("link", { name: /xAIProfitBuilder/i }).click();
-    await expect(page).toHaveURL(/\/find-profits/);
-    await expect(page.getByText(/Covered Calls|Cash-Secured Puts/i).first()).toBeVisible();
 
     await page.getByRole("link", { name: /xStrategyBuilder/i }).click();
     await expect(page).toHaveURL(/\/xstrategybuilder/);
@@ -117,11 +110,6 @@ test.describe("Smoke tests", () => {
   test("Holdings page loads", async ({ page }) => {
     await page.goto("/holdings");
     await expect(page.getByRole("heading", { name: /Holdings/i })).toBeVisible();
-  });
-
-  test("find-profits (xAIProfitBuilder) page loads", async ({ page }) => {
-    await page.goto("/find-profits");
-    await expect(page.getByText(/Covered Calls|Cash-Secured Puts/i).first()).toBeVisible();
   });
 
   test("xStrategyBuilder page loads and shows wizard", async ({ page }) => {

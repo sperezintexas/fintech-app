@@ -58,7 +58,7 @@ Build and maintain a personal investment tracking & automation app focused on ma
    - Include risk disclaimer referencing OCC "Characteristics and Risks of Standardized Options"
    - provide anlysis using grok xAi api's using keys from env.local
 8x Automation
- - findProfits feature from accounts or watchlist item or position, provide user ability to chose strategy
+ - xStrategyBuilder from accounts or watchlist item or position, provide user ability to choose strategy
 
 7. Scheduled Jobs (Agenda.js)
    - daily-analysis: 4:00 PM Mon–Fri → evaluate positions, generate HOLD/CLOSE/BTC

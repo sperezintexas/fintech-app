@@ -570,6 +570,32 @@ export async function getStockAndOptionPrices(
   }
 }
 
+// Wilder RSI(14) from daily closes
+function computeRsiWilder(closes: number[], period = 14): number | null {
+  if (closes.length < period + 1) return null;
+  const deltas: number[] = [];
+  for (let i = 1; i < closes.length; i++) deltas.push(closes[i] - closes[i - 1]);
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 0; i < period; i++) {
+    const d = deltas[i];
+    if (d >= 0) avgGain += d;
+    else avgLoss += -d;
+  }
+  avgGain /= period;
+  avgLoss /= period;
+  for (let i = period; i < deltas.length; i++) {
+    const d = deltas[i];
+    const gain = d > 0 ? d : 0;
+    const loss = d < 0 ? -d : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  }
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - 100 / (1 + rs);
+}
+
 // Batch price + RSI for scheduler
 export async function getBatchPriceAndRSI(
   symbols: string[]
@@ -578,13 +604,45 @@ export async function getBatchPriceAndRSI(
   if (symbols.length === 0) return map;
   try {
     const prices = await getMultipleTickerPrices(symbols);
-    for (const sym of symbols) {
-      const data = prices.get(sym.toUpperCase());
+    const upperSymbols = symbols.map((s) => s.toUpperCase());
+
+    const rsiPromises = upperSymbols.map(async (sym) => {
+      let rsi: number | null = null;
+      try {
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 60);
+        const chart = await yahooFinance.chart(sym, {
+          period1: Math.floor(startDate.getTime() / 1000),
+          period2: Math.floor(endDate.getTime() / 1000),
+          interval: "1d",
+        });
+        const quotes = (chart?.quotes ?? []) as { date?: Date | number | string; close: number | null }[];
+        const closes = quotes
+          .filter((q) => q.close != null && q.close > 0)
+          .sort((a, b) => {
+            const ta = typeof a.date === "number" ? a.date : a.date ? new Date(a.date).getTime() : 0;
+            const tb = typeof b.date === "number" ? b.date : b.date ? new Date(b.date).getTime() : 0;
+            return ta - tb;
+          })
+          .map((q) => q.close as number);
+        rsi = computeRsiWilder(closes, 14);
+      } catch {
+        // keep rsi null on chart fetch failure
+      }
+      return { sym, rsi };
+    });
+
+    const rsiResults = await Promise.all(rsiPromises);
+    const rsiMap = new Map(rsiResults.map((r) => [r.sym, r.rsi]));
+
+    for (const sym of upperSymbols) {
+      const data = prices.get(sym);
       if (data) {
-        map.set(sym.toUpperCase(), {
+        map.set(sym, {
           price: data.price,
           changePercent: data.changePercent,
-          rsi: null,
+          rsi: rsiMap.get(sym) ?? null,
         });
       }
     }

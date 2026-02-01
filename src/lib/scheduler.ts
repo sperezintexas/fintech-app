@@ -185,7 +185,7 @@ async function buildWatchlistConciseBlockFromItems(
     if (!data) return `• $${displaySymbol}`;
     const emoji = data.changePercent >= 0 ? "🟢" : "🔴";
     const sign = data.changePercent >= 0 ? "+" : "";
-    const rsiStr = data.rsi != null ? ` RSI:${data.rsi} ${rsiSentiment(data.rsi)}` : "";
+    const rsiStr = data.rsi != null ? ` RSI:${Math.round(data.rsi)} ${rsiSentiment(data.rsi)}` : "";
     const rat = rationale(item, data.rsi);
     return `${emoji} $${displaySymbol}: $${data.price.toFixed(2)} (${sign}${data.changePercent.toFixed(1)}%)${rsiStr} ${rat}`;
   };
@@ -521,19 +521,21 @@ export async function executeJob(jobId: string): Promise<{
         const posts: Array<{ title: string; bodyText: string; xBodyText?: string }> = [];
         for (const w of watchlists) {
             const watchlistId = w._id.toString();
-            const { stocksBlock, optionsBlock, itemCount } = await buildWatchlistConciseBlockForWatchlist(watchlistId, w.name);
+            const { stocksBlock, optionsBlock: _optionsBlock, itemCount } = await buildWatchlistConciseBlockForWatchlist(watchlistId, w.name);
             if (itemCount === 0) continue;
+            // Watchlist: stocks only (no options), RSI sentiment in both Slack and X
+            const noOptions = "";
             const body = slackTemplate
               .replace(/\{date\}/g, dateStr)
               .replace(/\{reportName\}/g, job.name)
               .replace(/\{account\}/g, w.name)
               .replace(/\{stocks\}/g, stocksBlock)
-              .replace(/\{options\}/g, optionsBlock);
+              .replace(/\{options\}/g, noOptions);
             const xBody = xTemplate
               .replace(/\{date\}/g, dateStr)
               .replace(/\{reportName\}/g, job.name)
               .replace(/\{stocks\}/g, stocksBlock)
-              .replace(/\{options\}/g, optionsBlock);
+              .replace(/\{options\}/g, noOptions);
             posts.push({ title: `${job.name} – ${w.name}`, bodyText: body, xBodyText: xBody });
         }
         if (posts.length > 0) {

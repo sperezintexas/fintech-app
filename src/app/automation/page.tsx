@@ -41,6 +41,14 @@ type JobTypeItem = {
   defaultDeliveryChannels?: AlertDeliveryChannel[];
 };
 
+const DEFAULT_SCHEDULE_JOB_NAMES = [
+  "Weekly Portfolio",
+  "Daily Options Scanner",
+  "Watchlist Snapshot",
+  "Deliver Alerts",
+  "Data Cleanup",
+] as const;
+
 function AutomationContent() {
   const searchParams = useSearchParams();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -67,12 +75,13 @@ function AutomationContent() {
   });
   // Jobs state
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [allJobs, setAllJobs] = useState<Job[]>([]);
   const [jobTypes, setJobTypes] = useState<Array<{ _id: string; id: string; name: string; description: string; handlerKey: string; supportsPortfolio: boolean; supportsAccount: boolean; order: number; enabled: boolean; defaultConfig?: Record<string, unknown>; defaultDeliveryChannels?: AlertDeliveryChannel[] }>>([]);
   const [showJobForm, setShowJobForm] = useState(false);
   const [jobFormError, setJobFormError] = useState<string>("");
   const [jobFormSaving, setJobFormSaving] = useState(false);
 
-  // Strategy settings (min OI filters for xAIProfitBuilder option chains)
+  // Strategy settings (min OI filters for xStrategyBuilder option chains)
   const [strategySettingsLoading, setStrategySettingsLoading] = useState(false);
   const [strategySettingsSaving, setStrategySettingsSaving] = useState(false);
   const [strategySettingsMessage, setStrategySettingsMessage] = useState<string>("");
@@ -108,7 +117,7 @@ function AutomationContent() {
     status: "active",
   });
   const [jobScheduleTime, setJobScheduleTime] = useState("16:00");
-  const [jobScheduleFreq, setJobScheduleFreq] = useState<"daily" | "weekdays">("weekdays");
+  const [jobScheduleFreq, setJobScheduleFreq] = useState<"daily" | "weekdays" | "sunday">("weekdays");
 
   // Scheduler state
   type ScheduledJob = {
@@ -367,6 +376,18 @@ function AutomationContent() {
     }
   }, [selectedAccountId]);
 
+  const fetchAllJobs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/jobs?all=1", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setAllJobs(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch all jobs:", err);
+    }
+  }, []);
+
   const fetchJobTypes = useCallback(async () => {
     try {
       const res = await fetch("/api/report-types?all=true", { cache: "no-store" });
@@ -463,16 +484,30 @@ function AutomationContent() {
     if (activeTab === "jobs") {
       fetchJobTypes();
       fetchJobs();
+      fetchAllJobs();
     }
-  }, [activeTab, fetchJobTypes, fetchJobs]);
+  }, [activeTab, fetchJobTypes, fetchJobs, fetchAllJobs]);
 
-  const scheduleToCron = (time: string, freq: "daily" | "weekdays"): string => {
+  const scheduleToCron = (time: string, freq: "daily" | "weekdays" | "sunday"): string => {
     const [h, m] = time.split(":").map((x) => parseInt(x, 10) || 0);
     const hour = Math.min(23, Math.max(0, h));
     const minute = Math.min(59, Math.max(0, m));
+    if (freq === "sunday") return `${minute} ${hour} * * 0`;
     if (freq === "weekdays") return `${minute} ${hour} * * 1-5`;
     return `${minute} ${hour} * * *`;
   };
+
+  const SCHEDULE_PRESETS: Array<{ label: string; cron: string }> = [
+    { label: "Weekly Portfolio (Sun 6 PM)", cron: "0 18 * * 0" },
+    { label: "Daily Options Scanner (Mon–Fri 4 PM)", cron: "0 16 * * 1-5" },
+    { label: "Watchlist Snapshot (Mon–Fri 9 AM & 4 PM)", cron: "0 9,16 * * 1-5" },
+    { label: "Deliver Alerts (Mon–Fri 4:30 PM)", cron: "30 16 * * 1-5" },
+    { label: "Data Cleanup (Daily 3 AM)", cron: "0 3 * * *" },
+    { label: "Weekdays 4:00 PM", cron: "0 16 * * 1-5" },
+    { label: "Weekdays 9:00 AM", cron: "0 9 * * 1-5" },
+    { label: "Daily 4:00 PM", cron: "0 16 * * *" },
+    { label: "Daily 9:00 AM", cron: "0 9 * * *" },
+  ];
 
   const _openNewJob = () => {
     const isPortfolio = selectedAccountId === "__portfolio__";
@@ -505,11 +540,11 @@ function AutomationContent() {
     setJobFormError("");
     const cronParts = (j.scheduleCron ?? "0 16 * * 1-5").trim().split(/\s+/);
     if (cronParts.length >= 5) {
-      const minute = cronParts[0] ?? "0";
-      const hour = cronParts[1] ?? "16";
+      const minute = (cronParts[0] ?? "0").split(",")[0] ?? "0";
+      const hourRaw = (cronParts[1] ?? "16").split(",")[0] ?? "16";
       const dow = cronParts[4] ?? "*";
-      setJobScheduleTime(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
-      setJobScheduleFreq(dow === "*" ? "daily" : "weekdays");
+      setJobScheduleTime(`${String(hourRaw).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+      setJobScheduleFreq(dow === "0" ? "sunday" : dow === "*" ? "daily" : "weekdays");
     }
     setJobForm({
       name: j.name,
@@ -567,6 +602,7 @@ function AutomationContent() {
       }
       setShowJobForm(false);
       await fetchJobs();
+      await fetchAllJobs();
     } catch (err) {
       console.error(err);
       setJobFormError("Failed to save job");
@@ -579,7 +615,10 @@ function AutomationContent() {
     if (!confirm("Delete this scheduled job?")) return;
     try {
       const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
-      if (res.ok) await fetchJobs();
+    if (res.ok) {
+      await fetchJobs();
+      await fetchAllJobs();
+    }
     } catch (err) {
       console.error("Failed to delete job:", err);
     }
@@ -825,6 +864,7 @@ function AutomationContent() {
       if (res.ok) {
         setSchedulerMessage(data.message || "Action completed");
         await fetchSchedulerStatus();
+        await fetchAllJobs();
         setTimeout(() => setSchedulerMessage(""), 3000);
       } else {
         setSchedulerMessage(`Error: ${data.error}`);
@@ -1518,7 +1558,7 @@ function AutomationContent() {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Strategy Settings</h3>
               <p className="text-sm text-gray-600 mb-6">
-                Defaults used by xAIProfitBuilder when filtering option chains.
+                Defaults used by xStrategyBuilder when filtering option chains.
               </p>
 
               {strategySettingsLoading ? (
@@ -1532,7 +1572,7 @@ function AutomationContent() {
                     <div className="p-4 rounded-xl border border-gray-200">
                       <p className="font-medium text-gray-900 mb-1">Covered Calls</p>
                       <p className="text-xs text-gray-500 mb-3">
-                        Option chain filters for xAIProfitBuilder (calls).
+                        Option chain filters for xStrategyBuilder (calls).
                       </p>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Min Open Interest</label>
                       <input
@@ -1582,7 +1622,7 @@ function AutomationContent() {
                     <div className="p-4 rounded-xl border border-gray-200">
                       <p className="font-medium text-gray-900 mb-1">Cash-Secured Puts</p>
                       <p className="text-xs text-gray-500 mb-3">
-                        Option chain filters for xAIProfitBuilder (puts).
+                        Option chain filters for xStrategyBuilder (puts).
                       </p>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Min Open Interest</label>
                       <input
@@ -1793,15 +1833,54 @@ function AutomationContent() {
                   </table>
                 </div>
               )}
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <h4 className="font-medium text-blue-900 mb-2">Default Schedules</h4>
-                <ul className="text-sm text-blue-800 space-y-1">
-                  <li><strong>Weekly Portfolio:</strong> Sun 6 PM</li>
-                  <li><strong>Daily Options Scanner:</strong> Mon–Fri 4 PM</li>
-                  <li><strong>Watchlist Snapshot:</strong> Mon–Fri 9 AM &amp; 4 PM</li>
-                  <li><strong>Deliver Alerts:</strong> Mon–Fri 4:30 PM</li>
-                  <li><strong>Data Cleanup:</strong> Daily 3 AM</li>
-                </ul>
+              <div className="mt-4">
+                <h4 className="font-medium text-blue-900 mb-2">Schedule Management</h4>
+                <p className="text-sm text-blue-800 mb-3">
+                  Edit schedules for the default jobs. Click &quot;Create Recommended Jobs&quot; if they don&apos;t exist yet.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-blue-200">
+                        <th className="py-2 px-3 text-left font-medium text-blue-900">Job</th>
+                        <th className="py-2 px-3 text-left font-medium text-blue-900">Schedule</th>
+                        <th className="py-2 px-3 text-left font-medium text-blue-900">Next Run</th>
+                        <th className="py-2 px-3 text-right font-medium text-blue-900">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {DEFAULT_SCHEDULE_JOB_NAMES.map((name) => {
+                        const job = allJobs.find((j) => j.name === name);
+                        const scheduleFriendly = job?.scheduleCron ? cronToHuman(job.scheduleCron) : "—";
+                        const nextRunFriendly = job?.nextRunAt
+                          ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(job.nextRunAt))
+                          : "—";
+                        return (
+                          <tr key={name} className="border-b border-blue-100 hover:bg-blue-50/50">
+                            <td className="py-2 px-3 font-medium text-blue-900">{name}</td>
+                            <td className="py-2 px-3 text-blue-800">{scheduleFriendly}</td>
+                            <td className="py-2 px-3 text-blue-700">{nextRunFriendly}</td>
+                            <td className="py-2 px-3 text-right">
+                              {job ? (
+                                <button
+                                  onClick={() => openEditJob(job)}
+                                  className="text-blue-600 hover:text-blue-800 font-medium"
+                                >
+                                  Edit Schedule
+                                </button>
+                              ) : (
+                                <span className="text-blue-600/60 text-xs">Not created</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-blue-700 mt-2">
+                  Defaults: Weekly Portfolio Sun 6 PM · Options Scanner Mon–Fri 4 PM · Watchlist Mon–Fri 9 AM &amp; 4 PM · Alerts Mon–Fri 4:30 PM · Cleanup Daily 3 AM
+                </p>
               </div>
             </div>
 
@@ -1881,7 +1960,7 @@ function AutomationContent() {
                     <select
                       value={jobScheduleFreq}
                       onChange={(e) => {
-                        const v = e.target.value as "daily" | "weekdays";
+                        const v = e.target.value as "daily" | "weekdays" | "sunday";
                         setJobScheduleFreq(v);
                         setJobForm({ ...jobForm, scheduleCron: scheduleToCron(jobScheduleTime, v) });
                       }}
@@ -1889,6 +1968,7 @@ function AutomationContent() {
                     >
                       <option value="weekdays">Weekdays (Mon–Fri)</option>
                       <option value="daily">Daily</option>
+                      <option value="sunday">Sunday only</option>
                     </select>
                   </div>
                 </div>
@@ -1986,6 +2066,7 @@ function AutomationContent() {
                         }
                         setJobForm({ ...jobForm, name: "" });
                         await fetchJobs();
+                        await fetchAllJobs();
                       } catch {
                         setJobFormError("Failed to create job");
                       } finally {
@@ -2184,27 +2265,26 @@ function AutomationContent() {
                         <select
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white"
                           onChange={(e) => {
-                            const v = e.target.value;
-                            if (!v) return;
-                            const presets: Record<string, { cron: string; time: string; freq: "daily" | "weekdays" }> = {
-                              "0 16 * * 1-5": { cron: "0 16 * * 1-5", time: "16:00", freq: "weekdays" },
-                              "0 9 * * 1-5": { cron: "0 9 * * 1-5", time: "09:00", freq: "weekdays" },
-                              "0 16 * * *": { cron: "0 16 * * *", time: "16:00", freq: "daily" },
-                              "0 9 * * *": { cron: "0 9 * * *", time: "09:00", freq: "daily" },
-                            };
-                            const p = presets[v];
-                            if (p) {
-                              setJobScheduleTime(p.time);
-                              setJobScheduleFreq(p.freq);
-                              setJobForm({ ...jobForm, scheduleCron: p.cron });
+                            const cron = e.target.value;
+                            if (!cron) return;
+                            const preset = SCHEDULE_PRESETS.find((p) => p.cron === cron);
+                            if (preset) {
+                              const parts = cron.trim().split(/\s+/);
+                              if (parts.length >= 5) {
+                                const min = (parts[0] ?? "0").split(",")[0] ?? "0";
+                                const hr = (parts[1] ?? "16").split(",")[0] ?? "16";
+                                const dow = parts[4] ?? "*";
+                                setJobScheduleTime(`${String(hr).padStart(2, "0")}:${String(min).padStart(2, "0")}`);
+                                setJobScheduleFreq(dow === "0" ? "sunday" : dow === "*" ? "daily" : "weekdays");
+                              }
+                              setJobForm({ ...jobForm, scheduleCron: cron });
                             }
                           }}
                         >
                           <option value="">Choose preset…</option>
-                          <option value="0 16 * * 1-5">Weekdays 4:00 PM</option>
-                          <option value="0 9 * * 1-5">Weekdays 9:00 AM</option>
-                          <option value="0 16 * * *">Daily 4:00 PM</option>
-                          <option value="0 9 * * *">Daily 9:00 AM</option>
+                          {SCHEDULE_PRESETS.map((p) => (
+                            <option key={p.cron} value={p.cron}>{p.label}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="grid grid-cols-2 gap-3 mb-3">
@@ -2213,7 +2293,7 @@ function AutomationContent() {
                           <select
                             value={jobScheduleFreq}
                             onChange={(e) => {
-                              const v = e.target.value as "daily" | "weekdays";
+                              const v = e.target.value as "daily" | "weekdays" | "sunday";
                               setJobScheduleFreq(v);
                               setJobForm({ ...jobForm, scheduleCron: scheduleToCron(jobScheduleTime, v) });
                             }}
@@ -2221,6 +2301,7 @@ function AutomationContent() {
                           >
                             <option value="daily">Daily</option>
                             <option value="weekdays">Weekdays (Mon–Fri)</option>
+                            <option value="sunday">Sunday only</option>
                           </select>
                         </div>
                         <div>

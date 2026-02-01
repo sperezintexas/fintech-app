@@ -14,7 +14,6 @@ const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", isActive: (p) => p === "/" },
   { href: "/watchlist", label: "Watchlist", isActive: (p) => (p ?? "").startsWith("/watchlist") },
   { href: "/holdings", label: "Holdings", isActive: (p) => (p ?? "").startsWith("/holdings") || (p ?? "").startsWith("/positions") },
-  { href: "/find-profits", label: "xAIProfitBuilder", isActive: (p) => (p ?? "").startsWith("/find-profits") },
   { href: "/xstrategybuilder", label: "xStrategyBuilder", isActive: (p) => (p ?? "").startsWith("/xstrategybuilder") },
   { href: "/automation", label: "Automation", isActive: (p) => (p ?? "").startsWith("/automation") },
 ];

@@ -12,7 +12,7 @@ Manages investment portfolios, accounts, and positions (stocks, options, cash). 
 - **Dashboard** — Market snapshot, portfolio summary
 - **Accounts** — Manage accounts with risk level, strategy, positions
 - **Holdings / Positions** — Stocks, options, cash; real-time values via Yahoo
-- **xAIProfitBuilder** — Covered calls, CSPs, strategy analysis
+- **xStrategyBuilder** — Options strategy wizard (Covered Call, CSP, etc.)
 - **Setup (Automation)** — Watchlist, alerts, scheduled jobs, report definitions, push notifications
 - **Reports** — Portfolio summary, SmartX AI
 - **Health** — Service status check
@@ -25,7 +25,7 @@ src/
 │   ├── accounts/             # Account management
 │   ├── holdings/             # Holdings view
 │   ├── positions/            # Position management
-│   ├── find-profits/         # xAIProfitBuilder
+│   ├── xstrategybuilder/     # xStrategyBuilder options wizard
 │   ├── automation/           # Setup: watchlist, alerts, reports
 │   ├── reports/[id]/         # Report viewer
 │   ├── health/               # Health check

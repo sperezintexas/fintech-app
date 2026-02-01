@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ObjectId } from "mongodb";
 import { executeJob } from "../scheduler";
 import { getDb } from "../mongodb";
+import { getBatchPriceAndRSI } from "../yahoo";
+import { postToXThread } from "../x";
 
 vi.mock("../mongodb", () => ({
   getDb: vi.fn(),
@@ -242,6 +244,110 @@ describe("Watchlist Report", () => {
     const slackBody = JSON.parse(fetchMock.mock.calls[0][1]?.body ?? "{}");
     expect(slackBody.text).toContain("TSLA");
     expect(slackBody.text).not.toContain("No stocks on watchlist");
+  });
+
+  it("rounds RSI to whole number in both Slack and X channels", async () => {
+    const watchlistId = new ObjectId();
+    const jobId = new ObjectId();
+    const fractionalRsi = 53.07421219928421;
+
+    vi.mocked(getBatchPriceAndRSI).mockResolvedValueOnce(
+      new Map([["TSLA", { price: 250, changePercent: 2.5, rsi: fractionalRsi }]])
+    );
+
+    const mockWatchlists = [{ _id: watchlistId, name: "Default" }];
+    const mockItems = [
+      {
+        _id: new ObjectId(),
+        watchlistId: watchlistId.toString(),
+        accountId: new ObjectId().toString(),
+        symbol: "TSLA",
+        underlyingSymbol: "TSLA",
+        type: "stock",
+        strategy: "buy-and-hold",
+      },
+    ];
+
+    const mockJob = {
+      _id: jobId,
+      accountId: null,
+      name: "Daily Watchlist",
+      jobType: "watchlistreport",
+      templateId: "concise",
+      channels: ["slack", "twitter"],
+      status: "active",
+    };
+
+    const mockPrefs = {
+      channels: [
+        { channel: "slack", target: "https://hooks.slack.com/test" },
+        { channel: "twitter", target: "x-api-token" },
+      ],
+    };
+
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mockDb = {
+      collection: vi.fn().mockImplementation((name: string) => {
+        if (name === "reportJobs") {
+          return { findOne: vi.fn().mockResolvedValue(mockJob), updateOne: vi.fn().mockResolvedValue({ modifiedCount: 1 }) };
+        }
+        if (name === "reportTypes") {
+          return { findOne: vi.fn().mockResolvedValue({ handlerKey: "watchlistreport" }) };
+        }
+        if (name === "watchlists") {
+          return {
+            find: vi.fn().mockReturnValue({
+              sort: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue(mockWatchlists) }),
+            }),
+            findOne: vi.fn().mockResolvedValue(mockWatchlists[0]),
+          };
+        }
+        if (name === "watchlist") {
+          return {
+            find: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue(mockItems) }),
+            updateOne: vi.fn().mockResolvedValue({ modifiedCount: 1 }),
+            countDocuments: vi.fn().mockResolvedValue(0),
+          };
+        }
+        if (name === "accounts") {
+          return {
+            find: vi.fn().mockReturnValue({
+              toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(), riskLevel: "medium" }]),
+            }),
+          };
+        }
+        if (name === "alertPreferences") {
+          return { findOne: vi.fn().mockResolvedValue(mockPrefs) };
+        }
+        if (name === "alerts") {
+          return {
+            insertOne: vi.fn().mockResolvedValue({ insertedId: new ObjectId() }),
+            findOne: vi.fn().mockResolvedValue(null),
+          };
+        }
+        return {};
+      }),
+    };
+
+    vi.mocked(getDb).mockResolvedValue(mockDb as unknown as Awaited<ReturnType<typeof getDb>>);
+
+    const result = await executeJob(jobId.toString());
+
+    expect(result.success).toBe(true);
+    expect(result.deliveredChannels).toContain("Slack");
+    expect(result.deliveredChannels).toContain("X");
+
+    const slackBody = JSON.parse(fetchMock.mock.calls[0][1]?.body ?? "{}");
+    expect(slackBody.text).toContain("RSI:53");
+    expect(slackBody.text).toContain("Bullish📈");
+    expect(slackBody.text).not.toContain("53.07421219928421");
+
+    const xCall = vi.mocked(postToXThread).mock.calls[0]?.[0] ?? "";
+    expect(xCall).toContain("RSI:53");
+    expect(xCall).toContain("Bullish📈");
+    expect(xCall).not.toContain("53.07421219928421");
   });
 
   it("includes orphaned items (no watchlistId) in Default when Default is auto-created", async () => {

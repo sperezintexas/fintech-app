@@ -93,9 +93,11 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const details = error instanceof Error ? error.stack : undefined;
     console.error("Failed to test alert delivery channel:", error);
     return NextResponse.json(
-      { error: "Failed to test alert delivery channel" },
+      { error: "Failed to test alert delivery channel", details: msg, ...(process.env.NODE_ENV === "development" && { stack: details }) },
       { status: 500 }
     );
   }

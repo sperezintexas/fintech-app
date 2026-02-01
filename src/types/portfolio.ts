@@ -429,7 +429,7 @@ export type ReportTemplate = {
   name: string;
   description: string;
   slackTemplate: string;
-  /** X/Twitter template (no {account}). Placeholders: {date}, {reportName}, {stocks}, {options} */
+  /** X/Twitter template (no {account}). Placeholders: {date}, {reportName}, {stocks}. Watchlist X posts exclude options. */
   xTemplate: string;
 };
 
