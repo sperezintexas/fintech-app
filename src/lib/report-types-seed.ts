@@ -18,12 +18,9 @@ const DEFAULT_REPORT_TYPES: ReportTypeSeed[] = [
   { id: "cleanup", handlerKey: "cleanup", name: "Data Cleanup", description: "Delete old reports and alerts (30+ days)", supportsPortfolio: true, supportsAccount: true, order: 3, enabled: true },
   { id: "unifiedOptionsScanner", handlerKey: "unifiedOptionsScanner", name: "Unified Options Scanner", description: "Runs Option, Covered Call, Protective Put, and Straddle/Strangle scanners in one job", supportsPortfolio: false, supportsAccount: true, order: 4, enabled: true },
   { id: "deliverAlerts", handlerKey: "deliverAlerts", name: "Deliver Alerts", description: "Sends pending alerts to Slack/X per AlertConfig", supportsPortfolio: true, supportsAccount: true, order: 5, enabled: true },
-  // Deprecated – use unifiedOptionsScanner or watchlistreport instead
-  { id: "daily-analysis", handlerKey: "daily-analysis", name: "Daily Analysis (deprecated)", description: "Use Watchlist Report instead", supportsPortfolio: true, supportsAccount: true, order: 6, enabled: false },
 ];
 
-const DEPRECATED_IDS = ["daily-analysis"];
-const REMOVED_IDS = ["straddleStrangleScanner", "OptionScanner", "coveredCallScanner", "protectivePutScanner"];
+const REMOVED_IDS = ["daily-analysis", "straddleStrangleScanner", "OptionScanner", "coveredCallScanner", "protectivePutScanner"];
 
 export async function ensureDefaultReportTypes(db: Awaited<ReturnType<typeof getDb>>): Promise<void> {
   const coll = db.collection("reportTypes");
@@ -43,8 +40,6 @@ export async function ensureDefaultReportTypes(db: Awaited<ReturnType<typeof get
         createdAt: now,
         updatedAt: now,
       });
-    } else if (DEPRECATED_IDS.includes(t.id)) {
-      await coll.updateOne({ id: t.id }, { $set: { enabled: t.enabled, name: t.name, description: t.description, updatedAt: now } });
     }
   }
 }

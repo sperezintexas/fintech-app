@@ -6,7 +6,7 @@
 
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { getOptionMetrics, getIVRankOrPercentile, getOptionMarketConditions } from "@/lib/yahoo";
+import { getOptionMetrics, getIVRankOrPercentile } from "@/lib/yahoo";
 import type { Position, RiskLevel } from "@/types/portfolio";
 
 type AccountDoc = { _id: ObjectId; positions?: Position[]; riskLevel?: RiskLevel };

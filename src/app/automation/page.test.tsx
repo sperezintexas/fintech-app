@@ -73,6 +73,6 @@ describe("Automation Page", () => {
     await waitFor(() => {
       expect(screen.getByText("Manage Jobs")).toBeInTheDocument();
     });
-    expect(screen.getByText("Manage job types")).toBeInTheDocument();
+    expect(screen.getByText("Job Types")).toBeInTheDocument();
   });
 });

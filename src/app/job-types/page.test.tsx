@@ -1,44 +1,24 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import JobTypesPage from "./page";
 
-vi.mock("@/components/AppHeader", () => ({
-  AppHeader: () => <header data-testid="app-header">AppHeader</header>,
+const mockReplace = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mockReplace }),
 }));
 
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
-
 describe("Job Types Page", () => {
-  const mockJobTypes = [
-    { _id: "1", id: "smartxai", handlerKey: "smartxai", name: "SmartXAI Report", description: "AI analysis", supportsPortfolio: false, supportsAccount: true, order: 0, enabled: true },
-    { _id: "2", id: "unifiedOptionsScanner", handlerKey: "unifiedOptionsScanner", name: "Unified Options Scanner", description: "Runs all option scanners in one job", supportsPortfolio: false, supportsAccount: true, order: 4, enabled: true },
-  ];
-
-  beforeEach(() => {
-    mockFetch.mockReset();
-    mockFetch.mockImplementation((url: string) => {
-      if (url.includes("/api/report-types")) return Promise.resolve({ ok: true, json: async () => mockJobTypes } as Response);
-      return Promise.resolve({ ok: false } as Response);
-    });
-  });
-
-  it("renders page title and job types list", async () => {
+  it("redirects to automation jobs tab", async () => {
     render(<JobTypesPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Job Types")).toBeInTheDocument();
+      expect(mockReplace).toHaveBeenCalledWith("/automation?tab=jobs");
     });
-    expect(screen.getByText(/Manage report\/job types used by scheduled jobs/)).toBeInTheDocument();
-    expect(screen.getByText("SmartXAI Report")).toBeInTheDocument();
-    expect(screen.getByText("Unified Options Scanner")).toBeInTheDocument();
   });
 
-  it("shows New button", async () => {
-    render(<JobTypesPage />);
+  it("shows loading spinner while redirecting", () => {
+    const { container } = render(<JobTypesPage />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /New/i })).toBeInTheDocument();
-    });
+    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
   });
 });

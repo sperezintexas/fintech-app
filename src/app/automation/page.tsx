@@ -23,8 +23,25 @@ import {
   registerPushSubscription,
   showDirectNotification,
 } from "@/lib/push-client";
+import { JobTypeList } from "@/components/JobTypeList";
+import { JobTypeForm } from "@/components/JobTypeForm";
+import type { JobTypeFormData } from "@/components/JobTypeForm";
 
 type TestChannel = "slack" | "twitter" | "push";
+
+type JobTypeItem = {
+  _id: string;
+  id: string;
+  name: string;
+  description: string;
+  handlerKey: string;
+  supportsPortfolio: boolean;
+  supportsAccount: boolean;
+  order: number;
+  enabled: boolean;
+  defaultConfig?: Record<string, unknown>;
+  defaultDeliveryChannels?: AlertDeliveryChannel[];
+};
 
 function AutomationContent() {
   const searchParams = useSearchParams();
@@ -32,10 +49,16 @@ function AutomationContent() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [alerts, setAlerts] = useState<WatchlistAlert[]>([]);
   const [scheduledAlerts, setScheduledAlerts] = useState<ScheduledAlert[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // Alert preferences state
+  const tabParam = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<"alerts" | "settings" | "strategy" | "jobs">("alerts");
+
+  useEffect(() => {
+    if (tabParam === "jobs" || tabParam === "settings" || tabParam === "strategy") {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
   const [prefsLoading, setPrefsLoading] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsMessage, setPrefsMessage] = useState("");
@@ -106,6 +129,20 @@ function AutomationContent() {
   } | null>(null);
   const [schedulerLoading, setSchedulerLoading] = useState(false);
   const [schedulerMessage, setSchedulerMessage] = useState("");
+  const [lastRunResult, setLastRunResult] = useState<{
+    jobName: string;
+    message: string;
+    summary?: string;
+    isError: boolean;
+  } | null>(null);
+
+  // Job Types management (embedded from /job-types)
+  const [showJobTypeForm, setShowJobTypeForm] = useState(false);
+  const [editingJobType, setEditingJobType] = useState<JobTypeItem | undefined>();
+  const [jobTypeSaving, setJobTypeSaving] = useState(false);
+  const [jobTypeDeleting, setJobTypeDeleting] = useState<string | undefined>();
+  const [jobTypeToggling, setJobTypeToggling] = useState<string | undefined>();
+  const [jobTypeError, setJobTypeError] = useState<string | null>(null);
 
   // Message template JSON editor
   const [templateEditorTab, setTemplateEditorTab] = useState<"alert" | "report">("alert");
@@ -123,7 +160,7 @@ function AutomationContent() {
   const [appConfigError, setAppConfigError] = useState<string | null>(null);
 
   // Alert preview state
-  const [pushEnabled, setPushEnabled] = useState(false);
+  const [_pushEnabled, setPushEnabled] = useState(false);
   const [pushPermission, setPushPermission] = useState<NotificationPermission | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
 
@@ -492,7 +529,7 @@ function AutomationContent() {
     return `${minute} ${hour} * * *`;
   };
 
-  const openNewJob = () => {
+  const _openNewJob = () => {
     const isPortfolio = selectedAccountId === "__portfolio__";
     const defaultType = jobTypes.find((t) => (isPortfolio ? t.supportsPortfolio : t.supportsAccount))?.id ?? "smartxai";
     const jobTypeId = isPortfolio ? (jobTypes.find((t) => t.supportsPortfolio)?.id ?? "portfoliosummary") : defaultType;
@@ -603,27 +640,134 @@ function AutomationContent() {
     }
   };
 
-  const runJobNow = async (jobId: string) => {
+  const handleJobTypeSubmit = async (data: JobTypeFormData) => {
+    setJobTypeSaving(true);
+    setJobTypeError(null);
+    try {
+      const url = editingJobType
+        ? `/api/report-types/${editingJobType._id}`
+        : "/api/report-types";
+      const method = editingJobType ? "PUT" : "POST";
+      const body = editingJobType
+        ? {
+            id: data.id,
+            handlerKey: data.handlerKey,
+            name: data.name,
+            description: data.description,
+            supportsPortfolio: data.supportsPortfolio,
+            supportsAccount: data.supportsAccount,
+            order: data.order,
+            enabled: data.enabled,
+            defaultConfig: data.defaultConfig,
+            defaultDeliveryChannels: data.defaultDeliveryChannels,
+            defaultTemplateId: data.defaultTemplateId ?? "concise",
+          }
+        : {
+            id: data.id,
+            handlerKey: data.handlerKey,
+            name: data.name,
+            description: data.description,
+            supportsPortfolio: data.supportsPortfolio,
+            supportsAccount: data.supportsAccount,
+            order: data.order,
+            defaultConfig: data.defaultConfig,
+            defaultDeliveryChannels: data.defaultDeliveryChannels,
+            defaultTemplateId: data.defaultTemplateId ?? "concise",
+          };
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to save job type");
+      await fetchJobTypes();
+      setShowJobTypeForm(false);
+      setEditingJobType(undefined);
+    } catch (err) {
+      setJobTypeError(err instanceof Error ? err.message : "Failed to save job type");
+    } finally {
+      setJobTypeSaving(false);
+    }
+  };
+
+  const handleJobTypeDelete = async (id: string) => {
+    if (!confirm("Delete this job type? Jobs using it must be updated first.")) return;
+    setJobTypeDeleting(id);
+    setJobTypeError(null);
+    try {
+      const res = await fetch(`/api/report-types/${id}`, { method: "DELETE" });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to delete");
+      await fetchJobTypes();
+    } catch (err) {
+      setJobTypeError(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
+      setJobTypeDeleting(undefined);
+    }
+  };
+
+  const handleJobTypeToggle = async (jt: JobTypeItem) => {
+    setJobTypeToggling(jt._id);
+    setJobTypeError(null);
+    try {
+      const res = await fetch(`/api/report-types/${jt._id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !jt.enabled }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to update");
+      await fetchJobTypes();
+    } catch (err) {
+      setJobTypeError(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setJobTypeToggling(undefined);
+    }
+  };
+
+  const runJobNow = async (jobId: string, jobName?: string) => {
+    setLastRunResult(null);
     setSchedulerMessage("");
+    const name = jobName ?? jobs.find((j) => j._id === jobId)?.name ?? "Job";
     try {
       const res = await fetch(`/api/jobs/${jobId}`, {
         method: "POST",
       });
-      const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
+      const data = (await res.json()) as {
+        success?: boolean;
+        message?: string;
+        error?: string;
+        summary?: string;
+      };
       if (res.ok && data.success) {
-        setSchedulerMessage(data.message ?? "Job completed.");
-        setTimeout(() => setSchedulerMessage(""), 5000);
+        const msg = data.message ?? "Job completed.";
+        setSchedulerMessage(msg);
+        setLastRunResult({
+          jobName: name,
+          message: msg,
+          summary: data.summary,
+          isError: false,
+        });
+        setTimeout(() => {
+          setSchedulerMessage("");
+          setLastRunResult(null);
+        }, 15000);
       } else {
-        setSchedulerMessage(`Error: ${data.error ?? "Failed to run job"}`);
+        const errMsg = `Error: ${data.error ?? "Failed to run job"}`;
+        setSchedulerMessage(errMsg);
+        setLastRunResult({ jobName: name, message: errMsg, isError: true });
       }
       await fetchJobs();
     } catch (err) {
       console.error("Failed to run job now:", err);
-      setSchedulerMessage("Error: Failed to run job");
+      const errMsg = "Error: Failed to run job";
+      setSchedulerMessage(errMsg);
+      setLastRunResult({ jobName: name, message: errMsg, isError: true });
     }
   };
 
-  const runPortfolioScanners = async () => {
+  const _runPortfolioScanners = async () => {
     setSchedulerMessage("");
     setSchedulerLoading(true);
     try {
@@ -1625,156 +1769,6 @@ function AutomationContent() {
               </div>
             </div>
 
-            {/* Scheduler Management */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Scheduled Jobs</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Automatic analysis runs on a schedule using MongoDB-backed jobs. Jobs persist across restarts.
-              </p>
-
-              {/* Quick Actions */}
-              <div className="flex flex-wrap gap-3 mb-6">
-                <button
-                  onClick={() => handleSchedulerAction("createRecommendedJobs")}
-                  disabled={schedulerLoading}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Setup Default Schedule
-                </button>
-                <button
-                  onClick={() => handleSchedulerAction("runPortfolio")}
-                  disabled={schedulerLoading}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Run Portfolio Now
-                </button>
-                <button
-                  onClick={fetchSchedulerStatus}
-                  disabled={schedulerLoading}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
-                >
-                  <svg className={`w-5 h-5 ${schedulerLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Refresh Status
-                </button>
-                <Link
-                  href="/health"
-                  className="inline-flex items-center gap-2 px-4 py-2 min-h-[44px] border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 active:bg-gray-100"
-                  aria-label="View system health status"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Health Status
-                </Link>
-              </div>
-
-              {/* Status Message */}
-              {schedulerMessage && (
-                <div className={`mb-4 p-3 rounded-lg ${schedulerMessage.startsWith("Error") ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
-                  {schedulerMessage}
-                </div>
-              )}
-
-              {/* Jobs Table */}
-              {schedulerStatus && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="py-2 px-3 text-left font-medium text-gray-600">Job Name</th>
-                        <th className="py-2 px-3 text-left font-medium text-gray-600">Last Run</th>
-                        <th className="py-2 px-3 text-left font-medium text-gray-600">Next Run</th>
-                        <th className="py-2 px-3 text-left font-medium text-gray-600">Status</th>
-                        <th className="py-2 px-3 text-center font-medium text-gray-600">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {schedulerStatus.jobs.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="py-8 text-center text-gray-500">
-                            No scheduled jobs. Click &quot;Setup Default Schedule&quot; to create them.
-                          </td>
-                        </tr>
-                      ) : (
-                        schedulerStatus.jobs.map((job) => (
-                          <tr key={job.id} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className="py-3 px-3 font-medium">{job.name}</td>
-                            <td className="py-3 px-3 text-gray-600">
-                              {job.lastRunAt ? new Date(job.lastRunAt).toLocaleString() : "Never"}
-                            </td>
-                            <td className="py-3 px-3 text-gray-600">
-                              {job.nextRunAt ? new Date(job.nextRunAt).toLocaleString() : "Not scheduled"}
-                            </td>
-                            <td className="py-3 px-3">
-                              {job.failCount > 0 ? (
-                                <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
-                                  Failed ({job.failCount}x)
-                                </span>
-                              ) : job.nextRunAt ? (
-                                <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-                                  Scheduled
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
-                                  Inactive
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <div className="flex items-center justify-center gap-2">
-                                <button
-                                  onClick={() => handleSchedulerAction("run", job.name)}
-                                  className="text-indigo-600 hover:text-indigo-800"
-                                  title="Run Now"
-                                >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                  </svg>
-                                </button>
-                                <button
-                                  onClick={() => handleSchedulerAction("cancel", job.name)}
-                                  className="text-red-600 hover:text-red-800"
-                                  title="Cancel"
-                                >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Schedule Info */}
-              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                <h4 className="font-medium text-blue-900 mb-2">Default Schedules</h4>
-                <ul className="text-sm text-blue-800 space-y-1">
-                  <li><strong>Weekly Portfolio:</strong> Sun 6 PM</li>
-                  <li><strong>Daily Options Scanner:</strong> Mon–Fri 4 PM</li>
-                  <li><strong>Watchlist Snapshot:</strong> Mon–Fri 9 AM &amp; 4 PM</li>
-                  <li><strong>Deliver Alerts:</strong> Mon–Fri 4:30 PM</li>
-                  <li><strong>Data Cleanup:</strong> Daily 3 AM</li>
-                </ul>
-                <p className="text-xs text-blue-700 mt-2">
-                  Jobs are stored in MongoDB and persist across app restarts.
-                </p>
-              </div>
-            </div>
-
             {/* Save Button */}
             <div className="flex items-center justify-between">
               <div>
@@ -1963,14 +1957,169 @@ function AutomationContent() {
         {/* Scheduled Jobs Tab */}
         {activeTab === "jobs" && (
           <div className="space-y-6">
+            {/* Scheduler */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Scheduler</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Quick actions and Agenda cron status. Jobs persist in MongoDB across restarts.
+              </p>
+              <div className="flex flex-wrap gap-3 mb-4">
+                <button
+                  onClick={() => handleSchedulerAction("createRecommendedJobs")}
+                  disabled={schedulerLoading}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Create Recommended Jobs
+                </button>
+                <button
+                  onClick={() => handleSchedulerAction("runPortfolio")}
+                  disabled={schedulerLoading}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Run Portfolio Now
+                </button>
+                <button
+                  onClick={fetchSchedulerStatus}
+                  disabled={schedulerLoading}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <svg className={`w-5 h-5 ${schedulerLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh Status
+                </button>
+                <Link
+                  href="/health"
+                  className="inline-flex items-center gap-2 px-4 py-2 min-h-[44px] border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 active:bg-gray-100"
+                  aria-label="View system health status"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Health Status
+                </Link>
+              </div>
+              {schedulerMessage && (
+                <div className={`mb-4 p-3 rounded-lg ${schedulerMessage.startsWith("Error") ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                  {schedulerMessage}
+                </div>
+              )}
+              {schedulerStatus && (
+                <div className="overflow-x-auto mb-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="py-2 px-3 text-left font-medium text-gray-600">Job Name</th>
+                        <th className="py-2 px-3 text-left font-medium text-gray-600">Last Run</th>
+                        <th className="py-2 px-3 text-left font-medium text-gray-600">Next Run</th>
+                        <th className="py-2 px-3 text-left font-medium text-gray-600">Status</th>
+                        <th className="py-2 px-3 text-center font-medium text-gray-600">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schedulerStatus.jobs.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-gray-500">
+                            No scheduled jobs. Click &quot;Create Recommended Jobs&quot; to add them.
+                          </td>
+                        </tr>
+                      ) : (
+                        schedulerStatus.jobs.map((job) => (
+                          <tr key={job.id} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-3 px-3 font-medium">{job.name}</td>
+                            <td className="py-3 px-3 text-gray-600">
+                              {job.lastRunAt ? new Date(job.lastRunAt).toLocaleString() : "Never"}
+                            </td>
+                            <td className="py-3 px-3 text-gray-600">
+                              {job.nextRunAt ? new Date(job.nextRunAt).toLocaleString() : "Not scheduled"}
+                            </td>
+                            <td className="py-3 px-3">
+                              {job.failCount > 0 ? (
+                                <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+                                  Failed ({job.failCount}x)
+                                </span>
+                              ) : job.nextRunAt ? (
+                                <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+                                  Scheduled
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
+                                  Inactive
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => handleSchedulerAction("run", job.name)}
+                                  className="text-indigo-600 hover:text-indigo-800"
+                                  title="Run Now"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => handleSchedulerAction("cancel", job.name)}
+                                  className="text-red-600 hover:text-red-800"
+                                  title="Cancel"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <h4 className="font-medium text-blue-900 mb-2">Default Schedules</h4>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li><strong>Weekly Portfolio:</strong> Sun 6 PM</li>
+                  <li><strong>Daily Options Scanner:</strong> Mon–Fri 4 PM</li>
+                  <li><strong>Watchlist Snapshot:</strong> Mon–Fri 9 AM &amp; 4 PM</li>
+                  <li><strong>Deliver Alerts:</strong> Mon–Fri 4:30 PM</li>
+                  <li><strong>Data Cleanup:</strong> Daily 3 AM</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Manage Jobs */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-1">Manage Jobs</h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  Create, edit, and manage jobs. Each job references a job type.{" "}
-                  <Link href="/job-types" className="text-blue-600 hover:underline">
-                    Manage job types
-                  </Link>
+                  Create, edit, and manage jobs. Each job references a job type. See Job Types below.
                 </p>
+              {lastRunResult && (
+                <div
+                  className={`mb-4 p-4 rounded-xl border ${
+                    lastRunResult.isError
+                      ? "bg-red-50 border-red-200 text-red-800"
+                      : "bg-green-50 border-green-200 text-green-800"
+                  }`}
+                >
+                  <p className="font-medium mb-1">
+                    {lastRunResult.jobName}: {lastRunResult.message}
+                  </p>
+                  {lastRunResult.summary && (
+                    <pre className="mt-2 text-sm whitespace-pre-wrap font-sans opacity-90">
+                      {lastRunResult.summary}
+                    </pre>
+                  )}
+                </div>
+              )}
               <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <h4 className="text-sm font-medium text-gray-700 mb-3">Create Job</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -2128,7 +2277,7 @@ function AutomationContent() {
                         }
                         setJobForm({ ...jobForm, name: "" });
                         await fetchJobs();
-                      } catch (err) {
+                      } catch {
                         setJobFormError("Failed to create job");
                       } finally {
                         setJobFormSaving(false);
@@ -2190,7 +2339,7 @@ function AutomationContent() {
                           </div>
                           <div className="flex items-center gap-2">
                             <button
-                              onClick={() => runJobNow(j._id)}
+                              onClick={() => runJobNow(j._id, j.name)}
                               className="px-3 py-1.5 text-sm bg-white border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50"
                             >
                               Run now
@@ -2446,6 +2595,66 @@ function AutomationContent() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Job Types (combined from /job-types) */}
+        {activeTab === "jobs" && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Job Types</h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Define report/job types used by scheduled jobs.
+                </p>
+              </div>
+              {!showJobTypeForm && (
+                <button
+                  onClick={() => {
+                    setEditingJobType(undefined);
+                    setShowJobTypeForm(true);
+                  }}
+                  className="px-3 py-1.5 text-sm bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  New
+                </button>
+              )}
+            </div>
+            {jobTypeError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {jobTypeError}
+              </div>
+            )}
+            {showJobTypeForm && (
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                <h4 className="text-sm font-semibold text-gray-900 mb-4">
+                  {editingJobType ? "Edit Job Type" : "Create Job Type"}
+                </h4>
+                <JobTypeForm
+                  jobType={editingJobType}
+                  onSubmit={handleJobTypeSubmit}
+                  onCancel={() => {
+                    setShowJobTypeForm(false);
+                    setEditingJobType(undefined);
+                  }}
+                  isLoading={jobTypeSaving}
+                />
+              </div>
+            )}
+            <JobTypeList
+              jobTypes={jobTypes as JobTypeItem[]}
+              onEdit={(jt) => {
+                setEditingJobType(jt);
+                setShowJobTypeForm(true);
+              }}
+              onDelete={handleJobTypeDelete}
+              onToggleEnabled={handleJobTypeToggle}
+              isDeleting={jobTypeDeleting}
+              isToggling={jobTypeToggling}
+            />
           </div>
         )}
 

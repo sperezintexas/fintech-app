@@ -66,7 +66,7 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
     defaultTemplateId: jobType?.defaultTemplateId ?? "concise",
   });
 
-  const setConfig = (updates: Record<string, unknown>) => {
+  const _setConfig = (updates: Record<string, unknown>) => {
     setFormData((prev) => ({
       ...prev,
       defaultConfig: { ...prev.defaultConfig, ...updates },
@@ -86,7 +86,7 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
   };
 
   const idEditable = !jobType;
-  const config = formData.defaultConfig ?? {};
+  const _config = formData.defaultConfig ?? {};
   const channels = formData.defaultDeliveryChannels ?? [];
   const templateId = formData.defaultTemplateId ?? "concise";
 

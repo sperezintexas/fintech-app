@@ -98,7 +98,7 @@ export function Dashboard() {
       } else {
         setSchedulerMessage(`Error: ${data.error ?? "Failed to run portfolio scanners"}`);
       }
-    } catch (err) {
+    } catch {
       setSchedulerMessage("Error: Failed to run portfolio scanners");
     } finally {
       setSchedulerLoading(false);

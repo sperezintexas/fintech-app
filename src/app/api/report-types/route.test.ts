@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { GET, POST, REPORT_HANDLER_KEYS } from "./route";
+import { GET, REPORT_HANDLER_KEYS } from "./route";
 import { getDb } from "@/lib/mongodb";
 
 vi.mock("@/lib/mongodb", () => ({
@@ -51,6 +51,6 @@ describe("REPORT_HANDLER_KEYS", () => {
   it("includes deliverAlerts and scanner job types", () => {
     expect(REPORT_HANDLER_KEYS).toContain("deliverAlerts");
     expect(REPORT_HANDLER_KEYS).toContain("unifiedOptionsScanner");
-    expect(REPORT_HANDLER_KEYS).toContain("daily-analysis");
+    expect(REPORT_HANDLER_KEYS).toContain("watchlistreport");
   });
 });

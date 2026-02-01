@@ -4,7 +4,6 @@ export const REPORT_HANDLER_KEYS = [
   "portfoliosummary",
   "watchlistreport",
   "cleanup",
-  "daily-analysis",
   "unifiedOptionsScanner",
   "deliverAlerts",
 ] as const;

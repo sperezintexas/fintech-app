@@ -2,15 +2,11 @@ import Agenda, { Job as AgendaJob } from "agenda";
 import { NextRequest } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "./mongodb";
-import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, Job, OptionScannerConfig } from "@/types/portfolio";
+import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, Job } from "@/types/portfolio";
 import { getReportTemplate } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
 import { getMultipleTickerOHLC, getBatchPriceAndRSI } from "./yahoo";
 import { postToXThread } from "./x";
-import { scanOptions, storeOptionRecommendations } from "./option-scanner";
-import { analyzeCoveredCalls, storeCoveredCallRecommendations } from "./covered-call-analyzer";
-import { analyzeProtectivePuts, storeProtectivePutRecommendations } from "./protective-put-analyzer";
-import { analyzeStraddlesAndStrangles, storeStraddleStrangleRecommendations } from "./straddle-strangle-analyzer";
 import { runUnifiedOptionsScanner } from "./unified-options-scanner";
 import { processAlertDelivery } from "./alert-delivery";
 import { shouldRunPurge, runPurge } from "./cleanup-storage";
@@ -215,12 +211,13 @@ async function buildWatchlistConciseBlock(
   return { stocksBlock, optionsBlock };
 }
 
-/** Execute a job synchronously (used by Run Now and scheduled runs). Returns { success, error?, deliveredChannels?, failedChannels? }. */
+/** Execute a job synchronously (used by Run Now and scheduled runs). Returns { success, error?, deliveredChannels?, failedChannels?, summary? }. */
 export async function executeJob(jobId: string): Promise<{
   success: boolean;
   error?: string;
   deliveredChannels?: string[];
   failedChannels?: { channel: string; error: string }[];
+  summary?: string;
 }> {
   try {
     const db = await getDb();
@@ -550,22 +547,6 @@ export async function executeJob(jobId: string): Promise<{
         title = "Data Cleanup Failed";
         bodyText = `Failed to run cleanup job: ${e instanceof Error ? e.message : String(e)}`;
       }
-    } else if (handlerKey === "daily-analysis") {
-      try {
-        const accountId = job.accountId ?? undefined;
-        const result = await runWatchlistAnalysis(accountId);
-        title = job.name;
-        bodyText = [
-          `Daily Analysis complete`,
-          `• Analyzed: ${result.analyzed}`,
-          `• Alerts created: ${result.alertsCreated}`,
-          `• Errors: ${result.errors}`,
-        ].join("\n");
-      } catch (e) {
-        console.error("Failed to run daily analysis:", e);
-        title = job.name;
-        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
-      }
     } else if (handlerKey === "unifiedOptionsScanner") {
       try {
         const accountId = job.accountId ?? undefined;
@@ -668,7 +649,12 @@ export async function executeJob(jobId: string): Promise<{
       { _id: new ObjectId(jobId) },
       { $set: { lastRunAt: new Date().toISOString(), updatedAt: new Date().toISOString() } }
     );
-    return { success: true, deliveredChannels, failedChannels: failedChannels.length ? failedChannels : undefined };
+    return {
+      success: true,
+      deliveredChannels,
+      failedChannels: failedChannels.length ? failedChannels : undefined,
+      summary: bodyText || undefined,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("executeJob failed:", e);

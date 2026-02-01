@@ -9,7 +9,6 @@ import { getDb } from "@/lib/mongodb";
 import { getOptionMetrics, getOptionMarketConditions } from "@/lib/yahoo";
 import { callOptionDecision } from "@/lib/xai-grok";
 import type {
-  Account,
   Position,
   OptionRecommendation,
   OptionRecommendationAction,
@@ -283,7 +282,7 @@ export async function scanOptions(
       batches.push(candidates.slice(i, i + grokMax));
     }
     for (const batch of batches) {
-      const promises = batch.map(async (r, idx) => {
+      const promises = batch.map(async (r, _idx) => {
         const globalIdx = prelimResults.indexOf(r);
         const account =
           ObjectId.isValid(r.pos.accountId) && r.pos.accountId.length === 24

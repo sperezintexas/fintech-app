@@ -212,7 +212,7 @@ export function StrategyWizard() {
   const canProceedStep1 = !!selectedSymbol;
   const canProceedStep2 = !!outlook;
   const canProceedStep3 = !!strategyId;
-  const canProceedStep4 = !!expiration && !!strike;
+  const _canProceedStep4 = !!expiration && !!strike;
 
   return (
     <div className="space-y-8">

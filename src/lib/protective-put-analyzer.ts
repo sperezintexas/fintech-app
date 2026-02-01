@@ -90,7 +90,7 @@ export function applyProtectivePutRules(
     stockPrice,
     strike,
     dte,
-    putBid,
+    putBid: _putBid,
     premiumPaid,
     extrinsicPercentOfPremium,
     stockUnrealizedPlPercent,

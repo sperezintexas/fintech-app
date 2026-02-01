@@ -89,7 +89,7 @@ export function applyCoveredCallRules(
     stockPrice,
     strike,
     dte,
-    callBid,
+    callBid: _callBid,
     premiumReceived,
     extrinsicPercentOfPremium,
     unrealizedStockGainPercent,
@@ -100,7 +100,7 @@ export function applyCoveredCallRules(
   } = metrics;
 
   const stockAboveStrikePercent = ((stockPrice - strike) / strike) * 100;
-  const callMid = (metrics.callBid + metrics.callAsk) / 2;
+  const _callMid = (metrics.callBid + metrics.callAsk) / 2;
 
   // Stock ≥ strike + 5% & DTE ≤ 7 → BTC + consider new call
   if (stockAboveStrikePercent >= 5 && dte <= 7) {
@@ -704,8 +704,8 @@ async function enhanceRecommendationsWithGrok(
 
   for (let i = 0; i < candidates.length; i += grokMax) {
     const batch = candidates.slice(i, i + grokMax);
-    const grokPromises = batch.map(async (rec, batchIdx) => {
-      const globalIdx = recs.indexOf(rec);
+    const grokPromises = batch.map(async (rec, _batchIdx) => {
+      const _globalIdx = recs.indexOf(rec);
       try {
         const grokResult = await callCoveredCallDecision(
           {

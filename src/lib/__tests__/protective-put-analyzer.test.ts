@@ -17,7 +17,7 @@ vi.mock("../yahoo", () => ({
 }));
 
 const { getDb } = await import("../mongodb");
-const { getOptionMetrics, getOptionChainDetailed, getIVRankOrPercentile } =
+const { getOptionMetrics, getOptionChainDetailed: _getOptionChainDetailed, getIVRankOrPercentile } =
   await import("../yahoo");
 
 describe("Protective Put Analyzer", () => {

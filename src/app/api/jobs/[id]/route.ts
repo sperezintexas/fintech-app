@@ -37,7 +37,11 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     if (failed.length > 0) {
       message += `. ${failed.map((f) => `${f.channel}: ${f.error}`).join("; ")}`;
     }
-    return NextResponse.json({ success: true, message });
+    return NextResponse.json({
+      success: true,
+      message,
+      summary: result.summary,
+    });
   } catch (error) {
     console.error("Run job failed:", error);
     return NextResponse.json({ error: "Failed to run job" }, { status: 500 });
