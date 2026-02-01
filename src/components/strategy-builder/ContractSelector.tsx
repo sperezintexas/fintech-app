@@ -14,6 +14,11 @@ import {
   Legend,
 } from 'recharts';
 import { generatePLData } from '@/lib/strategy-builder';
+import {
+  outlookEmoji,
+  getVolatilityLevel,
+  getOutlookLabel,
+} from '@/lib/strategy-templates';
 
 export type OptionChainRow = {
   strike: number;
@@ -24,6 +29,8 @@ export type OptionChainRow = {
 type ContractSelectorProps = {
   symbol: string;
   stockPrice: number;
+  outlook: string | null;
+  strategyId: string | null;
   expirations: string[];
   expiration: string | null;
   optionChain: OptionChainRow[];
@@ -60,9 +67,15 @@ type SMAData = {
   sma50Minus15: number;
 };
 
+function pct(p?: number): string {
+  return p != null ? `${Math.round(p * 100)}%` : '–';
+}
+
 export function ContractSelector({
   symbol,
   stockPrice,
+  outlook,
+  strategyId,
   expirations,
   expiration,
   optionChain,
@@ -81,6 +94,15 @@ export function ContractSelector({
 }: ContractSelectorProps) {
   const [smaData, setSmaData] = useState<SMAData | null>(null);
   const [smaLoading, setSmaLoading] = useState(false);
+  const [technicals, setTechnicals] = useState<{
+    rsi14: number;
+    volatility: number;
+  } | null>(null);
+  const [technicalsLoading, setTechnicalsLoading] = useState(false);
+  const [accountsData, setAccountsData] = useState<{
+    cashOnHand: number;
+    sharesForSymbol: number;
+  }>({ cashOnHand: 0, sharesForSymbol: 0 });
 
   useEffect(() => {
     if (!symbol) return;
@@ -100,6 +122,38 @@ export function ContractSelector({
       })
       .catch(() => setSmaData(null))
       .finally(() => setSmaLoading(false));
+  }, [symbol]);
+
+  useEffect(() => {
+    if (!symbol) return;
+    setTechnicalsLoading(true);
+    fetch(`/api/ticker/${encodeURIComponent(symbol.toUpperCase())}/technicals`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.rsi14 != null && data?.volatility != null) {
+          setTechnicals({ rsi14: data.rsi14, volatility: data.volatility });
+        } else {
+          setTechnicals(null);
+        }
+      })
+      .catch(() => setTechnicals(null))
+      .finally(() => setTechnicalsLoading(false));
+  }, [symbol]);
+
+  useEffect(() => {
+    fetch('/api/accounts')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((accounts: { balance?: number; positions?: { ticker?: string; shares?: number }[] }[]) => {
+        const cashOnHand = (accounts ?? []).reduce((sum, a) => sum + (a.balance ?? 0), 0);
+        const sharesForSymbol = (accounts ?? []).reduce((sum, a) => {
+          const posShares = (a.positions ?? [])
+            .filter((p) => p.ticker?.toUpperCase() === symbol?.toUpperCase())
+            .reduce((s, p) => s + (p.shares ?? 0), 0);
+          return sum + posShares;
+        }, 0);
+        setAccountsData({ cashOnHand, sharesForSymbol });
+      })
+      .catch(() => setAccountsData({ cashOnHand: 0, sharesForSymbol: 0 }));
   }, [symbol]);
 
   const selectedContract = optionChain.find((c) => c.strike === selectedStrike);
@@ -156,9 +210,128 @@ export function ContractSelector({
     return { label: 'Total proceeds if called away', value: gross + prem };
   }, [selectedStrike, quantity, effectivePremium, contractType]);
 
+  const outlookLabel = outlook ? getOutlookLabel(outlook) : 'Neutral';
+  const volLevel = technicals ? getVolatilityLevel(technicals.volatility) : 'Moderate';
+  const itmProb = selectedStrike
+    ? (100 - mockProbOtm(stockPrice, selectedStrike, contractType === 'call')) / 100
+    : undefined;
+  const otmProb = selectedStrike
+    ? mockProbOtm(stockPrice, selectedStrike, contractType === 'call') / 100
+    : undefined;
+
+  const showCSPSummary = strategyId === 'cash-secured-put' && technicals;
+  const showCCSummary =
+    strategyId === 'covered-call' &&
+    selectedStrike &&
+    premium > 0 &&
+    maxProfit != null &&
+    breakeven != null;
+
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold">Step 4: Choose contract</h2>
+
+      {/* Strategy summary card (CSP / CC) */}
+      {showCSPSummary && (
+        <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+          <div className="flex items-start gap-2">
+            <span className="text-2xl">💵</span>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-amber-900">Cash-Secured Put</h3>
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                <div>
+                  <span className="text-amber-700">RSI</span>{' '}
+                  <span className="font-medium">
+                    {technicals.rsi14.toFixed(0)}{' '}
+                    {technicals.rsi14 > 70 ? '🔥' : technicals.rsi14 < 30 ? '🟢' : '•'}
+                  </span>
+                  {technicals.rsi14 > 70 && (
+                    <span className="text-xs text-amber-600">(overbought)</span>
+                  )}
+                  {technicals.rsi14 < 30 && (
+                    <span className="text-xs text-amber-600">(oversold)</span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-amber-700">Vol</span>{' '}
+                  <span className="font-medium">
+                    {technicals.volatility.toFixed(0)}%{' '}
+                    {technicals.volatility > 50 ? '🌪️' : technicals.volatility > 25 ? '🌬️' : '☁️'}
+                  </span>
+                  <span className="text-xs text-amber-600">
+                    ({volLevel.toLowerCase()})
+                  </span>
+                </div>
+                <div>
+                  <span className="text-amber-700">Cash</span>{' '}
+                  <span className="font-medium">
+                    ${accountsData.cashOnHand.toLocaleString()}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-amber-700">Prob</span>{' '}
+                  ITM {pct(itmProb)} • OTM {pct(otmProb)}
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-amber-700">
+                ✓ Premium now • Possible discount buy | ⚠ Cash secured • Assigned if ↓
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCCSummary && selectedStrike && (
+        <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+          <div className="flex items-start gap-2">
+            <span className="text-2xl">📈</span>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-emerald-900">
+                Covered Call • {outlookLabel} {outlookEmoji(outlookLabel)}
+              </h3>
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                <div>
+                  <span className="text-emerald-700">Strike</span>{' '}
+                  <span className="font-medium">${selectedStrike.toFixed(0)}</span>
+                </div>
+                <div>
+                  <span className="text-emerald-700">Income</span>{' '}
+                  <span className="font-medium">
+                    ~{((premium / stockPrice) * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div>
+                  <span className="text-emerald-700">Max</span>{' '}
+                  <span className="font-medium">
+                    ${maxProfit?.toFixed(0) ?? '–'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-emerald-700">BE</span>{' '}
+                  <span className="font-medium">${breakeven?.toFixed(0) ?? '–'}</span>
+                </div>
+                <div>
+                  <span className="text-emerald-700">Prob</span>{' '}
+                  ITM {pct(itmProb)} • OTM {pct(otmProb)}
+                </div>
+                <div>
+                  <span className="text-emerald-700">Shares</span>{' '}
+                  <span className="font-medium">{accountsData.sharesForSymbol}</span>
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-emerald-700">
+                ✓ Income • Lower basis | ⚠ Caps upside • Called away
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {strategyId === 'cash-secured-put' && technicalsLoading && (
+        <div className="p-4 bg-amber-50/50 rounded-xl border border-amber-200 text-sm text-amber-700">
+          Loading RSI & volatility…
+        </div>
+      )}
 
       {/* Price clue: current price + 50 MA ±15% */}
       <div className="flex flex-wrap items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200">

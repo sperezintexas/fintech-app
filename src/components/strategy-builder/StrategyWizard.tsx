@@ -353,6 +353,8 @@ export function StrategyWizard() {
         <ContractSelector
           symbol={selectedSymbol.symbol}
           stockPrice={selectedSymbol.price}
+          outlook={outlook}
+          strategyId={strategyId}
           expirations={expirations}
           expiration={expiration}
           optionChain={optionChain}
