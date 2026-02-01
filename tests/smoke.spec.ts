@@ -15,14 +15,105 @@ test.describe("Smoke tests", () => {
     await page.getByRole("link", { name: /Watchlist/i }).click();
     await expect(page).toHaveURL(/\/watchlist/);
 
+    await page.getByRole("link", { name: /Holdings/i }).click();
+    await expect(page).toHaveURL(/\/holdings/);
+
+    await page.getByRole("link", { name: /xAIProfitBuilder/i }).click();
+    await expect(page).toHaveURL(/\/find-profits/);
+
     await page.getByRole("link", { name: /xStrategyBuilder/i }).click();
     await expect(page).toHaveURL(/\/xstrategybuilder/);
+
+    await page.getByRole("link", { name: /Automation/i }).click();
+    await expect(page).toHaveURL(/\/automation/);
 
     await page.getByRole("link", { name: /Job Types/i }).click();
     await expect(page).toHaveURL(/\/job-types/);
 
     await page.getByRole("link", { name: /Smart Grok/i }).click();
     await expect(page).toHaveURL(/\/chat/);
+  });
+
+  test("all top-nav pages load with expected content", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: /myInvestments/i })).toBeVisible();
+
+    await page.getByRole("link", { name: /Watchlist/i }).click();
+    await expect(page).toHaveURL(/\/watchlist/);
+    await expect(page.getByText(/Watchlists|Select a watchlist|create one to get started/i).first()).toBeVisible();
+
+    await page.getByRole("link", { name: /Holdings/i }).click();
+    await expect(page).toHaveURL(/\/holdings/);
+    await expect(page.getByRole("heading", { name: /Holdings/i })).toBeVisible();
+
+    await page.getByRole("link", { name: /xAIProfitBuilder/i }).click();
+    await expect(page).toHaveURL(/\/find-profits/);
+    await expect(page.getByText(/Covered Calls|Cash-Secured Puts/i).first()).toBeVisible();
+
+    await page.getByRole("link", { name: /xStrategyBuilder/i }).click();
+    await expect(page).toHaveURL(/\/xstrategybuilder/);
+    await expect(page.getByRole("heading", { name: /xStrategyBuilder/i })).toBeVisible();
+
+    await page.getByRole("link", { name: /Automation/i }).click();
+    await expect(page).toHaveURL(/\/automation/);
+    await expect(page.getByText(/Alerts|Alert Settings|Strategy|Scheduled Jobs/i).first()).toBeVisible();
+
+    await page.getByRole("link", { name: /Job Types/i }).click();
+    await expect(page).toHaveURL(/\/job-types/);
+    await expect(page.getByRole("heading", { name: /Job Types/i })).toBeVisible();
+  });
+
+  test("Automation page loads and shows tabs", async ({ page }) => {
+    await page.goto("/automation");
+    await expect(page).toHaveTitle(/myInvestments/);
+    await expect(page.getByText("Alerts").first()).toBeVisible();
+    await expect(page.getByText("Alert Settings").first()).toBeVisible();
+    await expect(page.getByText("Strategy").first()).toBeVisible();
+    await expect(page.getByText("Scheduled Jobs").first()).toBeVisible();
+    await expect(page.getByText(/Setup|Manage Jobs|Manage job types/i).first()).toBeVisible();
+  });
+
+  test("Automation page: Alerts tab shows alerts content", async ({ page }) => {
+    await page.goto("/automation");
+    await page.getByText("Alerts").first().click();
+    await expect(page.getByText(/No Active Alerts|Active Alerts|Scheduled Alerts/i).first()).toBeVisible({ timeout: 5000 });
+  });
+
+  test("Automation page: Alert Settings tab shows delivery channels", async ({ page }) => {
+    await page.goto("/automation");
+    await page.getByText("Alert Settings").first().click();
+    await expect(page.getByText(/Slack|Twitter|Push|Delivery Channels/i).first()).toBeVisible({ timeout: 5000 });
+  });
+
+  test("Automation page: Strategy tab shows strategy settings", async ({ page }) => {
+    await page.goto("/automation");
+    await page.getByRole("button", { name: "Strategy", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Strategy Settings" })).toBeVisible({ timeout: 5000 });
+  });
+
+  test("Automation page: Scheduled Jobs tab shows create job form", async ({ page }) => {
+    await page.goto("/automation");
+    await page.getByText("Scheduled Jobs").first().click();
+    await expect(page.getByRole("heading", { name: "Manage Jobs" })).toBeVisible();
+    await expect(page.getByText("Manage job types")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Create Job" })).toBeVisible();
+    await expect(page.getByPlaceholder(/e\.g\. Daily close report/i)).toBeVisible();
+  });
+
+  test("Alerts page loads", async ({ page }) => {
+    await page.goto("/alerts");
+    await expect(page.getByRole("heading", { name: /Alerts/i })).toBeVisible();
+    await expect(page.getByText("View alerts from daily analysis")).toBeVisible();
+  });
+
+  test("Holdings page loads", async ({ page }) => {
+    await page.goto("/holdings");
+    await expect(page.getByRole("heading", { name: /Holdings/i })).toBeVisible();
+  });
+
+  test("find-profits (xAIProfitBuilder) page loads", async ({ page }) => {
+    await page.goto("/find-profits");
+    await expect(page.getByText(/Covered Calls|Cash-Secured Puts/i).first()).toBeVisible();
   });
 
   test("xStrategyBuilder page loads and shows wizard", async ({ page }) => {

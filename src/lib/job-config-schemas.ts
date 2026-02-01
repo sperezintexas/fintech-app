@@ -43,6 +43,16 @@ export const cspAnalysisConfigSchema = z
 
 export type CspAnalysisConfig = z.infer<typeof cspAnalysisConfigSchema>;
 
+/** Unified Options Scanner config (runs all 4 scanners with optional per-scanner overrides) */
+const unifiedOptionsScannerConfigSchema = z
+  .object({
+    optionScanner: z.record(z.string(), z.unknown()).optional(),
+    coveredCall: coveredCallScannerConfigSchema.optional(),
+    protectivePut: cspAnalysisConfigSchema.optional(),
+  })
+  .strict()
+  .optional();
+
 /** Validate config by job type handler key. Returns parsed config or throws. */
 export function validateJobConfig(
   jobType: string,
@@ -60,6 +70,9 @@ export function validateJobConfig(
   }
   if (handlerKey === "OptionScanner") {
     return config as Record<string, unknown>;
+  }
+  if (handlerKey === "unifiedOptionsScanner") {
+    return unifiedOptionsScannerConfigSchema.parse(config) as Record<string, unknown>;
   }
   return config as Record<string, unknown>;
 }

@@ -522,7 +522,7 @@ function AutomationContent() {
   const openEditJob = (j: Job) => {
     setEditingJobId(j._id);
     setJobFormError("");
-    const cronParts = j.scheduleCron.trim().split(/\s+/);
+    const cronParts = (j.scheduleCron ?? "0 16 * * 1-5").trim().split(/\s+/);
     if (cronParts.length >= 5) {
       const minute = cronParts[0] ?? "0";
       const hour = cronParts[1] ?? "16";
@@ -539,8 +539,8 @@ function AutomationContent() {
       scannerConfig: j.scannerConfig,
       config: j.config,
       scheduleCron: j.scheduleCron,
-      channels: j.channels,
-      status: j.status,
+      channels: j.channels ?? ["slack"],
+      status: j.status ?? "active",
     });
     setShowJobForm(true);
   };
@@ -552,7 +552,7 @@ function AutomationContent() {
     if (!name) return setJobFormError("Job name is required");
     if (!jobForm.jobType) return setJobFormError("Select a job type");
     if (!jobForm.scheduleCron.trim()) return setJobFormError("Cron schedule is required");
-    if (!jobForm.channels.length) return setJobFormError("Select at least one delivery channel");
+    if (!(jobForm.channels ?? []).length) return setJobFormError("Select at least one delivery channel");
 
     setJobFormSaving(true);
     setJobFormError("");
@@ -1071,7 +1071,7 @@ function AutomationContent() {
                               <span className="font-medium">Schedule:</span> {scheduleDesc}
                             </div>
                             <div>
-                              <span className="font-medium">Channels:</span> {scheduled.channels.join(", ")}
+                              <span className="font-medium">Channels:</span> {(scheduled.channels ?? []).join(", ") || "—"}
                             </div>
                             <div>
                               <span className="font-medium">Template:</span> {scheduled.templateId}
@@ -2032,6 +2032,19 @@ function AutomationContent() {
                     </select>
                   </div>
                 </div>
+                {jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey === "portfoliosummary" && (
+                  <label className="flex items-center gap-2 mb-4 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={(jobForm.config?.includeAiInsights as boolean) ?? false}
+                      onChange={(e) =>
+                        setJobForm({ ...jobForm, config: { ...jobForm.config, includeAiInsights: e.target.checked } })
+                      }
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">Include AI insights (SmartXAI sentiment)</span>
+                  </label>
+                )}
                 {jobTypes.find((t) => t.id === jobForm.jobType) && ["watchlistreport", "smartxai", "portfoliosummary"].includes(jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey ?? "") && (
                   <div className="mb-4">
                     <label className="block text-xs text-gray-500 mb-2">Message template</label>
@@ -2181,7 +2194,8 @@ function AutomationContent() {
                   <label className="block text-xs text-gray-500 mb-2">Delivery channel</label>
                   <div className="flex flex-wrap gap-2">
                     {(["slack", "twitter"] as AlertDeliveryChannel[]).map((ch) => {
-                      const checked = jobForm.channels.includes(ch);
+                      const chans = jobForm.channels ?? [];
+                      const checked = chans.includes(ch);
                       return (
                         <label
                           key={ch}
@@ -2192,8 +2206,8 @@ function AutomationContent() {
                             className="mr-2"
                             checked={checked}
                             onChange={(e) => {
-                              if (e.target.checked) setJobForm({ ...jobForm, channels: [...jobForm.channels, ch] });
-                              else setJobForm({ ...jobForm, channels: jobForm.channels.filter((c) => c !== ch) });
+                              if (e.target.checked) setJobForm({ ...jobForm, channels: [...chans, ch] });
+                              else setJobForm({ ...jobForm, channels: chans.filter((c) => c !== ch) });
                             }}
                           />
                           {ch === "twitter" ? "X" : "Slack"}
@@ -2213,7 +2227,7 @@ function AutomationContent() {
                       if (!name) return setJobFormError("Name is required");
                       if (!jobForm.jobType) return setJobFormError("Select a job type");
                       if (!jobForm.scheduleCron.trim()) return setJobFormError("Schedule is required");
-                      if (!jobForm.channels.length) return setJobFormError("Select at least one delivery channel (Slack or X)");
+                      if (!(jobForm.channels ?? []).length) return setJobFormError("Select at least one delivery channel (Slack or X)");
                       setJobFormSaving(true);
                       try {
                         const isPortfolio = selectedAccountId === "__portfolio__";
@@ -2271,7 +2285,7 @@ function AutomationContent() {
                     const typeInfo = jobTypes.find((t) => t.id === j.jobType);
                     const typeName = typeInfo?.name ?? j.jobType;
                     const template = getReportTemplate(j.templateId ?? "concise");
-                    const scheduleFriendly = cronToHuman(j.scheduleCron);
+                    const scheduleFriendly = cronToHuman(j.scheduleCron ?? "0 16 * * 1-5");
                     const nextRunFriendly = j.nextRunAt
                       ? new Intl.DateTimeFormat(undefined, {
                           dateStyle: "medium",
@@ -2308,7 +2322,7 @@ function AutomationContent() {
                               )}
                             </p>
                             <p className="text-xs text-gray-500 mt-2">
-                              Channels: {j.channels.join(", ")} · Status: {j.status}
+                              Channels: {(j.channels ?? []).join(", ") || "—"} · Status: {j.status ?? "active"}
                             </p>
                             {j.lastRunAt && (
                               <p className="text-xs text-gray-500 mt-1">Last run: {new Date(j.lastRunAt).toLocaleString()}</p>
@@ -2574,6 +2588,19 @@ function AutomationContent() {
                         </div>
                       </div>
                     )}
+                    {jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey === "portfoliosummary" && (
+                      <label className="flex items-center gap-2 mb-4 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={(jobForm.config?.includeAiInsights as boolean) ?? false}
+                          onChange={(e) =>
+                            setJobForm({ ...jobForm, config: { ...jobForm.config, includeAiInsights: e.target.checked } })
+                          }
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">Include AI insights (SmartXAI sentiment)</span>
+                      </label>
+                    )}
                     {jobTypes.find((t) => t.id === jobForm.jobType) && ["watchlistreport", "smartxai", "portfoliosummary"].includes(jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey ?? "") && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Message template</label>
@@ -2687,7 +2714,8 @@ function AutomationContent() {
                       <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Channels</label>
                       <div className="flex flex-wrap gap-2">
                         {(["slack", "push", "twitter"] as AlertDeliveryChannel[]).map((ch) => {
-                          const checked = jobForm.channels.includes(ch);
+                          const chans = jobForm.channels ?? [];
+                          const checked = chans.includes(ch);
                           return (
                             <label
                               key={ch}
@@ -2698,8 +2726,8 @@ function AutomationContent() {
                                 className="mr-2"
                                 checked={checked}
                                 onChange={(e) => {
-                                  if (e.target.checked) setJobForm({ ...jobForm, channels: [...jobForm.channels, ch] });
-                                  else setJobForm({ ...jobForm, channels: jobForm.channels.filter((c) => c !== ch) });
+                                  if (e.target.checked) setJobForm({ ...jobForm, channels: [...chans, ch] });
+                                  else setJobForm({ ...jobForm, channels: chans.filter((c) => c !== ch) });
                                 }}
                               />
                               {ch === "twitter" ? "X" : ch}

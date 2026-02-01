@@ -8,8 +8,9 @@ export const REPORT_HANDLER_KEYS = [
   "OptionScanner",
   "coveredCallScanner",
   "protectivePutScanner",
-  "deliverAlerts",
   "straddleStrangleScanner",
+  "unifiedOptionsScanner",
+  "deliverAlerts",
 ] as const;
 
 export type ReportHandlerKey = (typeof REPORT_HANDLER_KEYS)[number];

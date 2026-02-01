@@ -11,6 +11,7 @@ import { scanOptions, storeOptionRecommendations } from "./option-scanner";
 import { analyzeCoveredCalls, storeCoveredCallRecommendations } from "./covered-call-analyzer";
 import { analyzeProtectivePuts, storeProtectivePutRecommendations } from "./protective-put-analyzer";
 import { analyzeStraddlesAndStrangles, storeStraddleStrangleRecommendations } from "./straddle-strangle-analyzer";
+import { runUnifiedOptionsScanner } from "./unified-options-scanner";
 import { processAlertDelivery } from "./alert-delivery";
 import { shouldRunPurge, runPurge } from "./cleanup-storage";
 
@@ -201,6 +202,33 @@ function defineJobs(agenda: Agenda) {
       );
     } catch (error) {
       console.error("Straddle/Strangle Scanner failed:", error);
+      throw error;
+    }
+  });
+
+  // Unified Options Scanner job - runs all 4 scanners (Option, CoveredCall, ProtectivePut, StraddleStrangle)
+  agenda.define("unifiedOptionsScanner", async (job: AgendaJob) => {
+    console.log("Running Unified Options Scanner...", new Date().toISOString());
+
+    const data = job.attrs.data as { accountId?: string; config?: Record<string, unknown> } | undefined;
+    const accountId = data?.accountId;
+    const config = data?.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
+
+    try {
+      const result = await runUnifiedOptionsScanner(accountId, config);
+
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        result,
+      };
+      await job.save();
+
+      console.log(
+        `Unified Options Scanner complete: ${result.totalScanned} total, ${result.totalStored} stored, ${result.totalAlertsCreated} alerts`
+      );
+    } catch (error) {
+      console.error("Unified Options Scanner failed:", error);
       throw error;
     }
   });
@@ -535,6 +563,28 @@ export async function executeJob(jobId: string): Promise<{
             "Risk Reminder: Options involve substantial risk of loss and are not suitable for all investors. Review OCC booklet before trading."
           );
 
+          // Optional: include AI insights (SmartXAI sentiment) when config.includeAiInsights is true
+          const includeAiInsights = (job.config as { includeAiInsights?: boolean } | undefined)?.includeAiInsights;
+          if (includeAiInsights) {
+            try {
+              const { POST: generateSmartXAI } = await import("@/app/api/reports/smartxai/route");
+              const smartRes = await generateSmartXAI({ json: async () => ({ accountId: job.accountId }) } as unknown as NextRequest);
+              const smartPayload = (await smartRes.json()) as {
+                success?: boolean;
+                report?: { summary?: { bullishCount?: number; neutralCount?: number; bearishCount?: number } };
+              };
+              if (smartPayload.success && smartPayload.report?.summary) {
+                const s = smartPayload.report.summary;
+                lines.push("");
+                lines.push(
+                  `AI Insights: bullish ${s.bullishCount ?? 0} / neutral ${s.neutralCount ?? 0} / bearish ${s.bearishCount ?? 0}`
+                );
+              }
+            } catch (e) {
+              console.error("Failed to add AI insights to portfolio summary:", e);
+            }
+          }
+
           bodyText = lines.join("\n");
         } else {
           bodyText += `Failed to generate PortfolioSummary report.`;
@@ -550,6 +600,9 @@ export async function executeJob(jobId: string): Promise<{
           bodyText = "Watchlist report: no account configured.";
           title = job.name;
         } else {
+          // Run daily analysis first (creates alerts) - consolidated with watchlist report
+          const analysisResult = await runWatchlistAnalysis(accountId);
+
           const accountDoc = await db.collection("accounts").findOne({ _id: new ObjectId(accountId) });
           const accountName = (accountDoc as { name?: string } | null)?.name ?? "Account";
           const { stocksBlock, optionsBlock } = await buildWatchlistConciseBlock(accountId);
@@ -561,7 +614,7 @@ export async function executeJob(jobId: string): Promise<{
             job.customSlackTemplate ?? template.slackTemplate;
           const xTemplate =
             job.customXTemplate ?? template.xTemplate;
-          const body = slackTemplate
+          let body = slackTemplate
             .replace(/\{date\}/g, dateStr)
             .replace(/\{reportName\}/g, job.name)
             .replace(/\{account\}/g, accountName)
@@ -573,6 +626,10 @@ export async function executeJob(jobId: string): Promise<{
             .replace(/\{stocks\}/g, stocksBlock)
             .replace(/\{options\}/g, optionsBlock);
           title = job.name;
+          // Append analysis summary if alerts were created
+          if (analysisResult.alertsCreated > 0) {
+            body += `\n\n📋 Alerts created: ${analysisResult.alertsCreated} (analyzed ${analysisResult.analyzed} items)`;
+          }
           bodyText = body;
         }
       } catch (e) {
@@ -658,6 +715,28 @@ export async function executeJob(jobId: string): Promise<{
         ].join("\n");
       } catch (e) {
         console.error("Failed to run Option Scanner:", e);
+        title = job.name;
+        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else if (handlerKey === "unifiedOptionsScanner") {
+      try {
+        const accountId = job.accountId ?? undefined;
+        const config = job.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
+        const result = await runUnifiedOptionsScanner(accountId, config);
+        title = job.name;
+        bodyText = [
+          `Unified Options Scanner complete`,
+          `• Total scanned: ${result.totalScanned}`,
+          `• Stored: ${result.totalStored}`,
+          `• Alerts created: ${result.totalAlertsCreated}`,
+          "",
+          `Option: ${result.optionScanner.scanned} scanned, ${result.optionScanner.stored} stored`,
+          `Covered Call: ${result.coveredCallScanner.analyzed} analyzed, ${result.coveredCallScanner.stored} stored`,
+          `Protective Put: ${result.protectivePutScanner.analyzed} analyzed, ${result.protectivePutScanner.stored} stored`,
+          `Straddle/Strangle: ${result.straddleStrangleScanner.analyzed} analyzed, ${result.straddleStrangleScanner.stored} stored`,
+        ].join("\n");
+      } catch (e) {
+        console.error("Failed to run Unified Options Scanner:", e);
         title = job.name;
         bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
       }
