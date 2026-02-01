@@ -17,8 +17,27 @@ vi.mock("../yahoo", () => ({
 }));
 
 const { getDb } = await import("../mongodb");
-const { getOptionMetrics, getOptionChainDetailed: _getOptionChainDetailed, getIVRankOrPercentile } =
-  await import("../yahoo");
+const { getOptionMetrics, getOptionChainDetailed, getIVRankOrPercentile } = await import("../yahoo");
+
+/** Assert ProtectivePutRecommendation shape before persistence/alert delivery. */
+function expectProtectivePutRecommendationShape(rec: unknown): void {
+  expect(rec).toMatchObject({
+    symbol: expect.any(String),
+    recommendation: expect.stringMatching(/^(HOLD|SELL_TO_CLOSE|ROLL|BUY_NEW_PUT|NONE)$/),
+    confidence: expect.stringMatching(/^(HIGH|MEDIUM|LOW)$/),
+    reason: expect.any(String),
+    metrics: {
+      stockPrice: expect.any(Number),
+      putBid: expect.any(Number),
+      putAsk: expect.any(Number),
+      dte: expect.any(Number),
+      netProtectionCost: expect.any(Number),
+      effectiveFloor: expect.any(Number),
+      protectionCostPercent: expect.any(Number),
+    },
+    createdAt: expect.any(String),
+  });
+}
 
 describe("Protective Put Analyzer", () => {
   beforeEach(() => {
@@ -165,6 +184,136 @@ describe("Protective Put Analyzer", () => {
       });
       expect(result.recommendation).toBe("HOLD");
       expect(result.reason).toContain("Protection active");
+    });
+
+    // Put far OTM (delta >= -0.25) and stock stable → SELL_TO_CLOSE (ineffective protection)
+    it("returns SELL_TO_CLOSE when put far OTM (delta >= -0.25) and stock stable", () => {
+      const result = applyProtectivePutRules({
+        stockPrice: 448,
+        strike: 420,
+        dte: 35,
+        putBid: 2.5,
+        putAsk: 2.8,
+        premiumPaid: 12,
+        extrinsicPercentOfPremium: 60,
+        stockUnrealizedPlPercent: 4,
+        moneyness: "OTM",
+        putDelta: -0.20,
+        ivRank: 40,
+        riskLevel: "medium",
+        stockAboveBreakeven: true,
+      });
+      expect(result.recommendation).toBe("SELL_TO_CLOSE");
+      expect(result.confidence).toBe("MEDIUM");
+      expect(result.reason).toContain("far OTM");
+    });
+
+    // Table-driven: TSLA real-world scenarios
+    it.each([
+      {
+        name: "Classic protective put: stock up significantly → SELL_TO_CLOSE",
+        metrics: {
+          stockPrice: 485,
+          strike: 420,
+          dte: 45,
+          putBid: 3,
+          putAsk: 3.2,
+          premiumPaid: 15,
+          extrinsicPercentOfPremium: 25,
+          stockUnrealizedPlPercent: 15,
+          moneyness: "OTM" as const,
+          putDelta: null as number | null,
+          ivRank: 35,
+          riskLevel: "medium" as const,
+          stockAboveBreakeven: true,
+        },
+        expected: "SELL_TO_CLOSE",
+        reasonContains: "above strike",
+      },
+      {
+        name: "Stock dropped sharply, put deep ITM → HOLD",
+        metrics: {
+          stockPrice: 385,
+          strike: 420,
+          dte: 30,
+          putBid: 38,
+          putAsk: 39,
+          premiumPaid: 15,
+          extrinsicPercentOfPremium: 20,
+          stockUnrealizedPlPercent: -15,
+          moneyness: "ITM" as const,
+          putDelta: null as number | null,
+          ivRank: 45,
+          riskLevel: "medium" as const,
+          stockAboveBreakeven: false,
+        },
+        expected: "HOLD",
+        reasonContains: "Hedge is working",
+      },
+      {
+        name: "Put near expiration (DTE ≤ 10), still OTM → SELL_TO_CLOSE",
+        metrics: {
+          stockPrice: 445,
+          strike: 420,
+          dte: 8,
+          putBid: 0.8,
+          putAsk: 1,
+          premiumPaid: 12,
+          extrinsicPercentOfPremium: 20,
+          stockUnrealizedPlPercent: 5,
+          moneyness: "OTM" as const,
+          putDelta: null as number | null,
+          ivRank: 30,
+          riskLevel: "medium" as const,
+          stockAboveBreakeven: true,
+        },
+        expected: "SELL_TO_CLOSE",
+        reasonContains: "OTM",
+      },
+      {
+        name: "Put extrinsic decayed heavily (<10%) → SELL_TO_CLOSE",
+        metrics: {
+          stockPrice: 410,
+          strike: 420,
+          dte: 20,
+          putBid: 12.5,
+          putAsk: 12.8,
+          premiumPaid: 14,
+          extrinsicPercentOfPremium: 5,
+          stockUnrealizedPlPercent: -3,
+          moneyness: "ITM" as const,
+          putDelta: null as number | null,
+          ivRank: 35,
+          riskLevel: "medium" as const,
+          stockAboveBreakeven: false,
+        },
+        expected: "SELL_TO_CLOSE",
+        reasonContains: "time value",
+      },
+      {
+        name: "High IV spike since purchase → HOLD",
+        metrics: {
+          stockPrice: 438,
+          strike: 430,
+          dte: 45,
+          putBid: 9,
+          putAsk: 9.5,
+          premiumPaid: 12,
+          extrinsicPercentOfPremium: 70,
+          stockUnrealizedPlPercent: 2,
+          moneyness: "OTM" as const,
+          putDelta: null as number | null,
+          ivRank: 65,
+          riskLevel: "medium" as const,
+          stockAboveBreakeven: true,
+        },
+        expected: "HOLD",
+        reasonContains: "High IV rank",
+      },
+    ])("$name", ({ metrics, expected, reasonContains }) => {
+      const result = applyProtectivePutRules(metrics);
+      expect(result.recommendation).toBe(expected);
+      expect(result.reason).toContain(reasonContains);
     });
   });
 
@@ -372,6 +521,262 @@ describe("Protective Put Analyzer", () => {
         putAsk: 2.2,
         dte: expect.any(Number),
       });
+    });
+
+    // Classic protective put: long stock + long OTM put, stock up significantly → SELL_TO_CLOSE
+    it("produces SELL_TO_CLOSE for TSLA protective put when stock up significantly", async () => {
+      const accId = "507f1f77bcf86cd799439011";
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          find: vi.fn().mockReturnValue({
+            toArray: vi.fn().mockResolvedValue([
+              {
+                _id: accId,
+                positions: [
+                  { _id: "stock1", type: "stock", ticker: "TSLA", shares: 100, purchasePrice: 420 },
+                  {
+                    _id: "put1",
+                    type: "option",
+                    optionType: "put",
+                    ticker: "TSLA",
+                    strike: 420,
+                    expiration: "2026-03-20",
+                    contracts: 1,
+                    premium: 15,
+                  },
+                ],
+              },
+            ]),
+          }),
+          findOne: vi.fn().mockResolvedValue({ _id: accId, riskLevel: "medium" }),
+        }),
+      } as never);
+
+      vi.mocked(getOptionMetrics).mockResolvedValue({
+        price: 3,
+        bid: 2.8,
+        ask: 3.2,
+        underlyingPrice: 485,
+        impliedVolatility: 0.35,
+        intrinsicValue: 0,
+        timeValue: 3,
+      });
+      vi.mocked(getIVRankOrPercentile).mockResolvedValue(35);
+
+      const result = await analyzeProtectivePuts(accId);
+
+      expect(result.length).toBeGreaterThanOrEqual(1);
+      const rec = result[0];
+      expectProtectivePutRecommendationShape(rec);
+      expect(rec).toMatchObject({
+        symbol: "TSLA",
+        stockPositionId: "stock1",
+        putPositionId: "put1",
+        metrics: {
+          stockPrice: 485,
+          putBid: 2.8,
+          putAsk: 3.2,
+          netProtectionCost: expect.any(Number),
+          effectiveFloor: expect.any(Number),
+        },
+      });
+      expect(rec.recommendation).toBe("SELL_TO_CLOSE");
+    });
+
+    // Stock dropped sharply, put now deep ITM → HOLD
+    it("produces HOLD for TSLA protective put when stock dropped and put ITM", async () => {
+      const accId = "507f1f77bcf86cd799439012";
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          find: vi.fn().mockReturnValue({
+            toArray: vi.fn().mockResolvedValue([
+              {
+                _id: accId,
+                positions: [
+                  { _id: "stock1", type: "stock", ticker: "TSLA", shares: 100, purchasePrice: 440 },
+                  {
+                    _id: "put1",
+                    type: "option",
+                    optionType: "put",
+                    ticker: "TSLA",
+                    strike: 420,
+                    expiration: "2026-03-20",
+                    contracts: 1,
+                    premium: 15,
+                  },
+                ],
+              },
+            ]),
+          }),
+          findOne: vi.fn().mockResolvedValue({ _id: accId, riskLevel: "medium" }),
+        }),
+      } as never);
+
+      vi.mocked(getOptionMetrics).mockResolvedValue({
+        price: 38,
+        bid: 37.5,
+        ask: 38.5,
+        underlyingPrice: 385,
+        impliedVolatility: 0.45,
+        intrinsicValue: 35,
+        timeValue: 3,
+      });
+      vi.mocked(getIVRankOrPercentile).mockResolvedValue(45);
+
+      const result = await analyzeProtectivePuts(accId);
+
+      expect(result.length).toBeGreaterThanOrEqual(1);
+      const rec = result[0];
+      expectProtectivePutRecommendationShape(rec);
+      expect(rec.recommendation).toBe("HOLD");
+      expect(rec.reason).toContain("Hedge is working");
+    });
+
+    // No put position but very volatile stock → BUY_NEW_PUT opportunity
+    it("produces BUY_NEW_PUT for stock-only opportunity when volatility high", async () => {
+      const accId = "507f1f77bcf86cd799439013";
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          find: vi.fn().mockReturnValue({
+            toArray: vi.fn().mockResolvedValue([
+              {
+                _id: accId,
+                positions: [
+                  { _id: "stock1", type: "stock", ticker: "TSLA", shares: 100, purchasePrice: 430 },
+                ],
+              },
+            ]),
+          }),
+        }),
+      } as never);
+
+      vi.mocked(getOptionChainDetailed).mockResolvedValue({
+        stock: { price: 442 },
+        calls: [],
+        puts: [
+          { strike: 420, bid: 8.5, ask: 8.8, impliedVolatility: 0.52 },
+          { strike: 430, bid: 10, ask: 10.5, impliedVolatility: 0.48 },
+        ],
+      });
+
+      const result = await analyzeProtectivePuts(accId);
+
+      expect(result.length).toBe(1);
+      const rec = result[0];
+      expectProtectivePutRecommendationShape(rec);
+      expect(rec).toMatchObject({
+        symbol: "TSLA",
+        recommendation: "BUY_NEW_PUT",
+        confidence: "MEDIUM",
+        stockPositionId: "stock1",
+        reason: expect.stringContaining("no protective put"),
+        metrics: {
+          stockPrice: 442,
+          putBid: 0,
+          putAsk: 0,
+          dte: 0,
+          netProtectionCost: 0,
+          effectiveFloor: 0,
+        },
+      });
+    });
+
+    // Expired / worthless put → no recommendation (getOptionMetrics returns null)
+    it("skips position when getOptionMetrics returns null (expired put)", async () => {
+      const accId = "507f1f77bcf86cd799439014";
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          find: vi.fn().mockReturnValue({
+            toArray: vi.fn().mockResolvedValue([
+              {
+                _id: accId,
+                positions: [
+                  { _id: "stock1", type: "stock", ticker: "TSLA", shares: 100, purchasePrice: 430 },
+                  {
+                    _id: "put1",
+                    type: "option",
+                    optionType: "put",
+                    ticker: "TSLA",
+                    strike: 400,
+                    expiration: "2024-01-15",
+                    contracts: 1,
+                    premium: 5,
+                  },
+                ],
+              },
+            ]),
+          }),
+          findOne: vi.fn().mockResolvedValue({ _id: accId, riskLevel: "medium" }),
+        }),
+      } as never);
+
+      vi.mocked(getOptionMetrics).mockResolvedValue(null);
+
+      const result = await analyzeProtectivePuts(accId);
+
+      expect(result).toHaveLength(0);
+    });
+
+    // Assert full recommendation shape before persistence
+    it("produces recommendation with full ProtectivePutRecommendation shape for TSLA pair", async () => {
+      const accId = "507f1f77bcf86cd799439015";
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          find: vi.fn().mockReturnValue({
+            toArray: vi.fn().mockResolvedValue([
+              {
+                _id: accId,
+                positions: [
+                  { _id: "stock1", type: "stock", ticker: "TSLA", shares: 100, purchasePrice: 430 },
+                  {
+                    _id: "put1",
+                    type: "option",
+                    optionType: "put",
+                    ticker: "TSLA",
+                    strike: 420,
+                    expiration: "2026-03-20",
+                    contracts: 1,
+                    premium: 15,
+                  },
+                ],
+              },
+            ]),
+          }),
+          findOne: vi.fn().mockResolvedValue({ _id: accId, riskLevel: "medium" }),
+        }),
+      } as never);
+
+      vi.mocked(getOptionMetrics).mockResolvedValue({
+        price: 8,
+        bid: 7.8,
+        ask: 8.2,
+        underlyingPrice: 442,
+        impliedVolatility: 0.45,
+        intrinsicValue: 0,
+        timeValue: 8,
+      });
+      vi.mocked(getIVRankOrPercentile).mockResolvedValue(50);
+
+      const result = await analyzeProtectivePuts(accId);
+
+      expect(result.length).toBeGreaterThanOrEqual(1);
+      const rec = result[0];
+      expectProtectivePutRecommendationShape(rec);
+      expect(rec).toMatchObject({
+        symbol: "TSLA",
+        stockPositionId: "stock1",
+        putPositionId: "put1",
+        metrics: {
+          stockPrice: 442,
+          putBid: 7.8,
+          putAsk: 8.2,
+          netProtectionCost: expect.any(Number),
+          effectiveFloor: expect.any(Number),
+          protectionCostPercent: expect.any(Number),
+          extrinsicPercentOfPremium: expect.any(Number),
+        },
+      });
+      expect(["HOLD", "SELL_TO_CLOSE", "ROLL"]).toContain(rec.recommendation);
     });
   });
 
