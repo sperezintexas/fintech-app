@@ -129,14 +129,11 @@ export default function AlertsPage() {
       if (res.ok) {
         const data = await res.json();
         setAccounts(data);
-        if (data.length > 0 && !selectedAccountId) {
-          setSelectedAccountId(data[0]._id);
-        }
       }
     } catch (err) {
       console.error("Failed to fetch accounts:", err);
     }
-  }, [selectedAccountId]);
+  }, []);
 
   const fetchAlerts = useCallback(async () => {
     setLoading(true);
@@ -208,6 +205,29 @@ export default function AlertsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleClearAll = useCallback(async () => {
+    const accountName = selectedAccountId && selectedAccountId !== ""
+      ? accounts.find((a) => a._id === selectedAccountId)?.name || selectedAccountId
+      : "all";
+    if (!confirm(`Clear all alerts for ${accountName}? This action cannot be undone.`)) return;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (selectedAccountId && selectedAccountId !== "") params.set("accountId", selectedAccountId);
+      const res = await fetch(`/api/alerts?${params.toString()}`, { method: "DELETE" });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || "Failed to clear alerts");
+      }
+      await fetchAlerts();
+    } catch (err) {
+      console.error("Failed to clear alerts:", err);
+      alert("Failed to clear alerts. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedAccountId, accounts, fetchAlerts]);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <AppHeader />
@@ -221,20 +241,19 @@ export default function AlertsPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-4">
-            {accounts.length > 1 && (
-              <select
-                value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">All accounts</option>
-                {accounts.map((acc) => (
-                  <option key={acc._id} value={acc._id}>
-                    {acc.name}
-                  </option>
-                ))}
-              </select>
-            )}
+            <select
+              value={selectedAccountId}
+              onChange={(e) => setSelectedAccountId(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              aria-label="Filter by account"
+            >
+              <option value="">All accounts</option>
+              {accounts.map((acc) => (
+                <option key={acc._id} value={acc._id}>
+                  {acc.name}
+                </option>
+              ))}
+            </select>
             <label className="flex items-center gap-2 text-sm text-gray-600">
               <input
                 type="checkbox"
@@ -280,6 +299,13 @@ export default function AlertsPage() {
               className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Export CSV
+            </button>
+            <button
+              onClick={handleClearAll}
+              disabled={loading || alerts.length === 0}
+              className="px-3 py-2 text-sm font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed ml-2"
+            >
+              Clear All ({alerts.length})
             </button>
           </div>
         </div>

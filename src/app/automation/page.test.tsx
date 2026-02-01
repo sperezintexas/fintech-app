@@ -29,7 +29,13 @@ describe("Automation Page", () => {
       if (url.includes("/api/jobs")) return Promise.resolve({ ok: true, json: async () => [] } as Response);
       if (url.includes("/api/alert-templates")) return Promise.resolve({ ok: true, json: async () => ({ templates: {} }) } as Response);
       if (url.includes("/api/report-templates")) return Promise.resolve({ ok: true, json: async () => ({ templates: {} }) } as Response);
-      if (url.includes("/api/app-config")) return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+      if (url.includes("/api/app-config"))
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            cleanup: { storageLimitMB: 512, purgeThreshold: 0.8, purgeIntervalDays: 30 },
+          }),
+        } as Response);
       if (url.includes("/api/strategy-settings")) return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
       if (url.includes("/api/scheduler")) return Promise.resolve({ ok: true, json: async () => ({ status: "ok", jobs: [] }) } as Response);
       if (url.includes("/api/alert-preferences")) return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
@@ -41,21 +47,20 @@ describe("Automation Page", () => {
     render(<AutomationPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Alerts")).toBeInTheDocument();
+      expect(screen.getByText("Alert Settings")).toBeInTheDocument();
     });
-    expect(screen.getByText("Alert Settings")).toBeInTheDocument();
     expect(screen.getByText("Strategy")).toBeInTheDocument();
     expect(screen.getByText("Scheduled Jobs")).toBeInTheDocument();
   });
 
-  it("renders Alerts tab content by default", async () => {
+  it("renders Alert Settings tab content by default", async () => {
     render(<AutomationPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Alerts")).toBeInTheDocument();
+      expect(screen.getByText("Setup")).toBeInTheDocument();
     });
-    expect(screen.getByText("Setup")).toBeInTheDocument();
-    expect(screen.getByText("No Active Alerts")).toBeInTheDocument();
+    expect(screen.getByText("Alert Settings")).toBeInTheDocument();
+    expect(screen.getByText("Alert Delivery Channels")).toBeInTheDocument();
   });
 
   it("renders Manage Jobs when Scheduled Jobs tab is active", async () => {

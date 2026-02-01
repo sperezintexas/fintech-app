@@ -66,17 +66,10 @@ test.describe("Smoke tests", () => {
   test("Automation page loads and shows tabs", async ({ page }) => {
     await page.goto("/automation");
     await expect(page).toHaveTitle(/myInvestments/);
-    await expect(page.getByText("Alerts").first()).toBeVisible();
     await expect(page.getByText("Alert Settings").first()).toBeVisible();
     await expect(page.getByText("Strategy").first()).toBeVisible();
     await expect(page.getByText("Scheduled Jobs").first()).toBeVisible();
     await expect(page.getByText(/Setup|Manage Jobs|Manage job types/i).first()).toBeVisible();
-  });
-
-  test("Automation page: Alerts tab shows alerts content", async ({ page }) => {
-    await page.goto("/automation");
-    await page.getByText("Alerts").first().click();
-    await expect(page.getByText(/No Active Alerts|Active Alerts|Scheduled Alerts/i).first()).toBeVisible({ timeout: 5000 });
   });
 
   test("Automation page: Alert Settings tab shows delivery channels", async ({ page }) => {
@@ -104,6 +97,21 @@ test.describe("Smoke tests", () => {
     await page.goto("/alerts");
     await expect(page.getByRole("heading", { name: /Alerts/i })).toBeVisible();
     await expect(page.getByText("View alerts from daily analysis")).toBeVisible();
+  });
+
+  test("Alerts page: account selector defaults to All accounts", async ({ page }) => {
+    await page.goto("/alerts");
+    await expect(page.getByRole("heading", { name: /Alerts/i })).toBeVisible();
+    const accountSelect = page.getByRole("combobox", { name: /Filter by account/i });
+    await expect(accountSelect).toBeVisible();
+    await expect(accountSelect).toHaveValue("");
+  });
+
+  test("Alerts page: Clear All button is visible", async ({ page }) => {
+    await page.goto("/alerts");
+    await expect(page.getByRole("heading", { name: /Alerts/i })).toBeVisible();
+    const clearBtn = page.getByRole("button", { name: /Clear All/i });
+    await expect(clearBtn).toBeVisible();
   });
 
   test("Holdings page loads", async ({ page }) => {

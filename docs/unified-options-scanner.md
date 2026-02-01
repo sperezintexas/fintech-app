@@ -181,6 +181,10 @@ type UnifiedOptionsScannerResult = {
 
 **Delivery:** Alerts are created with `createAlerts: true`; the `deliverAlerts` job sends them to Slack/X per AlertConfig.
 
+### Automation Setup — Alerts
+
+- **Acknowledge All:** Option to acknowledge all alerts at once (e.g., from the Alerts page or via API).
+
 ---
 
 ## Usage

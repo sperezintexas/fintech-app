@@ -6,12 +6,10 @@ import { useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import type {
   Account,
-  WatchlistAlert,
   AlertDeliveryChannel,
   AlertTemplateId,
   AlertFrequency,
   AlertSeverity,
-  ScheduledAlert,
   Job,
   ReportTemplateId,
   StrategySettings,
@@ -47,12 +45,10 @@ function AutomationContent() {
   const searchParams = useSearchParams();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
-  const [alerts, setAlerts] = useState<WatchlistAlert[]>([]);
-  const [scheduledAlerts, setScheduledAlerts] = useState<ScheduledAlert[]>([]);
 
   // Alert preferences state
   const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState<"alerts" | "settings" | "strategy" | "jobs">("alerts");
+  const [activeTab, setActiveTab] = useState<"settings" | "strategy" | "jobs">("settings");
 
   useEffect(() => {
     if (tabParam === "jobs" || tabParam === "settings" || tabParam === "strategy") {
@@ -286,57 +282,6 @@ function AutomationContent() {
     }
     fetchAccounts();
   }, []);
-
-  // Fetch alerts
-  const fetchAlerts = useCallback(async () => {
-    if (!selectedAccountId || selectedAccountId === "__portfolio__") return;
-
-    try {
-      const res = await fetch(`/api/alerts?accountId=${selectedAccountId}&unacknowledged=true`);
-      if (res.ok) {
-        const data = await res.json();
-        setAlerts(data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch alerts:", err);
-    }
-  }, [selectedAccountId]);
-
-  // Fetch scheduled alerts
-  const fetchScheduledAlerts = useCallback(async () => {
-    if (!selectedAccountId || selectedAccountId === "__portfolio__") return;
-
-    try {
-      const res = await fetch(`/api/alerts/schedule?accountId=${selectedAccountId}&status=pending`);
-      if (res.ok) {
-        const data = await res.json();
-        setScheduledAlerts(data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch scheduled alerts:", err);
-    }
-  }, [selectedAccountId]);
-
-  useEffect(() => {
-    fetchAlerts();
-    if (activeTab === "alerts") {
-      fetchScheduledAlerts();
-    }
-  }, [fetchAlerts, fetchScheduledAlerts, activeTab]);
-
-  // Acknowledge alert
-  const handleAcknowledgeAlert = async (id: string) => {
-    try {
-      await fetch(`/api/alerts/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acknowledged: true }),
-      });
-      await fetchAlerts();
-    } catch (err) {
-      console.error("Failed to acknowledge alert:", err);
-    }
-  };
 
   // Fetch alert preferences
   const fetchAlertPrefs = useCallback(async () => {
@@ -949,50 +894,6 @@ function AutomationContent() {
     }
   };
 
-  const formatCurrency = (value: number | undefined) => {
-    if (value === undefined) return "—";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(value);
-  };
-
-  const formatPercent = (value: number | undefined) => {
-    if (value === undefined) return "—";
-    return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
-  };
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case "critical":
-        return "bg-red-100 text-red-800 border-red-300";
-      case "urgent":
-        return "bg-orange-100 text-orange-800 border-orange-300";
-      case "warning":
-        return "bg-yellow-100 text-yellow-800 border-yellow-300";
-      default:
-        return "bg-blue-100 text-blue-800 border-blue-300";
-    }
-  };
-
-  const getRecommendationBadge = (rec: string) => {
-    switch (rec) {
-      case "HOLD":
-        return "bg-green-100 text-green-800";
-      case "CLOSE":
-      case "STC":
-        return "bg-red-100 text-red-800";
-      case "BTC":
-        return "bg-yellow-100 text-yellow-800";
-      case "ROLL":
-        return "bg-blue-100 text-blue-800";
-      case "WATCH":
-        return "bg-gray-100 text-gray-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
       <AppHeader />
@@ -1023,16 +924,6 @@ function AutomationContent() {
         {/* Tabs */}
         <div className="border-b border-gray-200 mb-6">
           <nav className="flex gap-4">
-            <button
-              onClick={() => setActiveTab("alerts")}
-              className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "alerts"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Alerts
-            </button>
             <button
               onClick={() => setActiveTab("settings")}
               className={`py-3 px-1 border-b-2 font-medium text-sm ${
@@ -1065,188 +956,6 @@ function AutomationContent() {
             </button>
           </nav>
         </div>
-
-        {/* Alerts Section (shown on both automation and alerts tabs) */}
-        {activeTab === "alerts" && alerts.length === 0 && (
-          <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
-            <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-            </svg>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Active Alerts</h3>
-            <p className="text-gray-500">Run analysis to generate alerts for your automation positions</p>
-          </div>
-        )}
-
-        {activeTab === "alerts" && alerts.length > 0 && (
-          <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-              Active Alerts ({alerts.length})
-            </h3>
-            <div className="space-y-3">
-              {alerts.map((alert) => (
-                <div
-                  key={alert._id}
-                  className={`p-4 rounded-xl border ${getSeverityColor(alert.severity)}`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="font-bold text-lg">{alert.symbol}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRecommendationBadge(alert.recommendation)}`}>
-                          {alert.recommendation}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(alert.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="text-sm mb-2">{alert.reason}</p>
-                      {alert.suggestedActions && alert.suggestedActions.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs font-medium text-gray-600 mb-1">Suggested Actions:</p>
-                          <ul className="text-xs space-y-1">
-                            {alert.suggestedActions.map((action, idx) => (
-                              <li key={idx} className="flex items-start gap-1">
-                                <span className="text-gray-400">•</span>
-                                {action}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {alert.riskWarning && (
-                        <p className="text-xs text-red-700 mt-2 italic">
-                          Risk: {alert.riskWarning}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleAcknowledgeAlert(alert._id)}
-                      className="ml-4 text-gray-400 hover:text-gray-600"
-                      title="Dismiss"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </button>
-                  </div>
-                  {/* Alert Details (optional - some alerts have different structure) */}
-                  {alert.details && (
-                    <div className="mt-3 pt-3 border-t border-current/20 grid grid-cols-4 gap-4 text-xs">
-                      {alert.details.currentPrice != null && (
-                        <div>
-                          <span className="text-gray-600">Current:</span>
-                          <span className="ml-1 font-medium">{formatCurrency(alert.details.currentPrice)}</span>
-                        </div>
-                      )}
-                      {alert.details.entryPrice != null && (
-                        <div>
-                          <span className="text-gray-600">Entry:</span>
-                          <span className="ml-1 font-medium">{formatCurrency(alert.details.entryPrice)}</span>
-                        </div>
-                      )}
-                      {alert.details.priceChangePercent != null && (
-                        <div>
-                          <span className="text-gray-600">Change:</span>
-                          <span className={`ml-1 font-medium ${alert.details.priceChangePercent >= 0 ? "text-green-700" : "text-red-700"}`}>
-                            {formatPercent(alert.details.priceChangePercent)}
-                          </span>
-                        </div>
-                      )}
-                      {alert.details.daysToExpiration !== undefined && (
-                        <div>
-                          <span className="text-gray-600">DTE:</span>
-                          <span className={`ml-1 font-medium ${alert.details.daysToExpiration <= 7 ? "text-red-700" : ""}`}>
-                            {alert.details.daysToExpiration} days
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Scheduled Alerts Section */}
-        {activeTab === "alerts" && (
-          <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Scheduled Alerts ({scheduledAlerts.length})
-            </h3>
-            {scheduledAlerts.length === 0 ? (
-              <div className="text-center py-8 bg-white rounded-2xl border border-gray-100">
-                <p className="text-gray-500">No scheduled alerts. Preview an alert and schedule it to send.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {scheduledAlerts.map((scheduled: ScheduledAlert) => {
-                  const scheduleDesc =
-                    scheduled.schedule.type === "immediate" ? "Immediate" :
-                    scheduled.schedule.type === "daily" ? `Daily at ${scheduled.schedule.time}` :
-                    scheduled.schedule.type === "weekly" ? `Weekly on ${["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][scheduled.schedule.dayOfWeek || 0]} at ${scheduled.schedule.time}` :
-                    scheduled.schedule.type === "once" ? `Once on ${new Date(scheduled.schedule.datetime || "").toLocaleString()}` :
-                    `Recurring: ${scheduled.schedule.cron}`;
-
-                  return (
-                    <div
-                      key={scheduled._id}
-                      className="p-4 rounded-xl border border-indigo-200 bg-indigo-50"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-bold text-lg">{scheduled.alert.symbol}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRecommendationBadge(scheduled.alert.recommendation)}`}>
-                              {scheduled.alert.recommendation}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
-                              {scheduled.status}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-700 mb-2">{scheduled.alert.reason}</p>
-                          <div className="flex flex-wrap gap-4 text-xs text-gray-600">
-                            <div>
-                              <span className="font-medium">Schedule:</span> {scheduleDesc}
-                            </div>
-                            <div>
-                              <span className="font-medium">Channels:</span> {(scheduled.channels ?? []).join(", ") || "—"}
-                            </div>
-                            <div>
-                              <span className="font-medium">Template:</span> {scheduled.templateId}
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            if (confirm("Cancel this scheduled alert?")) {
-                              try {
-                                await fetch(`/api/alerts/schedule/${scheduled._id}`, { method: "DELETE" });
-                                await fetchScheduledAlerts();
-                              } catch (err) {
-                                console.error("Failed to cancel:", err);
-                              }
-                            }
-                          }}
-                          className="text-red-500 hover:text-red-700 ml-4"
-                          title="Cancel"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Alert Settings Tab */}
         {activeTab === "settings" && (

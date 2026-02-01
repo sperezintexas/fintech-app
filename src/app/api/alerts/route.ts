@@ -113,3 +113,25 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+// DELETE /api/alerts - Clear all alerts (optionally filtered by accountId)
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const accountId = searchParams.get("accountId");
+    const query: Record<string, unknown> = {};
+    if (accountId) query.accountId = accountId;
+    const db = await getDb();
+    const result = await db.collection("alerts").deleteMany(query);
+    return NextResponse.json({
+      success: true,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error("Failed to clear alerts:", error);
+    return NextResponse.json(
+      { error: "Failed to clear alerts" },
+      { status: 500 }
+    );
+  }
+}
