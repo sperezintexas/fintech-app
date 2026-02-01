@@ -22,7 +22,7 @@ Unified job configuration: jobs stored in `reportJobs` collection, scheduled via
 - **cleanup** - Purges old reports/alerts when storage nears limit.
 
 ## Deprecated (enabled: false)
-- daily-analysis, OptionScanner, coveredCallScanner, protectivePutScanner, straddleStrangleScanner.
+- daily-analysis, OptionScanner, coveredCallScanner, protectivePutScanner.
 - Use unifiedOptionsScanner or watchlistreport instead.
 
 ## Data Model

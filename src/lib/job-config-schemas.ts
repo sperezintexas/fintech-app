@@ -62,15 +62,6 @@ export function validateJobConfig(
   if (config == null || (typeof config === "object" && Object.keys(config as object).length === 0)) {
     return undefined;
   }
-  if (handlerKey === "coveredCallScanner") {
-    return coveredCallScannerConfigSchema.parse(config) as Record<string, unknown>;
-  }
-  if (handlerKey === "protectivePutScanner") {
-    return cspAnalysisConfigSchema.parse(config) as Record<string, unknown>;
-  }
-  if (handlerKey === "OptionScanner") {
-    return config as Record<string, unknown>;
-  }
   if (handlerKey === "unifiedOptionsScanner") {
     return unifiedOptionsScannerConfigSchema.parse(config) as Record<string, unknown>;
   }

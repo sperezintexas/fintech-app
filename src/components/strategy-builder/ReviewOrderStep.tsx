@@ -138,24 +138,24 @@ export function ReviewOrderStep({
       const res = await fetch('/api/report-types/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handlerKey: 'OptionScanner', accountId: null }),
+        body: JSON.stringify({ handlerKey: 'unifiedOptionsScanner', accountId: null }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Failed to run Option Scanner');
+      if (!res.ok) throw new Error(data.error ?? 'Failed to run Options Scanner');
       const channels = data.deliveredChannels?.length
         ? data.deliveredChannels.join(', ')
         : 'default channel';
       setScannerMessage({
         type: 'success',
         text: data.success
-          ? `Option Scanner complete. Results sent to ${channels}.`
-          : data.message ?? 'Option Scanner completed.',
+          ? `Options Scanner complete. Results sent to ${channels}.`
+          : data.message ?? 'Options Scanner completed.',
       });
       setTimeout(() => setScannerMessage(null), 5000);
     } catch (err) {
       setScannerMessage({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Failed to run Option Scanner',
+        text: err instanceof Error ? err.message : 'Failed to run Options Scanner',
       });
     } finally {
       setScannerLoading(false);

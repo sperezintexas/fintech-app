@@ -49,12 +49,8 @@ const DEFAULT_REPORT_TYPES: Omit<ReportType, "_id" | "createdAt" | "updatedAt">[
   { id: "watchlistreport", handlerKey: "watchlistreport", name: "Watchlist Report", description: "Market snapshot + rationale per item; runs daily analysis and creates alerts", supportsPortfolio: false, supportsAccount: true, order: 2, enabled: true },
   { id: "cleanup", handlerKey: "cleanup", name: "Data Cleanup", description: "Delete old reports and alerts (30+ days)", supportsPortfolio: true, supportsAccount: true, order: 3, enabled: true },
   { id: "daily-analysis", handlerKey: "daily-analysis", name: "Daily Analysis", description: "Watchlist analysis only (alerts). Prefer Watchlist Report which includes this.", supportsPortfolio: true, supportsAccount: true, order: 4, enabled: true },
-  { id: "OptionScanner", handlerKey: "OptionScanner", name: "Option Scanner", description: "Evaluates option positions (HOLD/BTC recommendations)", supportsPortfolio: false, supportsAccount: true, order: 5, enabled: true },
-  { id: "coveredCallScanner", handlerKey: "coveredCallScanner", name: "Covered Call Scanner", description: "Evaluates covered call positions and opportunities", supportsPortfolio: false, supportsAccount: true, order: 6, enabled: true },
-  { id: "protectivePutScanner", handlerKey: "protectivePutScanner", name: "Protective Put Scanner", description: "Evaluates protective put positions and opportunities", supportsPortfolio: false, supportsAccount: true, order: 7, enabled: true },
-  { id: "straddleStrangleScanner", handlerKey: "straddleStrangleScanner", name: "Straddle/Strangle Scanner", description: "Evaluates long straddle and strangle positions", supportsPortfolio: false, supportsAccount: true, order: 8, enabled: true },
-  { id: "unifiedOptionsScanner", handlerKey: "unifiedOptionsScanner", name: "Unified Options Scanner", description: "Runs Option, Covered Call, Protective Put, and Straddle/Strangle scanners in one job", supportsPortfolio: false, supportsAccount: true, order: 9, enabled: true },
-  { id: "deliverAlerts", handlerKey: "deliverAlerts", name: "Deliver Alerts", description: "Sends pending alerts to Slack/X per AlertConfig", supportsPortfolio: true, supportsAccount: true, order: 10, enabled: true },
+  { id: "unifiedOptionsScanner", handlerKey: "unifiedOptionsScanner", name: "Unified Options Scanner", description: "Runs Option, Covered Call, Protective Put, and Straddle/Strangle scanners in one job", supportsPortfolio: false, supportsAccount: true, order: 5, enabled: true },
+  { id: "deliverAlerts", handlerKey: "deliverAlerts", name: "Deliver Alerts", description: "Sends pending alerts to Slack/X per AlertConfig", supportsPortfolio: true, supportsAccount: true, order: 6, enabled: true },
 ];
 
 // GET /api/report-types?all=true (all=true returns disabled types too, for admin)

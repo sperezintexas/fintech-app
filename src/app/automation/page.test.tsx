@@ -17,7 +17,7 @@ describe("Automation Page", () => {
   const mockAccounts = [{ _id: "acc1", name: "Merrill", balance: 50000, riskLevel: "medium", strategy: "balanced", positions: [], recommendations: [] }];
   const mockReportTypes = [
     { _id: "1", id: "smartxai", handlerKey: "smartxai", name: "SmartXAI Report", enabled: true, supportsPortfolio: false, supportsAccount: true },
-    { _id: "2", id: "coveredCallScanner", handlerKey: "coveredCallScanner", name: "Covered Call Scanner", enabled: true, supportsPortfolio: false, supportsAccount: true },
+    { _id: "2", id: "unifiedOptionsScanner", handlerKey: "unifiedOptionsScanner", name: "Unified Options Scanner", enabled: true, supportsPortfolio: false, supportsAccount: true },
   ];
 
   beforeEach(() => {

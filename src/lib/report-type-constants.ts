@@ -5,10 +5,6 @@ export const REPORT_HANDLER_KEYS = [
   "watchlistreport",
   "cleanup",
   "daily-analysis",
-  "OptionScanner",
-  "coveredCallScanner",
-  "protectivePutScanner",
-  "straddleStrangleScanner",
   "unifiedOptionsScanner",
   "deliverAlerts",
 ] as const;

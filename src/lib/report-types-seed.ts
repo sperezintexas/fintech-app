@@ -20,17 +20,21 @@ const DEFAULT_REPORT_TYPES: ReportTypeSeed[] = [
   { id: "deliverAlerts", handlerKey: "deliverAlerts", name: "Deliver Alerts", description: "Sends pending alerts to Slack/X per AlertConfig", supportsPortfolio: true, supportsAccount: true, order: 5, enabled: true },
   // Deprecated – use unifiedOptionsScanner or watchlistreport instead
   { id: "daily-analysis", handlerKey: "daily-analysis", name: "Daily Analysis (deprecated)", description: "Use Watchlist Report instead", supportsPortfolio: true, supportsAccount: true, order: 6, enabled: false },
-  { id: "OptionScanner", handlerKey: "OptionScanner", name: "Option Scanner (deprecated)", description: "Use Unified Options Scanner instead", supportsPortfolio: false, supportsAccount: true, order: 7, enabled: false },
-  { id: "coveredCallScanner", handlerKey: "coveredCallScanner", name: "Covered Call Scanner (deprecated)", description: "Use Unified Options Scanner instead", supportsPortfolio: false, supportsAccount: true, order: 8, enabled: false },
-  { id: "protectivePutScanner", handlerKey: "protectivePutScanner", name: "Protective Put Scanner (deprecated)", description: "Use Unified Options Scanner instead", supportsPortfolio: false, supportsAccount: true, order: 9, enabled: false },
-  { id: "straddleStrangleScanner", handlerKey: "straddleStrangleScanner", name: "Straddle/Strangle Scanner (deprecated)", description: "Use Unified Options Scanner instead", supportsPortfolio: false, supportsAccount: true, order: 10, enabled: false },
 ];
 
-const DEPRECATED_IDS = ["daily-analysis", "OptionScanner", "coveredCallScanner", "protectivePutScanner", "straddleStrangleScanner"];
+const DEPRECATED_IDS = ["daily-analysis"];
+const REMOVED_IDS = ["straddleStrangleScanner", "OptionScanner", "coveredCallScanner", "protectivePutScanner"];
 
 export async function ensureDefaultReportTypes(db: Awaited<ReturnType<typeof getDb>>): Promise<void> {
   const coll = db.collection("reportTypes");
   const now = new Date().toISOString();
+
+  if (REMOVED_IDS.length > 0) {
+    await coll.deleteMany({ id: { $in: REMOVED_IDS } });
+    const jobsColl = db.collection("reportJobs");
+    await jobsColl.deleteMany({ jobType: { $in: REMOVED_IDS } });
+  }
+
   for (const t of DEFAULT_REPORT_TYPES) {
     const exists = await coll.findOne({ id: t.id });
     if (!exists) {

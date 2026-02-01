@@ -43,7 +43,7 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
   ];
 
   const agenda = await getAgenda();
-  const legacyNames = ["daily-analysis", "cleanup-alerts", "OptionScanner", "coveredCallScanner", "protectivePutScanner", "straddleStrangleScanner"];
+  const legacyNames = ["daily-analysis", "cleanup-alerts"];
   for (const name of legacyNames) {
     await agenda.cancel({ name });
   }

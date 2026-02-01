@@ -566,24 +566,6 @@ export async function executeJob(jobId: string): Promise<{
         title = job.name;
         bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
       }
-    } else if (handlerKey === "OptionScanner") {
-      try {
-        const accountId = job.accountId ?? undefined;
-        const config = job.scannerConfig;
-        const recommendations = await scanOptions(accountId, config);
-        const { stored, alertsCreated } = await storeOptionRecommendations(recommendations, { createAlerts: true });
-        title = job.name;
-        bodyText = [
-          `Option Scanner complete`,
-          `• Scanned: ${recommendations.length}`,
-          `• Stored: ${stored}`,
-          `• Alerts created: ${alertsCreated}`,
-        ].join("\n");
-      } catch (e) {
-        console.error("Failed to run Option Scanner:", e);
-        title = job.name;
-        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
-      }
     } else if (handlerKey === "unifiedOptionsScanner") {
       try {
         const accountId = job.accountId ?? undefined;
@@ -603,70 +585,6 @@ export async function executeJob(jobId: string): Promise<{
         ].join("\n");
       } catch (e) {
         console.error("Failed to run Unified Options Scanner:", e);
-        title = job.name;
-        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
-      }
-    } else if (handlerKey === "coveredCallScanner") {
-      try {
-        const accountId = job.accountId ?? undefined;
-        const config = job.config;
-        const recommendations = await analyzeCoveredCalls(accountId, config);
-        const { stored, alertsCreated } = await storeCoveredCallRecommendations(recommendations, { createAlerts: true });
-        title = job.name;
-        const recLines =
-          recommendations.length > 0
-            ? recommendations.map(
-                (r) =>
-                  `• ${r.symbol} (${r.source}): ${r.recommendation} — ${r.reason}`
-              )
-            : ["• No covered call positions or watchlist calls to analyze."];
-        bodyText = [
-          `Covered Call Scanner complete`,
-          `• Analyzed: ${recommendations.length}`,
-          `• Stored: ${stored}`,
-          `• Alerts created: ${alertsCreated}`,
-          "",
-          ...recLines,
-        ].join("\n");
-      } catch (e) {
-        console.error("Failed to run Covered Call Scanner:", e);
-        title = job.name;
-        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
-      }
-    } else if (handlerKey === "straddleStrangleScanner") {
-      try {
-        const accountId = job.accountId ?? undefined;
-        const recommendations = await analyzeStraddlesAndStrangles(accountId);
-        const { stored, alertsCreated } = await storeStraddleStrangleRecommendations(recommendations, {
-          createAlerts: true,
-        });
-        title = job.name;
-        bodyText = [
-          `Straddle/Strangle Scanner complete`,
-          `• Analyzed: ${recommendations.length}`,
-          `• Stored: ${stored}`,
-          `• Alerts created: ${alertsCreated}`,
-        ].join("\n");
-      } catch (e) {
-        console.error("Failed to run Straddle/Strangle Scanner:", e);
-        title = job.name;
-        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
-      }
-    } else if (handlerKey === "protectivePutScanner") {
-      try {
-        const accountId = job.accountId ?? undefined;
-        const config = job.config;
-        const recommendations = await analyzeProtectivePuts(accountId, config);
-        const { stored, alertsCreated } = await storeProtectivePutRecommendations(recommendations, { createAlerts: true });
-        title = job.name;
-        bodyText = [
-          `Protective Put Scanner complete`,
-          `• Analyzed: ${recommendations.length}`,
-          `• Stored: ${stored}`,
-          `• Alerts created: ${alertsCreated}`,
-        ].join("\n");
-      } catch (e) {
-        console.error("Failed to run Protective Put Scanner:", e);
         title = job.name;
         bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
       }

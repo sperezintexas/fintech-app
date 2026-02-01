@@ -16,7 +16,6 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 | OptionScanner | Option Scanner | ✓ | ✗ | Yes |
 | coveredCallScanner | Covered Call Scanner | ✓ | ✗ | Yes |
 | protectivePutScanner | Protective Put Scanner | ✓ | ✗ | Yes |
-| straddleStrangleScanner | Straddle/Strangle Scanner | ✓ | ✗ | No |
 | unifiedOptionsScanner | Unified Options Scanner | ✓ | ✗ | Yes |
 | deliverAlerts | Deliver Alerts | ✓ | ✓ | No |
 
@@ -152,21 +151,9 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 
 ---
 
-### straddleStrangleScanner
-
-**Purpose:** Evaluates long straddle (ATM call + ATM put) and long strangle (OTM call + OTM put) positions. Recommends HOLD, SELL_TO_CLOSE, ROLL, ADD, or NONE.
-
-**Scope:** Account-level only.
-
-**Configuration:** None.
-
-**Output:** Analyzed count, stored recommendations, alerts created.
-
----
-
 ### unifiedOptionsScanner
 
-**Purpose:** Runs OptionScanner, CoveredCallScanner, ProtectivePutScanner, and StraddleStrangleScanner in one job. One daily job instead of four.
+**Purpose:** Runs OptionScanner, CoveredCallScanner, ProtectivePutScanner, and straddle/strangle analysis in one job. One daily job instead of four.
 
 **Scope:** Account-level only.
 
@@ -248,7 +235,7 @@ Example: Create `coveredCallScanner-aggressive` with `handlerKey: coveredCallSca
 | Job | Type | Schedule (cron) | Purpose |
 |-----|------|-----------------|---------|
 | Weekly Portfolio | portfoliosummary | `0 18 * * 0` (Sun 6 PM) | Multi-account overview; enable "Include AI insights" for SmartXAI sentiment |
-| Daily Options | unifiedOptionsScanner | `0 16 * * 1-5` (Mon–Fri 4 PM) | All option recommendations (Option, Covered Call, Protective Put, Straddle/Strangle) in one run |
+| Daily Options | unifiedOptionsScanner | `0 16 * * 1-5` (Mon–Fri 4 PM) | All option recommendations (Option, Covered Call, Protective Put, straddle/strangle) in one run |
 | Watchlist Snapshot | watchlistreport | `0 9,16 * * 1-5` (9 AM & 4 PM) | Market snapshot + rationale per item; also runs daily analysis and creates alerts |
 | Deliver Alerts | deliverAlerts | `30 16 * * 1-5` (4:30 PM) | Sends pending alerts to Slack/X (run after scanners) |
 | Purge | cleanup | (existing) | Storage cleanup when nearing limit or on schedule |

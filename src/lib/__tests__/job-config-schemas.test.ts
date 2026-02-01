@@ -70,32 +70,26 @@ describe("job-config-schemas", () => {
 
   describe("validateJobConfig", () => {
     it("returns undefined for null/empty config", () => {
-      expect(validateJobConfig("coveredCallScanner", "coveredCallScanner", null)).toBeUndefined();
-      expect(validateJobConfig("coveredCallScanner", "coveredCallScanner", undefined)).toBeUndefined();
-      expect(validateJobConfig("coveredCallScanner", "coveredCallScanner", {})).toBeUndefined();
+      expect(validateJobConfig("unifiedOptionsScanner", "unifiedOptionsScanner", null)).toBeUndefined();
+      expect(validateJobConfig("unifiedOptionsScanner", "unifiedOptionsScanner", undefined)).toBeUndefined();
+      expect(validateJobConfig("unifiedOptionsScanner", "unifiedOptionsScanner", {})).toBeUndefined();
     });
 
-    it("validates coveredCallScanner config", () => {
-      const config = { minPremium: 0.5, symbols: ["TSLA"] };
-      expect(validateJobConfig("coveredCallScanner", "coveredCallScanner", config)).toEqual(config);
+    it("validates unifiedOptionsScanner config with nested overrides", () => {
+      const config = {
+        optionScanner: { holdDteMin: 21 },
+        coveredCall: { minPremium: 0.5, symbols: ["TSLA"] },
+        protectivePut: { minYield: 25, riskTolerance: "high" },
+      };
+      expect(validateJobConfig("unifiedOptionsScanner", "unifiedOptionsScanner", config)).toEqual(config);
     });
 
-    it("validates protectivePutScanner config", () => {
-      const config = { minYield: 25, riskTolerance: "high" };
-      expect(validateJobConfig("protectivePutScanner", "protectivePutScanner", config)).toEqual(
-        config
-      );
-    });
-
-    it("throws for invalid coveredCallScanner config", () => {
+    it("throws for invalid unifiedOptionsScanner nested config", () => {
       expect(() =>
-        validateJobConfig("coveredCallScanner", "coveredCallScanner", { maxDelta: 2 })
+        validateJobConfig("unifiedOptionsScanner", "unifiedOptionsScanner", {
+          coveredCall: { maxDelta: 2 },
+        })
       ).toThrow();
-    });
-
-    it("passes through OptionScanner config", () => {
-      const config = { holdDteMin: 14, btcDteMax: 7 };
-      expect(validateJobConfig("OptionScanner", "OptionScanner", config)).toEqual(config);
     });
   });
 });

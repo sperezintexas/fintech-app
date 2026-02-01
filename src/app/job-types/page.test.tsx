@@ -12,7 +12,7 @@ vi.stubGlobal("fetch", mockFetch);
 describe("Job Types Page", () => {
   const mockJobTypes = [
     { _id: "1", id: "smartxai", handlerKey: "smartxai", name: "SmartXAI Report", description: "AI analysis", supportsPortfolio: false, supportsAccount: true, order: 0, enabled: true },
-    { _id: "2", id: "coveredCallScanner", handlerKey: "coveredCallScanner", name: "Covered Call Scanner", description: "Covered call scan", supportsPortfolio: false, supportsAccount: true, order: 6, enabled: true },
+    { _id: "2", id: "unifiedOptionsScanner", handlerKey: "unifiedOptionsScanner", name: "Unified Options Scanner", description: "Runs all option scanners in one job", supportsPortfolio: false, supportsAccount: true, order: 4, enabled: true },
   ];
 
   beforeEach(() => {
@@ -31,7 +31,7 @@ describe("Job Types Page", () => {
     });
     expect(screen.getByText(/Manage report\/job types used by scheduled jobs/)).toBeInTheDocument();
     expect(screen.getByText("SmartXAI Report")).toBeInTheDocument();
-    expect(screen.getByText("Covered Call Scanner")).toBeInTheDocument();
+    expect(screen.getByText("Unified Options Scanner")).toBeInTheDocument();
   });
 
   it("shows New button", async () => {

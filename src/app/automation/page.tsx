@@ -499,7 +499,6 @@ function AutomationContent() {
     const typeInfo = jobTypes.find((t) => t.id === jobTypeId);
     const defaultConfig = typeInfo?.defaultConfig;
     const defaultChannels = typeInfo?.defaultDeliveryChannels;
-    const isOptionScanner = typeInfo?.handlerKey === "OptionScanner";
     setEditingJobId(null);
     setJobFormError("");
     setJobScheduleTime("16:00");
@@ -510,8 +509,8 @@ function AutomationContent() {
       messageTemplate: "",
       templateId: "concise",
       customSlackTemplate: "",
-      config: isOptionScanner ? undefined : (defaultConfig as Record<string, unknown> | undefined),
-      scannerConfig: isOptionScanner ? (defaultConfig as { holdDteMin?: number; btcDteMax?: number; btcStopLossPercent?: number; holdTimeValuePercentMin?: number; highVolatilityPercent?: number } | undefined) : undefined,
+      config: defaultConfig as Record<string, unknown> | undefined,
+      scannerConfig: undefined,
       scheduleCron: scheduleToCron("16:00", "weekdays"),
       channels: (defaultChannels?.length ? defaultChannels : ["slack"]) as AlertDeliveryChannel[],
       status: "active",
@@ -2065,134 +2064,6 @@ function AutomationContent() {
                     </div>
                   </div>
                 )}
-                {jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey === "coveredCallScanner" && (
-                  <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <h5 className="text-sm font-medium text-gray-700 mb-3">Covered Call Scanner Config</h5>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Min premium ($)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={(jobForm.config?.minPremium as number) ?? ""}
-                          onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, minPremium: parseFloat(e.target.value) || undefined } })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                          placeholder="0.50"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Max delta (0–1)</label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          max="1"
-                          value={(jobForm.config?.maxDelta as number) ?? ""}
-                          onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, maxDelta: parseFloat(e.target.value) || undefined } })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                          placeholder="0.35"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Min stock shares</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={(jobForm.config?.minStockShares as number) ?? ""}
-                          onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, minStockShares: parseInt(e.target.value, 10) || undefined } })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                          placeholder="100"
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs text-gray-500 mb-1">Symbols (comma-separated)</label>
-                        <input
-                          type="text"
-                          value={Array.isArray(jobForm.config?.symbols) ? (jobForm.config.symbols as string[]).join(", ") : (jobForm.config?.symbols as string) ?? ""}
-                          onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, symbols: e.target.value ? e.target.value.split(",").map((s) => s.trim()).filter(Boolean) : undefined } })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                          placeholder="TSLA, AAPL"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Expiration min days</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={(jobForm.config?.expirationRange as { minDays?: number })?.minDays ?? ""}
-                          onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, expirationRange: { ...((jobForm.config?.expirationRange as object) ?? {}), minDays: parseInt(e.target.value, 10) || undefined } } })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                          placeholder="7"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Expiration max days</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={(jobForm.config?.expirationRange as { maxDays?: number })?.maxDays ?? ""}
-                          onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, expirationRange: { ...((jobForm.config?.expirationRange as object) ?? {}), maxDays: parseInt(e.target.value, 10) || undefined } } })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                          placeholder="45"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey === "protectivePutScanner" && (
-                  <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <h5 className="text-sm font-medium text-gray-700 mb-3">Protective Put / CSP Config</h5>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Min yield (%)</label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          value={(jobForm.config?.minYield as number) ?? ""}
-                          onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, minYield: parseFloat(e.target.value) || undefined } })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                          placeholder="20"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Risk tolerance</label>
-                        <select
-                          value={(jobForm.config?.riskTolerance as string) ?? ""}
-                          onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, riskTolerance: (e.target.value as "low" | "medium" | "high") || undefined } })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm bg-white"
-                        >
-                          <option value="">Default</option>
-                          <option value="low">Low</option>
-                          <option value="medium">Medium</option>
-                          <option value="high">High</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Watchlist ID</label>
-                        <input
-                          type="text"
-                          value={(jobForm.config?.watchlistId as string) ?? ""}
-                          onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, watchlistId: e.target.value.trim() || undefined } })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                          placeholder="Optional"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Min stock shares</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={(jobForm.config?.minStockShares as number) ?? ""}
-                          onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, minStockShares: parseInt(e.target.value, 10) || undefined } })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                          placeholder="100"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
                 <div className="mb-4">
                   <label className="block text-xs text-gray-500 mb-2">Delivery channel</label>
                   <div className="flex flex-wrap gap-2">
@@ -2304,20 +2175,6 @@ function AutomationContent() {
                             {["watchlistreport", "smartxai", "portfoliosummary"].includes(typeInfo?.handlerKey ?? "") && (
                               <p className="text-sm text-gray-600 mt-0.5">Template: {template.name}</p>
                             )}
-                            {typeInfo?.handlerKey === "coveredCallScanner" && j.config && Object.keys(j.config).length > 0 && (
-                              <p className="text-sm text-gray-500 mt-0.5">Config: {Object.entries(j.config)
-                                .filter(([, v]) => v != null && v !== "")
-                                .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as string[]).join(",") : v}`)
-                                .join(" · ")}
-                              </p>
-                            )}
-                            {typeInfo?.handlerKey === "protectivePutScanner" && j.config && Object.keys(j.config).length > 0 && (
-                              <p className="text-sm text-gray-500 mt-0.5">Config: {Object.entries(j.config)
-                                .filter(([, v]) => v != null && v !== "")
-                                .map(([k, v]) => `${k}: ${v}`)
-                                .join(" · ")}
-                              </p>
-                            )}
                             <p className="text-sm text-gray-600 mt-0.5">
                               Schedule: {scheduleFriendly}
                               {nextRunFriendly && (
@@ -2411,186 +2268,6 @@ function AutomationContent() {
                         })()}
                       </select>
                     </div>
-                    {jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey === "coveredCallScanner" && (
-                      <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                        <h5 className="text-sm font-medium text-gray-700 mb-3">Covered Call Scanner Config</h5>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Min premium ($)</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={(jobForm.config?.minPremium as number) ?? ""}
-                              onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, minPremium: parseFloat(e.target.value) || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                              placeholder="0.50"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Max delta (0–1)</label>
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              max="1"
-                              value={(jobForm.config?.maxDelta as number) ?? ""}
-                              onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, maxDelta: parseFloat(e.target.value) || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                              placeholder="0.35"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Min stock shares</label>
-                            <input
-                              type="number"
-                              min="1"
-                              value={(jobForm.config?.minStockShares as number) ?? ""}
-                              onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, minStockShares: parseInt(e.target.value, 10) || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                              placeholder="100"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Symbols (comma-separated)</label>
-                            <input
-                              type="text"
-                              value={Array.isArray(jobForm.config?.symbols) ? (jobForm.config.symbols as string[]).join(", ") : (jobForm.config?.symbols as string) ?? ""}
-                              onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, symbols: e.target.value ? e.target.value.split(",").map((s) => s.trim()).filter(Boolean) : undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                              placeholder="TSLA, AAPL"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Expiration min days</label>
-                            <input
-                              type="number"
-                              min="0"
-                              value={(jobForm.config?.expirationRange as { minDays?: number })?.minDays ?? ""}
-                              onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, expirationRange: { ...((jobForm.config?.expirationRange as object) ?? {}), minDays: parseInt(e.target.value, 10) || undefined } } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                              placeholder="7"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Expiration max days</label>
-                            <input
-                              type="number"
-                              min="0"
-                              value={(jobForm.config?.expirationRange as { maxDays?: number })?.maxDays ?? ""}
-                              onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, expirationRange: { ...((jobForm.config?.expirationRange as object) ?? {}), maxDays: parseInt(e.target.value, 10) || undefined } } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                              placeholder="45"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey === "protectivePutScanner" && (
-                      <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                        <h5 className="text-sm font-medium text-gray-700 mb-3">Protective Put / CSP Config</h5>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Min yield (%)</label>
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              value={(jobForm.config?.minYield as number) ?? ""}
-                              onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, minYield: parseFloat(e.target.value) || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                              placeholder="20"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Risk tolerance</label>
-                            <select
-                              value={(jobForm.config?.riskTolerance as string) ?? ""}
-                              onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, riskTolerance: (e.target.value as "low" | "medium" | "high") || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm bg-white"
-                            >
-                              <option value="">Default</option>
-                              <option value="low">Low</option>
-                              <option value="medium">Medium</option>
-                              <option value="high">High</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Watchlist ID</label>
-                            <input
-                              type="text"
-                              value={(jobForm.config?.watchlistId as string) ?? ""}
-                              onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, watchlistId: e.target.value.trim() || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                              placeholder="Optional"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Min stock shares</label>
-                            <input
-                              type="number"
-                              min="1"
-                              value={(jobForm.config?.minStockShares as number) ?? ""}
-                              onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, minStockShares: parseInt(e.target.value, 10) || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                              placeholder="100"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey === "OptionScanner" && (
-                      <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                        <h5 className="text-sm font-medium text-gray-700 mb-3">Option Scanner Config</h5>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">HOLD DTE min</label>
-                            <input
-                              type="number"
-                              value={jobForm.scannerConfig?.holdDteMin ?? 14}
-                              onChange={(e) => setJobForm({ ...jobForm, scannerConfig: { ...jobForm.scannerConfig, holdDteMin: parseInt(e.target.value, 10) || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">BTC DTE max</label>
-                            <input
-                              type="number"
-                              value={jobForm.scannerConfig?.btcDteMax ?? 7}
-                              onChange={(e) => setJobForm({ ...jobForm, scannerConfig: { ...jobForm.scannerConfig, btcDteMax: parseInt(e.target.value, 10) || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">BTC stop loss %</label>
-                            <input
-                              type="number"
-                              value={jobForm.scannerConfig?.btcStopLossPercent ?? -50}
-                              onChange={(e) => setJobForm({ ...jobForm, scannerConfig: { ...jobForm.scannerConfig, btcStopLossPercent: parseInt(e.target.value, 10) || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">HOLD time value % min</label>
-                            <input
-                              type="number"
-                              value={jobForm.scannerConfig?.holdTimeValuePercentMin ?? 20}
-                              onChange={(e) => setJobForm({ ...jobForm, scannerConfig: { ...jobForm.scannerConfig, holdTimeValuePercentMin: parseInt(e.target.value, 10) || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">High IV % (puts)</label>
-                            <input
-                              type="number"
-                              value={jobForm.scannerConfig?.highVolatilityPercent ?? 30}
-                              onChange={(e) => setJobForm({ ...jobForm, scannerConfig: { ...jobForm.scannerConfig, highVolatilityPercent: parseInt(e.target.value, 10) || undefined } })}
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
                     {jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey === "portfoliosummary" && (
                       <label className="flex items-center gap-2 mb-4 cursor-pointer">
                         <input

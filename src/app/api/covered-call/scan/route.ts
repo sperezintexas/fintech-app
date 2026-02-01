@@ -12,7 +12,7 @@ const DEFAULT_DELIVERY_CHANNELS: AlertDeliveryChannel[] = ["slack", "twitter"];
 /**
  * POST /api/covered-call/scan
  * Run Covered Call Scanner for a single option (e.g. from xStrategyBuilder Review Order).
- * Uses coveredCallScanner job type defaults (config, delivery channels).
+ * Uses unifiedOptionsScanner defaults (config.coveredCall, delivery channels).
  * Posts results to Slack/X.
  */
 export async function POST(request: NextRequest) {
@@ -44,10 +44,11 @@ export async function POST(request: NextRequest) {
     }
 
     const db = await getDb();
-    const reportTypeDoc = await db.collection("reportTypes").findOne({ id: "coveredCallScanner" });
+    const reportTypeDoc = await db.collection("reportTypes").findOne({ id: "unifiedOptionsScanner" });
+    const unifiedConfig = (reportTypeDoc as { defaultConfig?: { coveredCall?: Record<string, unknown> } } | null)?.defaultConfig;
     const defaultChannels = (reportTypeDoc as { defaultDeliveryChannels?: AlertDeliveryChannel[] } | null)
       ?.defaultDeliveryChannels;
-    const defaultConfig = (reportTypeDoc as { defaultConfig?: Record<string, unknown> } | null)?.defaultConfig;
+    const defaultConfig = unifiedConfig?.coveredCall;
 
     const channels =
       defaultChannels?.length && defaultChannels.every((c) => DEFAULT_DELIVERY_CHANNELS.includes(c))
