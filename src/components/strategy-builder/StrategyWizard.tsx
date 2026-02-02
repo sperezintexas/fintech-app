@@ -256,9 +256,9 @@ export function StrategyWizard({ onSymbolSelected }: StrategyWizardProps) {
             )}
           </div>
           {symbolResults.length > 0 && (
-            <ul className="border border-gray-200 rounded-xl divide-y max-h-48 overflow-auto">
-              {symbolResults.map((r) => (
-                <li key={r.symbol}>
+            <ul data-testid="symbol-search-results" className="border border-gray-200 rounded-xl divide-y max-h-48 overflow-auto">
+              {symbolResults.map((r, i) => (
+                <li key={`sym-${i}`}>
                   <button
                     type="button"
                     onClick={() => fetchQuote(r.symbol)}

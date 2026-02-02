@@ -165,6 +165,40 @@ test.describe("Smoke tests", () => {
     await expect(page.getByText(/Watchlists|Select a watchlist|create one to get started/i).first()).toBeVisible();
   });
 
+  test("Watchlist page: Export and Delete buttons visible when watchlist selected", async ({ page }) => {
+    await page.goto("/watchlist");
+    await expect(page.getByText(/Watchlists|Select a watchlist|create one to get started/i).first()).toBeVisible();
+
+    const watchlistItems = page.getByTestId("watchlist-item");
+    const count = await watchlistItems.count();
+    if (count > 0) {
+      await watchlistItems.first().click();
+      await expect(page.getByTestId("watchlist-export-btn")).toBeVisible();
+      await expect(page.getByTestId("watchlist-delete-btn")).toBeVisible();
+    }
+  });
+
+  test("xStrategyBuilder: symbol search renders results without duplicate key error", async ({ page }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => {
+      const text = msg.text();
+      if (msg.type() === "error" && text.includes("same key")) {
+        consoleErrors.push(text);
+      }
+    });
+
+    await page.goto("/xstrategybuilder");
+    const responsePromise = page.waitForResponse(
+      (res) => res.url().includes("/api/symbols/search") && res.status() === 200
+    );
+    await page.getByPlaceholder(/Search symbol/i).fill("AAPL");
+    await responsePromise;
+
+    const resultsList = page.getByTestId("symbol-search-results");
+    await expect(resultsList.locator("li button").first()).toBeVisible({ timeout: 5000 });
+    expect(consoleErrors).toHaveLength(0);
+  });
+
   test("Chat page loads and shows config", async ({ page }) => {
     await page.goto("/chat");
     await expect(page.getByRole("heading", { name: /Smart Grok Chat/i })).toBeVisible();
