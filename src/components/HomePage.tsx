@@ -5,8 +5,16 @@ import type { Session } from "next-auth";
 import { Dashboard } from "@/components/Dashboard";
 import { Footer } from "@/components/Footer";
 import { AppHeader } from "@/components/AppHeader";
+import { DashboardGreeting } from "@/components/DashboardGreeting";
+import { MarketConditionsBlock } from "@/components/MarketConditionsBlock";
 
 type Props = { session: Session | null; skipAuth?: boolean };
+
+function getDisplayName(session: Session | null): string {
+  if (!session?.user) return "there";
+  const u = session.user as { name?: string | null; username?: string | null };
+  return u.name ?? u.username ?? "there";
+}
 
 export function HomePage({ session, skipAuth }: Props) {
   if (!session && !skipAuth) {
@@ -37,18 +45,17 @@ export function HomePage({ session, skipAuth }: Props) {
     );
   }
 
+  const displayName = getDisplayName(session);
+
   return (
     <div className="min-h-screen">
       <AppHeader />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900">
-            Good afternoon, Sam
-          </h2>
-          <p className="text-gray-600 mt-1">
-            Here&apos;s how your portfolio is performing today.
-          </p>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <DashboardGreeting displayName={displayName} />
+
+        <div className="mb-4 sm:mb-6 w-full">
+          <MarketConditionsBlock />
         </div>
 
         <Dashboard />

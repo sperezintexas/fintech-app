@@ -5,8 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 import { PortfolioCard } from "./PortfolioCard";
-import { MarketConditions } from "./MarketConditions";
-import type { Portfolio, MarketConditions as MarketConditionsType } from "@/types/portfolio";
+import type { Portfolio } from "@/types/portfolio";
 
 type DashboardStats = {
   totalValue: number;
@@ -35,7 +34,6 @@ function formatCurrency(value: number): string {
 
 export function Dashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [marketData, setMarketData] = useState<MarketConditionsType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [schedulerLoading, setSchedulerLoading] = useState(false);
@@ -60,23 +58,10 @@ export function Dashboard() {
     }
   }, []);
 
-  // Fetch market data (rate limited - calls Polygon API)
-  const fetchMarket = useCallback(async () => {
-    try {
-      const res = await fetch("/api/market", { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to fetch market data");
-      const data = await res.json();
-      setMarketData(data);
-    } catch (err) {
-      console.error("Market fetch error:", err);
-      // Don't set error for market - dashboard can work without it
-    }
-  }, []);
-
   // Manual refresh
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await Promise.all([fetchDashboard(), fetchMarket()]);
+    await fetchDashboard();
     setIsRefreshing(false);
   };
 
@@ -109,55 +94,38 @@ export function Dashboard() {
   useEffect(() => {
     if (pathname === "/") {
       fetchDashboard();
-      fetchMarket();
     }
-  }, [pathname, fetchDashboard, fetchMarket]);
+  }, [pathname, fetchDashboard]);
 
   // Initial fetch and refresh on visibility change
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      await Promise.all([fetchDashboard(), fetchMarket()]);
+      await fetchDashboard();
       setIsLoading(false);
     };
 
-    // Initial load
     loadData();
 
-    // Refresh when page becomes visible (user navigates back)
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        fetchDashboard();
-        fetchMarket();
-      }
+      if (document.visibilityState === "visible") fetchDashboard();
     };
-
-    // Refresh when window gains focus
-    const handleFocus = () => {
-      fetchDashboard();
-      fetchMarket();
-    };
+    const handleFocus = () => fetchDashboard();
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleFocus);
-
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleFocus);
     };
-  }, []);
+  }, [fetchDashboard]);
 
-  // Auto-refresh every 60 seconds (only if enabled) - respects API rate limits
+  // Auto-refresh every 60 seconds (only if enabled)
   useEffect(() => {
     if (!autoRefresh) return;
-
-    const interval = setInterval(() => {
-      fetchDashboard();
-      fetchMarket();
-    }, 60000); // 60 seconds to stay within rate limits
-
+    const interval = setInterval(fetchDashboard, 60000);
     return () => clearInterval(interval);
-  }, [autoRefresh, fetchDashboard, fetchMarket]);
+  }, [autoRefresh, fetchDashboard]);
 
 
   if (isLoading) {
@@ -339,20 +307,8 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Right column: Market + Allocation chart */}
+        {/* Right column: Allocation chart */}
         <div className="lg:col-span-1 space-y-8">
-          {marketData ? (
-            <MarketConditions market={marketData} />
-          ) : (
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
-                Market Conditions
-              </h2>
-              <p className="text-gray-500">Loading market data...</p>
-            </div>
-          )}
-
-          {/* Allocation chart (Recharts) */}
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
             <h2 className="text-xl font-semibold text-gray-800 mb-4">
               Allocation by Account

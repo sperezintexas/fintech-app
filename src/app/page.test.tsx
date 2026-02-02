@@ -44,8 +44,7 @@ describe("Home Page", () => {
       </SessionProvider>
     );
 
-    expect(screen.getByText(/Good afternoon/i)).toBeInTheDocument();
-    expect(screen.getByText(/portfolio|performing/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Hello, Sam/i })).toBeInTheDocument();
   });
 
   it("renders Dashboard component when authenticated", () => {
@@ -80,6 +79,6 @@ describe("Home Page", () => {
     render(<HomePage session={null} skipAuth />);
 
     expect(screen.getByTestId("dashboard")).toBeInTheDocument();
-    expect(screen.getByText(/Good afternoon/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Hello, there/i })).toBeInTheDocument();
   });
 });

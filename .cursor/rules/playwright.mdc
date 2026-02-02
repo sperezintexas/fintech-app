@@ -1,0 +1,61 @@
+---
+description: Guidelines for creating sound Playwright UI test cases for apps with a UI.
+globs:
+alwaysApply: false
+---
+# Playwright UI Test Guidelines
+
+You are an expert in writing end-to-end (E2E) UI tests using Playwright for Next.js/React apps. Focus on testing key user flows, interactions, and visual/functional correctness. Prioritize reliability, maintainability, and coverage of critical paths.
+
+## Core Principles
+- Use **Playwright** for E2E tests: Install via `npm i -D @playwright/test` if not present.
+- Test in **headless mode** by default; support headed for debugging.
+- Structure: Place tests in `/tests` or `/e2e` folder, e.g., `tests/dashboard.spec.ts`.
+- Cover **key scenarios**: Happy paths, edge cases, errors, accessibility basics.
+- Favor **data-testid** or role-based selectors over brittle CSS; avoid XPath.
+- Handle async: Use `await page.waitForSelector()`, `expect.poll()`, timeouts wisely.
+- Clean up: Use fixtures for setup/teardown; reset DB/state between tests if needed.
+- Run in CI: Configure for GitHub Actions/Vercel; include screenshots on failure.
+
+## Test Structure
+- Use `test.describe()` for grouping related tests.
+- Each `test()`: Setup → Act → Assert (with `expect`).
+- Example for a dashboard page:
+  ```ts
+  import { test, expect } from '@playwright/test';
+
+  test.describe('Dashboard UI', () => {
+    test.beforeEach(async ({ page }) => {
+      await page.goto('http://localhost:3000/dashboard');
+    });
+
+    test('renders portfolio summary', async ({ page }) => {
+      const summary = page.getByTestId('portfolio-summary');
+      await expect(summary).toBeVisible();
+      await expect(summary).toHaveText(/Total Value: \$[0-9,]+/);
+    });
+
+    test('handles error state', async ({ page }) => {
+      // Mock API error if needed
+      await page.route('/api/portfolio', route => route.fulfill({ status: 500 }));
+      await page.reload();
+      await expect(page.getByText('Failed to load portfolio')).toBeVisible();
+    });
+  });
+
+  Best Practices
+
+Accessibility: Add expect(page).toHaveNoViolations() with axe-playwright.
+Visual Regression: Use expect(page).toHaveScreenshot() for snapshots.
+Mocking: Intercept network requests with page.route() for isolation.
+Parametrize: Use test.forEach() or data-driven tests for variations.
+Config: In playwright.config.ts — set workers, retries, timeouts, baseURL.
+Integration: Run via npx playwright test; add to package.json scripts.
+
+Workflow in Cursor/Composer
+
+When task involves UI: Suggest/generates tests alongside code changes.
+After implementation: Propose running npx playwright test and fix failures iteratively.
+If no tests exist: Start with smoke tests for main pages, then expand.
+
+Deliver robust, flake-free Playwright tests that validate UI behavior end-to-end.

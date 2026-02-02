@@ -119,6 +119,7 @@ function UserMenu() {
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
 
+  const image = session?.user?.image ?? null;
   const initial = session?.user?.name?.[0] ?? session?.user?.username?.[0] ?? "?";
   const displayName = session?.user?.username ?? session?.user?.name ?? "User";
 
@@ -127,11 +128,21 @@ function UserMenu() {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-9 h-9 bg-gradient-to-br from-gray-700 to-gray-900 rounded-full flex items-center justify-center text-white text-sm font-medium hover:ring-2 hover:ring-blue-500/50 transition-colors"
+        className="w-9 h-9 rounded-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-gray-700 to-gray-900 text-white text-sm font-medium hover:ring-2 hover:ring-blue-500/50 transition-colors shrink-0"
         aria-label="User menu"
         aria-expanded={open}
       >
-        {initial.toUpperCase()}
+        {image ? (
+          <img
+            src={image}
+            alt=""
+            width={36}
+            height={36}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <span>{initial.toUpperCase()}</span>
+        )}
       </button>
       {open && (
         <>
