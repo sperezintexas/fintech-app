@@ -99,6 +99,14 @@ export function ReviewOrderStep({
       const { type, strategy } = mapStrategyToWatchlist(strategyId, contractType);
       const premium = parseFloat(limitPrice) || (bid > 0 && ask > 0 ? (bid + ask) / 2 : 0);
 
+      const contractDetails = [
+        `Added from xStrategyBuilder • ${strategyName}`,
+        `Action: ${actionLabel} | Qty: ${quantity} | Exp: ${formatExpiration(expiration)} | Strike: $${strike.toFixed(2)}`,
+        `Limit: $${premium.toFixed(2)} | Bid: $${bid.toFixed(2)} | Ask: $${ask.toFixed(2)}`,
+        breakeven != null ? `Breakeven: $${breakeven.toFixed(2)} | Prob OTM: ${probOtm}%` : `Prob OTM: ${probOtm}%`,
+        action === 'sell' && credit > 0 ? `Credit: $${credit.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : action === 'buy' ? `Debit: $${(quantity * premium * 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : null,
+      ].filter(Boolean).join('\n');
+
       const res = await fetch('/api/watchlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -113,7 +121,7 @@ export function ReviewOrderStep({
           strikePrice: strike,
           expirationDate: expiration,
           entryPremium: premium,
-          notes: `Added from xStrategyBuilder • ${strategyName} • ${symbol} ${expiration} ${contractType.toUpperCase()} $${strike}`,
+          notes: contractDetails,
         }),
       });
       const data = await res.json();
@@ -128,7 +136,7 @@ export function ReviewOrderStep({
     } finally {
       setAddLoading(false);
     }
-  }, [strategyId, symbol, expiration, contractType, strike, limitPrice, bid, ask, quantity, stockPrice, strategyName, yahooOptionSymbol]);
+  }, [strategyId, symbol, expiration, contractType, strike, limitPrice, bid, ask, quantity, stockPrice, strategyName, yahooOptionSymbol, action, actionLabel, breakeven, probOtm, credit]);
 
   const handleRunOptionScanner = useCallback(async () => {
     setScannerLoading(true);

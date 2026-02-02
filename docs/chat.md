@@ -5,9 +5,10 @@ AI chat for investment advice, powered by xAI Grok. Combines configurable tools 
 ## Overview
 
 - **Page**: `/chat` — Smart Grok Chat
-- **API**: `POST /api/chat` — single-turn chat
+- **API**: `POST /api/chat` — chat with conversation history
+- **History**: `GET /api/chat/history` — load saved messages (per user)
 - **Config**: `GET/PUT /api/chat/config` — tools and context
-- **Storage**: Config in MongoDB `appUtil` collection (`key: grokChatConfig`)
+- **Storage**: Config in MongoDB `appUtil` collection (`key: grokChatConfig`); chat history in `chatHistory` collection (per user)
 
 ## Tools
 
@@ -29,15 +30,20 @@ Defined in `src/lib/xai-grok.ts` as `WEB_SEARCH_TOOL` (OpenAI-compatible functio
 - **Executor**: `executeWebSearch()` → `searchWeb()` in `web-search.ts` (SerpAPI).
 - **Config**: `tools.webSearch` (default: true). Requires `WEB_SEARCH_API_KEY` or `SERPAPI_API_KEY`.
 
-### 2. Server-Side Pre-Fetch Tools (Market Data, Portfolio)
+### 2. Server-Side Pre-Fetch Tools (Market Data, Portfolio, Watchlist)
 
 Run before the Grok call. Results are injected into the user message as `[Context from tools]`.
 
 | Tool       | Config Key       | Trigger (regex/keywords)                                                                 | Data Source                          |
 |-----------|------------------|------------------------------------------------------------------------------------------|--------------------------------------|
-| Market Data | `tools.marketData` | `market`, `news`, `outlook`, `trending`, `sentiment`, `conditions`, `indices`             | Yahoo `getMarketNewsAndOutlook()`     |
-| Stock Prices | `tools.marketData` | `price`, `quote`, `stock`, `option`, or ticker symbols (2–5 chars)                       | Yahoo `getStockAndOptionPrices()`     |
+| Market News | `tools.marketData` | `market`, `news`, `outlook`, `trending`, `sentiment`, `conditions`, `indices`             | Yahoo `getMarketNewsAndOutlook()`     |
+| Stock Prices | `tools.marketData` | `price`, `quote`, `stock`, `option`, `trading`, `how much`, `current`, `value`, or ticker symbols (2–5 chars) | Yahoo `getStockAndOptionPrices()`     |
 | Portfolio & Watchlist | `tools.portfolio`  | `portfolio`, `holdings`, `positions`, `account`, `balance`, `watchlist`, `watching`, `tracking` | MongoDB `accounts` + `watchlists` + `watchlist` + Yahoo prices |
+
+**Notes:**
+- Portfolio and Watchlist are fetched together when `tools.portfolio` is enabled and the message matches portfolio keywords. Both are injected as separate `## Portfolio` and `## Watchlist` sections.
+- Stock prices include options chain when the message contains `option`, `call`, `put`, or `chain`.
+- Ticker symbols (2–5 uppercase letters, e.g. TSLA, AAPL) trigger the stock price tool when combined with price-related keywords.
 
 Context is formatted via `buildToolContext()` and prepended to the user message.
 
@@ -76,21 +82,49 @@ Appended dynamically:
 }
 ```
 
+## Chat History
+
+- **Persistence**: Each exchange (user message + assistant response) is saved to MongoDB `chatHistory` collection, keyed by user ID.
+- **Resume**: On load, the chat page fetches `GET /api/chat/history` and restores the last conversation.
+- **Multi-turn context**: When sending a message, the client passes the last 10 messages as `history`. The API prepends this to the user content so Grok has conversation context.
+- **Limit**: History is trimmed to the last 50 messages per user.
+
 ## Flow
 
-1. User sends message → `POST /api/chat`
-2. Rate limit check (20 req/min per client)
-3. Load `getGrokChatConfig()`
-4. Intent detection → run enabled pre-fetch tools (portfolio, market news, stock prices)
-5. Build system prompt (default or override + risk + goals + tools hint)
-6. Build user content: `[Context from tools]\n{context}\n\n[User question]\n{message}` (or just `message` if no context)
-7. Call `callGrokWithTools(systemPrompt, userContent, { tools: webSearch ? [WEB_SEARCH_TOOL] : [] })`
-8. Grok may call `web_search`; executor runs SerpAPI and appends results to messages
-9. Return `{ response, toolResults? }`
+1. User opens chat → `GET /api/chat/history` loads saved messages
+2. User sends message → `POST /api/chat` with `{ message, history }`
+3. Rate limit check (20 req/min per client)
+4. Load `getGrokChatConfig()`
+5. Intent detection → run enabled pre-fetch tools (portfolio, market news, stock prices)
+6. Build system prompt (default or override + risk + goals + tools hint)
+7. Build user content: `{history}\n[Context from tools]\n{context}\n\n[User question]\n{message}` (history = last 10 messages when provided)
+8. Call `callGrokWithTools(systemPrompt, userContent, { tools: webSearch ? [WEB_SEARCH_TOOL] : [] })`
+9. Grok may call `web_search`; executor runs SerpAPI and appends results to messages
+10. Save user message + response to chat history (when user is authenticated)
+11. Return `{ response, toolResults? }`
 
 ## Fallback
 
 If Grok returns empty, hits tool loop limit, or throws: `buildFallbackResponse()` returns formatted tool context plus disclaimer, or a generic “try asking about…” message.
+
+## Tool Keywords Reference
+
+Use these keywords in your message to trigger pre-fetch tools:
+
+| Tool | Keywords |
+|------|----------|
+| **Market News** | market, news, outlook, trending, sentiment, conditions, indices |
+| **Stock Prices** | price, quote, stock, option, trading, how much, current, value — or mention a ticker (e.g. TSLA) |
+| **Portfolio & Watchlist** | portfolio, holdings, positions, account, balance, watchlist, watching, tracking |
+
+## Example Prompts
+
+- *What's the price of TSLA?* — Stock price
+- *What's the market outlook?* — Market news
+- *Show my portfolio* — Portfolio + watchlist
+- *What am I watching?* — Watchlist
+- *Market news and sentiment* — Market news
+- *How is my watchlist doing?* — Portfolio + watchlist with live prices
 
 ## Environment
 

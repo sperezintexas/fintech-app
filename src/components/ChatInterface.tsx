@@ -47,6 +47,24 @@ export function ChatInterface() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    fetch("/api/chat/history")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: { role: string; content: string; timestamp?: string }[]) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setMessages(
+            data.map((m) => ({
+              id: crypto.randomUUID(),
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const saveConfig = async () => {
     setConfigSaving(true);
     try {
@@ -78,10 +96,11 @@ export function ChatInterface() {
     setError(null);
 
     try {
+      const historyForApi = messages.map((m) => ({ role: m.role, content: m.content }));
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({ message: trimmed, history: historyForApi }),
       });
 
       const data = await res.json();
@@ -237,14 +256,25 @@ export function ChatInterface() {
           <div className="text-center py-12 text-gray-500">
             <p className="text-lg font-medium mb-2">Smart Grok Chat</p>
             <p className="text-sm max-w-md mx-auto">
-              Ask about stock prices, market outlook, portfolio, or investment strategies. Try:
+              Ask about stock prices, market outlook, portfolio, or watchlist. Try:
             </p>
             <ul className="mt-3 text-sm space-y-1 text-gray-600">
               <li>• What&apos;s the price of TSLA?</li>
               <li>• What&apos;s the market outlook?</li>
               <li>• Show my portfolio</li>
+              <li>• What am I watching? / How is my watchlist doing?</li>
               <li>• Market news and sentiment</li>
             </ul>
+            <details className="mt-6 text-left max-w-md mx-auto">
+              <summary className="text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700">
+                Tool keywords — what triggers data
+              </summary>
+              <div className="mt-2 text-xs text-gray-500 space-y-2">
+                <p><strong>Market News:</strong> market, news, outlook, trending, sentiment, conditions, indices</p>
+                <p><strong>Stock Prices:</strong> price, quote, stock, option, trading, how much, current, value — or ticker (TSLA, AAPL)</p>
+                <p><strong>Portfolio &amp; Watchlist:</strong> portfolio, holdings, positions, account, balance, watchlist, watching, tracking</p>
+              </div>
+            </details>
           </div>
         )}
         {messages.map((msg) => (

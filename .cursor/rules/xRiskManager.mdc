@@ -1,0 +1,64 @@
+---
+description: Guidelines for integrating Grok API into risk management features in myInvestments
+globs:
+alwaysApply: false
+---
+# Grok-Integrated Risk Management Guidelines for Cursor
+
+You are implementing Grok-powered risk management in the myInvestments app: Use Grok API for advanced reasoning on portfolio/account risk (e.g., assess VaR, beta, diversification, stress tests). Integrate as a hybrid: fast local metrics first, then Grok for nuanced recommendations. Tie into existing scanners (e.g., OptionScanner) and scheduler jobs. Add to chat for on-demand queries.
+
+## Core Goals
+- Compute basic risk metrics locally (e.g., portfolio beta, volatility, Sharpe ratio).
+- Use Grok for complex reasoning: "Is this portfolio too risky for a conservative profile?" → recommendations like adjust allocations, hedge with puts.
+- Support per-account risk levels (conservative/moderate/aggressive) from MongoDB.
+- Generate risk alerts/recommendations via scheduler (new job: `riskScanner`).
+- Expose in chat: Users query "Analyze my portfolio risk" → Grok processes with tools.
+
+## Required Behavior
+- **Metrics Calculation** (local first):
+  - Portfolio: Total value-at-risk (VaR at 95%), beta vs benchmark (SPY), Sharpe/Sortino ratios, diversification score (e.g., Herfindahl index).
+  - Positions: Contribution to risk (marginal VaR), Greeks for options (delta, gamma, vega).
+  - Use Yahoo Finance for historical data/volatility.
+
+- **Grok Reasoning**:
+  - Prompt Grok with: Account risk profile, current metrics, positions summary, market conditions.
+  - Grok outputs: { riskLevel: 'low'|'medium'|'high', recommendations: string[], confidence: number, explanation: string }.
+  - Use tools: web_search for economic outlook, Yahoo tools for data.
+
+- **Integration Points**:
+  - Scheduler: New `riskScanner` job → run daily → store in `alerts` → deliver via channels.
+  - Chat: Extend `/api/chat/grok/route.ts` to handle risk queries → pull portfolio context.
+  - Reports: Add risk summary to `/app/reports`.
+
+## Implementation Priorities
+1. **Local Risk Utils**
+   - Create `src/lib/risk-management.ts` with:
+     ```ts
+     async function computeRiskMetrics(portfolio: Portfolio): Promise<RiskMetrics>
+     interface RiskMetrics { vaR: number, beta: number, sharpe: number, diversification: number, ... }
+
+Grok Helper
+Extend src/lib/xai-grok.ts with:TypeScriptasync function analyzeRiskWithGrok(context: { profile: string, metrics: RiskMetrics, positions: Position[] }): Promise<RiskAnalysis>
+Structured prompt: "As a risk manager, analyze this portfolio... Output JSON."
+
+
+Scanner Job
+Add to src/lib/scheduler.ts: riskScanner handler calls computeRiskMetrics + analyzeRiskWithGrok.
+
+Chat Enhancements
+Detect risk queries → fetch user portfolio → call Grok.
+
+File Targets
+
+src/lib/risk-management.ts             ← Local metrics logic
+src/lib/xai-grok.ts                    ← Risk analysis helper
+src/lib/scheduler.ts                   ← New job type
+src/types/portfolio.ts                 ← RiskMetrics, RiskAnalysis types
+src/app/api/chat/grok/route.ts         ← Handle risk queries
+
+Acceptance Criteria
+
+Local metrics accurate (test with sample data).
+Grok provides reasoned, profile-aware recommendations.
+Job runs daily, integrates with alerts delivery.
+Chat query "portfolio risk" returns analysis.

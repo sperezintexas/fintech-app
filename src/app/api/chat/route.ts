@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { getMarketNewsAndOutlook, getStockAndOptionPrices } from "@/lib/yahoo";
 import { getDb } from "@/lib/mongodb";
 import type { Account } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
 import { callGrokWithTools, WEB_SEARCH_TOOL } from "@/lib/xai-grok";
 import { getGrokChatConfig } from "@/lib/grok-chat-config";
+import { appendChatHistory } from "@/lib/chat-history";
 
 export const dynamic = "force-dynamic";
 
@@ -148,6 +150,11 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const message = typeof body?.message === "string" ? body.message.trim() : "";
+    const history = Array.isArray(body?.history)
+      ? (body.history as { role?: string; content?: string }[]).filter(
+          (m) => m?.role && m?.content && ["user", "assistant"].includes(m.role)
+        )
+      : [];
     if (!message) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
     }
@@ -286,9 +293,18 @@ export async function POST(request: NextRequest) {
         : "";
       const systemPrompt = `${basePrompt}${riskLine}${goalsLine}${toolsLine}\nUse the provided market/portfolio context when available. Reason step-by-step internally when combining multiple data sources.\nAlways include a brief disclaimer that this is not financial advice.`;
 
+      const historyBlock =
+        history.length > 0
+          ? history
+              .slice(-10)
+              .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+              .join("\n\n") + "\n\n"
+          : "";
       const userContent = toolContext.trim()
-        ? `[Context from tools]\n${toolContext}\n\n[User question]\n${message}`
-        : message;
+        ? `${historyBlock}[Context from tools]\n${toolContext}\n\n[User question]\n${message}`
+        : historyBlock
+          ? `${historyBlock}[User question]\n${message}`
+          : message;
 
       const grokTools = toolConfig.webSearch ? [WEB_SEARCH_TOOL] : [];
       response = await callGrokWithTools(systemPrompt, userContent, { tools: grokTools });
@@ -298,6 +314,19 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       console.error("xAI Grok API error:", e);
       response = buildFallbackResponse(toolResults);
+    }
+
+    const session = await auth();
+    const userId = session?.user?.id ?? (session?.user as { username?: string })?.username;
+    if (userId) {
+      try {
+        await appendChatHistory(userId, [
+          { role: "user", content: message, timestamp: new Date().toISOString() },
+          { role: "assistant", content: response, timestamp: new Date().toISOString() },
+        ]);
+      } catch (e) {
+        console.error("Chat history save error:", e);
+      }
     }
 
     return NextResponse.json({

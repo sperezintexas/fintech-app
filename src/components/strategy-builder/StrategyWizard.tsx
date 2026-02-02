@@ -7,7 +7,7 @@ import { ReviewOrderStep } from './ReviewOrderStep';
 import type { Outlook } from '@/types/strategy';
 
 type SymbolResult = { symbol: string; name: string; type: string };
-type TickerQuote = { symbol: string; name: string; price: number; change: number; changePercent: number };
+export type TickerQuote = { symbol: string; name: string; price: number; change: number; changePercent: number };
 
 function Button({
   children,
@@ -38,7 +38,11 @@ function Button({
   );
 }
 
-export function StrategyWizard() {
+type StrategyWizardProps = {
+  onSymbolSelected?: (quote: TickerQuote | null) => void;
+};
+
+export function StrategyWizard({ onSymbolSelected }: StrategyWizardProps) {
   const [step, setStep] = useState(1);
   const STEPS = ['Symbol', 'Outlook', 'Strategy', 'Contract', 'Review order'];
 
@@ -208,6 +212,10 @@ export function StrategyWizard() {
       fetchOptionChain(selectedSymbol.symbol, expiration, targetStrike);
     }
   }, [selectedSymbol, expiration, fetchOptionChain]);
+
+  useEffect(() => {
+    onSymbolSelected?.(selectedSymbol ?? null);
+  }, [selectedSymbol, onSymbolSelected]);
 
   const canProceedStep1 = !!selectedSymbol;
   const canProceedStep2 = !!outlook;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import type {
   Watchlist,
@@ -40,6 +40,14 @@ function formatPercent(value: number | undefined) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function getTypeLabel(type: WatchlistItemType): string {
+  return ITEM_TYPES.find((t) => t.value === type)?.label ?? type;
+}
+
+function getStrategyLabel(strategy: WatchlistStrategy): string {
+  return STRATEGIES.find((s) => s.value === strategy)?.label ?? strategy;
+}
+
 export default function WatchlistPage() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [selectedWatchlistId, setSelectedWatchlistId] = useState<string | null>(null);
@@ -50,6 +58,7 @@ export default function WatchlistPage() {
   const [isDeleting, setIsDeleting] = useState<string | undefined>();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showWatchlistForm, setShowWatchlistForm] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [showItemForm, setShowItemForm] = useState(false);
   const [editingWatchlist, setEditingWatchlist] = useState<Watchlist | undefined>();
   const [error, setError] = useState<string | null>(null);
@@ -596,8 +605,8 @@ export default function WatchlistPage() {
                         <table className="w-full text-xs sm:text-sm">
                           <thead>
                             <tr className="border-b border-gray-200">
-                              <th className="text-left py-2 px-1.5 font-medium text-gray-600">Symbol · Type</th>
-                              <th className="text-left py-2 px-1.5 font-medium text-gray-600">Strategy</th>
+                              <th className="text-left py-2 px-1.5 font-medium text-gray-600">Symbol</th>
+                              <th className="text-left py-2 px-1.5 font-medium text-gray-600">Type · Strategy</th>
                               <th className="text-right py-2 px-1.5 font-medium text-gray-600">Qty</th>
                               <th className="text-right py-2 px-1.5 font-medium text-gray-600">Entry</th>
                               <th className="text-right py-2 px-1.5 font-medium text-gray-600">Current</th>
@@ -608,43 +617,55 @@ export default function WatchlistPage() {
                           </thead>
                           <tbody>
                             {items.map((item) => (
-                              <tr key={item._id} className="border-b border-gray-100 hover:bg-gray-50">
-                                <td className="py-2 px-1.5">
-                                  <span className="font-medium">{item.symbol}</span>
-                                  <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                    item.type === "stock" ? "bg-blue-100 text-blue-700" :
-                                    item.type === "call" || item.type === "covered-call" ? "bg-green-100 text-green-700" :
-                                    "bg-red-100 text-red-700"
+                              <Fragment key={item._id}>
+                                <tr
+                                  key={item._id}
+                                  onClick={() => setSelectedItemId((id) => (id === item._id ? null : item._id))}
+                                  className={`border-b border-gray-100 cursor-pointer transition-colors ${
+                                    selectedItemId === item._id ? "bg-indigo-50" : "hover:bg-gray-50"
+                                  }`}
+                                >
+                                  <td className="py-2 px-1.5">
+                                    <span className="font-medium">{item.symbol}</span>
+                                  </td>
+                                  <td className="py-2 px-1.5 text-gray-600">
+                                    {getTypeLabel(item.type)} · {getStrategyLabel(item.strategy)}
+                                  </td>
+                                  <td className="py-2 px-1.5 text-right">{item.quantity}</td>
+                                  <td className="py-2 px-1.5 text-right">{formatCurrency(item.entryPrice)}</td>
+                                  <td className="py-2 px-1.5 text-right">{formatCurrency(item.currentPrice)}</td>
+                                  <td className={`py-2 px-1.5 text-right font-medium ${
+                                    (item.profitLossPercent ?? 0) >= 0 ? "text-green-600" : "text-red-600"
                                   }`}>
-                                    {item.type.toUpperCase()}
-                                  </span>
-                                </td>
-                                <td className="py-2 px-1.5 text-gray-600">{item.strategy}</td>
-                                <td className="py-2 px-1.5 text-right">{item.quantity}</td>
-                                <td className="py-2 px-1.5 text-right">{formatCurrency(item.entryPrice)}</td>
-                                <td className="py-2 px-1.5 text-right">{formatCurrency(item.currentPrice)}</td>
-                                <td className={`py-2 px-1.5 text-right font-medium ${
-                                  (item.profitLossPercent ?? 0) >= 0 ? "text-green-600" : "text-red-600"
-                                }`}>
-                                  {formatPercent(item.profitLossPercent)}
-                                </td>
-                                <td className="py-2 px-1.5 text-center text-gray-600">
-                                  {item.expirationDate ? new Date(item.expirationDate).toLocaleDateString() : "—"}
-                                </td>
-                                <td className="py-2 px-1.5 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleItemDelete(item._id)}
-                                    disabled={isDeleting === item._id}
-                                    className="text-red-500 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title="Remove"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                  </button>
-                                </td>
-                              </tr>
+                                    {formatPercent(item.profitLossPercent)}
+                                  </td>
+                                  <td className="py-2 px-1.5 text-center text-gray-600">
+                                    {item.expirationDate ? new Date(item.expirationDate).toLocaleDateString() : "—"}
+                                  </td>
+                                  <td className="py-2 px-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleItemDelete(item._id)}
+                                      disabled={isDeleting === item._id}
+                                      className="text-red-500 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                      title="Remove"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
+                                  </td>
+                                </tr>
+                                {selectedItemId === item._id && (
+                                  <tr className="border-b border-gray-100 bg-indigo-50/50">
+                                    <td colSpan={8} className="py-1.5 px-1.5">
+                                      <p className="text-xs text-gray-600 whitespace-pre-wrap pl-1">
+                                        {item.notes || "—"}
+                                      </p>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
                             ))}
                           </tbody>
                         </table>

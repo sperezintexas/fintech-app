@@ -33,8 +33,7 @@ describe("xStrategyBuilder Page", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "xStrategyBuilder" })).toBeInTheDocument();
     });
-    expect(screen.getByText("Strategy Wizard")).toBeInTheDocument();
-    expect(screen.getByText("Strategy Preview")).toBeInTheDocument();
+    expect(screen.getByText("Symbol")).toBeInTheDocument();
   });
 
   it("shows Step 1 Symbol input by default", async () => {
