@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 
 type Message = {
@@ -265,7 +266,10 @@ export function ChatInterface() {
               <li>• What am I watching? / How is my watchlist doing?</li>
               <li>• Market news and sentiment</li>
             </ul>
-            <details className="mt-6 text-left max-w-md mx-auto">
+            <p className="mt-4 text-xs text-gray-500">
+              Chat history loads automatically when you visit <Link href="/chat" className="text-blue-600 hover:underline">/chat</Link>.
+            </p>
+            <details className="mt-4 text-left max-w-md mx-auto">
               <summary className="text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700">
                 Tool keywords — what triggers data
               </summary>

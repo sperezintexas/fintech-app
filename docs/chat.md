@@ -84,6 +84,7 @@ Appended dynamically:
 
 ## Chat History
 
+- **Where to find it**: Visit the [Chat](/chat) page — your last conversation restores automatically when you open it.
 - **Persistence**: Each exchange (user message + assistant response) is saved to MongoDB `chatHistory` collection, keyed by user ID.
 - **Resume**: On load, the chat page fetches `GET /api/chat/history` and restores the last conversation.
 - **Multi-turn context**: When sending a message, the client passes the last 10 messages as `history`. The API prepends this to the user content so Grok has conversation context.

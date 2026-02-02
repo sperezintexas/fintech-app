@@ -13,6 +13,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", isActive: (p) => p === "/" },
+  { href: "/chat", label: "Chat", isActive: (p) => (p ?? "").startsWith("/chat") },
   { href: "/watchlist", label: "Watchlist", isActive: (p) => (p ?? "").startsWith("/watchlist") },
   { href: "/holdings", label: "Holdings", isActive: (p) => (p ?? "").startsWith("/holdings") || (p ?? "").startsWith("/positions") },
   { href: "/xstrategybuilder", label: "xStrategyBuilder", isActive: (p) => (p ?? "").startsWith("/xstrategybuilder") },
