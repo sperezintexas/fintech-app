@@ -2,10 +2,10 @@ import { NextFetchEvent, NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 
 const authMiddleware = auth((req) => {
-  if (!req.auth && req.nextUrl.pathname !== "/") {
-    const homeUrl = new URL("/", req.nextUrl.origin);
-    homeUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
-    return Response.redirect(homeUrl);
+  if (!req.auth) {
+    const contactUrl = new URL("/contact", req.nextUrl.origin);
+    contactUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
+    return Response.redirect(contactUrl);
   }
 });
 
@@ -18,6 +18,6 @@ export default function middleware(req: NextRequest, event: NextFetchEvent) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/auth|api/health|health|icon.svg|apple-icon.svg).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/auth|api/health|health|icon.svg|apple-icon.svg|contact).*)",
   ],
 };
