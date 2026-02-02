@@ -4,6 +4,8 @@ import Twitter from "next-auth/providers/twitter";
 const ALLOWED_USERNAMES = ["atxbogart", "sperezintexas", "shelleyperezatx"];
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  basePath: "/api/auth",
+  trustHost: true,
   providers: [
     Twitter({
       clientId: process.env.X_CLIENT_ID ?? "",
