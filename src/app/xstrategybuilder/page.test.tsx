@@ -1,8 +1,18 @@
+import type { ReactElement } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { SessionProvider } from "next-auth/react";
 import XStrategyBuilderPage from "./page";
 
 const mockFetch = vi.fn();
+
+function renderWithSession(ui: ReactElement) {
+  return render(
+    <SessionProvider session={null}>
+      {ui}
+    </SessionProvider>
+  );
+}
 vi.stubGlobal("fetch", mockFetch);
 
 describe("xStrategyBuilder Page", () => {
@@ -18,7 +28,7 @@ describe("xStrategyBuilder Page", () => {
   });
 
   it("renders page title and wizard", async () => {
-    render(<XStrategyBuilderPage />);
+    renderWithSession(<XStrategyBuilderPage />);
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "xStrategyBuilder" })).toBeInTheDocument();
@@ -28,7 +38,7 @@ describe("xStrategyBuilder Page", () => {
   });
 
   it("shows Step 1 Symbol input by default", async () => {
-    render(<XStrategyBuilderPage />);
+    renderWithSession(<XStrategyBuilderPage />);
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/Search symbol/)).toBeInTheDocument();
@@ -37,7 +47,7 @@ describe("xStrategyBuilder Page", () => {
   });
 
   it("has step navigation for Symbol, Outlook, Strategy, Contract, Review order", async () => {
-    render(<XStrategyBuilderPage />);
+    renderWithSession(<XStrategyBuilderPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Symbol")).toBeInTheDocument();

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useSession, signOut } from "next-auth/react";
 
 type NavItem = {
   href: string;
@@ -105,12 +106,53 @@ export function AppHeader() {
               </svg>
             </Link>
             <div className="w-px h-6 bg-gray-200 mx-1" aria-hidden />
-            <div className="w-9 h-9 bg-gradient-to-br from-gray-700 to-gray-900 rounded-full flex items-center justify-center text-white text-sm font-medium">
-              SP
-            </div>
+            <UserMenu />
           </div>
         </div>
       </div>
     </header>
+  );
+}
+
+function UserMenu() {
+  const { data: session } = useSession();
+  const [open, setOpen] = useState(false);
+
+  const initial = session?.user?.name?.[0] ?? session?.user?.username?.[0] ?? "?";
+  const displayName = session?.user?.username ?? session?.user?.name ?? "User";
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-9 h-9 bg-gradient-to-br from-gray-700 to-gray-900 rounded-full flex items-center justify-center text-white text-sm font-medium hover:ring-2 hover:ring-blue-500/50 transition-colors"
+        aria-label="User menu"
+        aria-expanded={open}
+      >
+        {initial.toUpperCase()}
+      </button>
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            aria-hidden
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute right-0 mt-1 py-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+            <div className="px-3 py-2 text-sm text-gray-700 border-b border-gray-100">
+              @{displayName}
+            </div>
+            <button
+              type="button"
+              onClick={() => signOut({ callbackUrl: "/" })}
+              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Sign out
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

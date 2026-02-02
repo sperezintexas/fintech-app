@@ -1,0 +1,55 @@
+---
+description: Rules for X (Twitter) auth via Auth.js v5+ in Next.js App Router – admin-only via hardcoded usernames, Vercel-friendly
+globs:
+  - "**/auth.*"
+  - "**/middleware.ts"
+  - "**/route.ts"
+  - "**/login*"
+  - "**/signin*"
+  - "**/dashboard*"
+  - "**/admin*"
+alwaysApply: false
+---
+
+# X (Twitter) Authentication – Concise Rules (2026)
+
+## Core Requirements
+- Use Auth.js v5 (not next-auth v4)
+- OAuth 2.0 only (version: "2.0" or equivalent config)
+- Restrict to 1–2 hardcoded X usernames in signIn callback
+- JWT session strategy (no DB needed for small scale)
+- Protect all private routes (/dashboard, /accounts, /holdings, /admin, etc.) via middleware
+- Vercel: NEXTAUTH_URL = production domain, secrets in env vars
+
+## Key Config Pieces
+1. Providers → Twitter / X provider with:
+   - clientId / clientSecret from env (TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET)
+   - scope: "users.read tweet.read offline.access"
+   - profile() → return { id, name, username, image }
+
+2. signIn callback:
+   - Check profile.data.username against hardcoded array (lowercase)
+   - Return false if not allowed
+
+3. jwt & session callbacks:
+   - Pass username from profile → session.user
+
+4. Middleware:
+   - Redirect unauthenticated users to /api/auth/signin
+   - Matcher: protect everything except public assets & auth routes
+
+5. UI:
+   - Simple "Sign in with X" button calling signIn("twitter")
+
+## Vercel & Security Notes
+- Env vars: TWITTER_CLIENT_*, NEXTAUTH_SECRET, NEXTAUTH_URL
+- Callback URIs must match exactly (localhost + vercel.app)
+- No app review needed for basic read + sign-in (free tier)
+- Hardcoded usernames sufficient for 1–2 admins
+
+When asked to "add X login", "implement Twitter sign-in", "restrict to admins via X":
+- Merge with any existing auth if present
+- Prioritize minimal changes
+- Always include username restriction
+- Suggest env var names with TWITTER_ prefix
+- Remind to set redirect URIs in X developer portal

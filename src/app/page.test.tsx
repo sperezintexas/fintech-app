@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import Home from "./page";
+import { SessionProvider } from "next-auth/react";
+import { HomePage } from "@/components/HomePage";
 
 vi.mock("@/components/AppHeader", () => ({
   AppHeader: () => <header data-testid="app-header">AppHeader</header>,
@@ -14,8 +15,21 @@ vi.mock("@/components/Dashboard", () => ({
   Dashboard: () => <div data-testid="dashboard">Dashboard</div>,
 }));
 
+vi.mock("next-auth/react", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("next-auth/react")>();
+  return {
+    ...mod,
+    signIn: vi.fn(),
+  };
+});
+
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
+
+const mockSession = {
+  user: { name: "Sam", username: "sperezintexas" },
+  expires: "",
+};
 
 describe("Home Page", () => {
   beforeEach(() => {
@@ -23,23 +37,49 @@ describe("Home Page", () => {
     mockFetch.mockResolvedValue({ ok: false });
   });
 
-  it("renders page title and welcome message", () => {
-    render(<Home />);
+  it("renders page title and welcome message when authenticated", () => {
+    render(
+      <SessionProvider session={mockSession}>
+        <HomePage session={mockSession} />
+      </SessionProvider>
+    );
 
-    expect(screen.getByText(/Good afternoon|Good morning|Good evening/i)).toBeInTheDocument();
+    expect(screen.getByText(/Good afternoon/i)).toBeInTheDocument();
     expect(screen.getByText(/portfolio|performing/i)).toBeInTheDocument();
   });
 
-  it("renders Dashboard component", () => {
-    render(<Home />);
+  it("renders Dashboard component when authenticated", () => {
+    render(
+      <SessionProvider session={mockSession}>
+        <HomePage session={mockSession} />
+      </SessionProvider>
+    );
 
     expect(screen.getByTestId("dashboard")).toBeInTheDocument();
   });
 
-  it("renders AppHeader and Footer", () => {
-    render(<Home />);
+  it("renders AppHeader and Footer when authenticated", () => {
+    render(
+      <SessionProvider session={mockSession}>
+        <HomePage session={mockSession} />
+      </SessionProvider>
+    );
 
     expect(screen.getByTestId("app-header")).toBeInTheDocument();
     expect(screen.getByTestId("app-footer")).toBeInTheDocument();
+  });
+
+  it("renders X sign-in when unauthenticated", () => {
+    render(<HomePage session={null} />);
+
+    expect(screen.getByLabelText("Sign in with X")).toBeInTheDocument();
+    expect(screen.getByText("Sign in with X")).toBeInTheDocument();
+  });
+
+  it("renders dashboard when skipAuth is true and unauthenticated", () => {
+    render(<HomePage session={null} skipAuth />);
+
+    expect(screen.getByTestId("dashboard")).toBeInTheDocument();
+    expect(screen.getByText(/Good afternoon/i)).toBeInTheDocument();
   });
 });
