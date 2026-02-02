@@ -373,3 +373,84 @@ Output JSON only, no markdown: {"recommendation":"HOLD"|"BUY_TO_CLOSE"|"SELL_NEW
 
   return result;
 }
+
+/** Context for risk analysis (used by riskScanner and chat). */
+export type RiskAnalysisContext = {
+  profile: string;
+  metrics: import("@/types/portfolio").RiskMetrics;
+  positions: Array<{ ticker: string; type: string; value: number; weight: number }>;
+};
+
+const DEFAULT_RISK_ANALYSIS_PROMPT = `You are a risk management advisor for myInvestments. Given portfolio metrics and positions, assess risk level (low/medium/high) and provide brief, actionable recommendations. Consider VaR, beta, diversification, and options exposure. Tailor advice to the user's risk profile.`;
+
+/**
+ * Call Grok for portfolio risk analysis. Returns structured RiskAnalysis.
+ */
+export async function analyzeRiskWithGrok(
+  context: RiskAnalysisContext,
+  options?: { systemPromptOverride?: string }
+): Promise<import("@/types/portfolio").RiskAnalysis | null> {
+  const client = getXaiClient(DECISION_TIMEOUT_MS);
+  if (!client) return null;
+
+  const systemPart =
+    options?.systemPromptOverride?.trim() || DEFAULT_RISK_ANALYSIS_PROMPT;
+  const m = context.metrics;
+  const posSummary = context.positions
+    .slice(0, 15)
+    .map((p) => `${p.ticker} (${p.type}): $${p.value.toLocaleString()} ${(p.weight * 100).toFixed(1)}%`)
+    .join("\n");
+
+  const prompt = `${systemPart}
+
+Profile: ${context.profile}
+Metrics: Total $${m.totalValue.toLocaleString()}, VaR(95%) $${m.vaR95.toLocaleString()}, Beta ${m.beta}, Sharpe ${m.sharpe}, Diversification ${(m.diversification * 100).toFixed(1)}%, Volatility ${m.volatility}%, Positions ${m.positionCount}
+
+Top positions:
+${posSummary || "No positions"}
+
+Output JSON only, no markdown: {"riskLevel":"low"|"medium"|"high","recommendations":["...","..."],"confidence":0.0-1.0,"explanation":"..."}`;
+
+  const result = await withRetry(async () => {
+    const completion = await client!.chat.completions.create({
+      model: XAI_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 512,
+    });
+
+    const text = completion.choices[0]?.message?.content?.trim();
+    if (!text) return null;
+
+    const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+    const parsed = JSON.parse(cleaned) as {
+      riskLevel?: string;
+      recommendations?: string[];
+      confidence?: number;
+      explanation?: string;
+    };
+
+    const level = parsed.riskLevel?.toLowerCase();
+    const riskLevel: "low" | "medium" | "high" =
+      level === "low" || level === "medium" || level === "high"
+        ? level
+        : "medium";
+    const recommendations = Array.isArray(parsed.recommendations)
+      ? parsed.recommendations.filter((r): r is string => typeof r === "string")
+      : [];
+    const confidence =
+      typeof parsed.confidence === "number"
+        ? Math.max(0, Math.min(1, parsed.confidence))
+        : 0.5;
+    const explanation =
+      typeof parsed.explanation === "string" ? parsed.explanation : "";
+
+    return {
+      riskLevel,
+      recommendations,
+      confidence,
+      explanation,
+    };
+  }, "analyzeRiskWithGrok");
+
+  return result;
+}

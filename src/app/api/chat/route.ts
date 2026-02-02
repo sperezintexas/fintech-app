@@ -59,11 +59,17 @@ function needsPortfolioTool(query: string): boolean {
   return /\b(portfolio|holdings|positions|account|balance|watchlist|watching|tracking)\b/.test(lower);
 }
 
+function needsRiskTool(query: string): boolean {
+  const lower = query.toLowerCase();
+  return /\b(risk|var|beta|sharpe|diversification|volatility|stress|analyze.*portfolio)\b/.test(lower);
+}
+
 function buildToolContext(toolResults: {
   marketNews?: unknown;
   stockPrices?: unknown;
   portfolio?: unknown;
   watchlist?: unknown;
+  riskAnalysis?: unknown;
 }): string {
   const parts: string[] = [];
   if (toolResults.marketNews) {
@@ -103,6 +109,24 @@ function buildToolContext(toolResults: {
       }
     }
   }
+  if (toolResults.riskAnalysis) {
+    const r = toolResults.riskAnalysis as {
+      riskLevel?: string;
+      recommendations?: string[];
+      explanation?: string;
+      metrics?: { totalValue?: number; vaR95?: number; beta?: number; diversification?: number };
+    };
+    parts.push("\n## Risk Analysis\n");
+    parts.push(`Risk level: ${r.riskLevel ?? "—"}`);
+    if (r.explanation) parts.push(r.explanation);
+    if (r.recommendations?.length) {
+      parts.push("\nRecommendations:");
+      r.recommendations.forEach((rec) => parts.push(`  - ${rec}`));
+    }
+    if (r.metrics) {
+      parts.push(`\nMetrics: Total $${(r.metrics.totalValue ?? 0).toLocaleString()}, VaR(95%) $${(r.metrics.vaR95 ?? 0).toLocaleString()}, Beta ${r.metrics.beta ?? "—"}, Diversification ${((r.metrics.diversification ?? 0) * 100).toFixed(1)}%`);
+    }
+  }
   if (toolResults.watchlist) {
     const w = toolResults.watchlist as {
       watchlists: { name: string; items: { symbol: string; type?: string; strategy?: string; quantity?: number; entryPrice?: number; strikePrice?: number; expirationDate?: string; currentPrice?: number; notes?: string }[] }[];
@@ -130,6 +154,7 @@ function buildFallbackResponse(toolResults: {
   stockPrices?: unknown;
   portfolio?: unknown;
   watchlist?: unknown;
+  riskAnalysis?: unknown;
 }): string {
   const ctx = buildToolContext(toolResults);
   if (!ctx.trim()) {
@@ -173,6 +198,7 @@ export async function POST(request: NextRequest) {
       stockPrices?: unknown;
       portfolio?: unknown;
       watchlist?: unknown;
+      riskAnalysis?: unknown;
     } = {};
 
     if (toolConfig.portfolio && needsPortfolioTool(message)) {
@@ -249,6 +275,43 @@ export async function POST(request: NextRequest) {
         toolResults.watchlist = { watchlists: watchlistsWithItems };
       } catch (e) {
         console.error("Chat portfolio tool error:", e);
+      }
+    }
+
+    if (toolConfig.portfolio && needsRiskTool(message)) {
+      try {
+        const db = await getDb();
+        type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
+        const accounts = await db.collection<AccountDoc>("accounts").find({}).toArray();
+        const { getMultipleTickerPrices } = await import("@/lib/yahoo");
+        const tickers = [...new Set(accounts.flatMap((a) => (a.positions ?? []).map((p) => p.ticker).filter((t): t is string => !!t)))];
+        const prices = tickers.length > 0 ? await getMultipleTickerPrices(tickers) : new Map();
+        const accountsWithPrices = accounts.map((acc) => ({
+          ...acc,
+          _id: acc._id.toString(),
+          positions: (acc.positions ?? []).map((pos) => {
+            if (pos.type === "stock" && pos.ticker) {
+              const p = prices.get(pos.ticker);
+              return { ...pos, currentPrice: p?.price ?? pos.currentPrice ?? pos.purchasePrice };
+            }
+            return pos;
+          }),
+        }));
+        const { computeRiskMetricsWithPositions } = await import("@/lib/risk-management");
+        const { analyzeRiskWithGrok } = await import("@/lib/xai-grok");
+        const { metrics, positions } = await computeRiskMetricsWithPositions(accountsWithPrices);
+        const profile = accounts[0]?.riskLevel ?? "medium";
+        const analysis = await analyzeRiskWithGrok({ profile, metrics, positions });
+        if (analysis) {
+          toolResults.riskAnalysis = {
+            riskLevel: analysis.riskLevel,
+            recommendations: analysis.recommendations,
+            explanation: analysis.explanation,
+            metrics: { totalValue: metrics.totalValue, vaR95: metrics.vaR95, beta: metrics.beta, diversification: metrics.diversification },
+          };
+        }
+      } catch (e) {
+        console.error("Chat risk tool error:", e);
       }
     }
 

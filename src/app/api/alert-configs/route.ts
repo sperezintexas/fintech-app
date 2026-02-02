@@ -11,6 +11,7 @@ const JOB_TYPES: AlertConfigJobType[] = [
   "covered-call",
   "protective-put",
   "straddle-strangle",
+  "risk-scanner",
 ];
 
 const DEFAULT_CONFIG: Omit<AlertConfig, "_id" | "createdAt" | "updatedAt"> = {

@@ -10,6 +10,7 @@ import { postToXThread } from "./x";
 import { runUnifiedOptionsScanner } from "./unified-options-scanner";
 import { processAlertDelivery } from "./alert-delivery";
 import { shouldRunPurge, runPurge } from "./cleanup-storage";
+import { runRiskScanner } from "./risk-scanner";
 
 // Removed - using Yahoo Finance
 // Removed - using Yahoo Finance
@@ -619,6 +620,23 @@ export async function executeJob(jobId: string): Promise<{
         ].join("\n");
       } catch (e) {
         console.error("Failed to run Unified Options Scanner:", e);
+        title = job.name;
+        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else if (handlerKey === "riskScanner") {
+      try {
+        const accountId = job.accountId ?? undefined;
+        const result = await runRiskScanner(accountId);
+        title = job.name;
+        bodyText = [
+          `Risk Scanner complete`,
+          `• Risk level: ${result.riskLevel}`,
+          `• Alerts created: ${result.alertsCreated}`,
+          "",
+          result.explanation || "",
+        ].join("\n");
+      } catch (e) {
+        console.error("Failed to run Risk Scanner:", e);
         title = job.name;
         bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
       }

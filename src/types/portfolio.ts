@@ -4,6 +4,25 @@ import alertTemplatesData from "../../config/alert-templates.json";
 
 export type RiskLevel = "low" | "medium" | "high";
 
+/** Risk metrics computed locally (VaR, beta, Sharpe, diversification). */
+export type RiskMetrics = {
+  totalValue: number;
+  vaR95: number;
+  beta: number;
+  sharpe: number;
+  diversification: number;
+  volatility: number;
+  positionCount: number;
+};
+
+/** Grok risk analysis output. */
+export type RiskAnalysis = {
+  riskLevel: "low" | "medium" | "high";
+  recommendations: string[];
+  confidence: number;
+  explanation: string;
+};
+
 export type Strategy = "growth" | "income" | "balanced" | "aggressive";
 
 export type PositionType = "stock" | "option" | "cash";
@@ -295,7 +314,8 @@ export type AlertConfigJobType =
   | "option-scanner"
   | "covered-call"
   | "protective-put"
-  | "straddle-strangle";
+  | "straddle-strangle"
+  | "risk-scanner";
 
 export type AlertDeliveryStatus = "pending" | "sent" | "failed";
 

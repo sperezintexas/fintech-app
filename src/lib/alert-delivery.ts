@@ -127,6 +127,7 @@ function mapTypeToStrategy(type?: string): string {
     "covered-call": "Covered Call",
     "protective-put": "Protective Put",
     "daily-analysis": "Daily Analysis",
+    "risk-scanner": "Risk Scanner",
     "straddle-strangle": "Straddle/Strangle",
   };
   return map[type] ?? type;
@@ -303,6 +304,7 @@ export async function processAlertDelivery(accountId?: string): Promise<{
     "covered-call",
     "protective-put",
     "straddle-strangle",
+    "risk-scanner",
   ];
 
   for (const jobType of jobTypes) {
@@ -316,7 +318,9 @@ export async function processAlertDelivery(accountId?: string): Promise<{
     const typeQuery: Record<string, unknown> =
       jobType === "daily-analysis"
         ? { $or: [{ type: "daily-analysis" }, { watchlistItemId: { $exists: true }, type: { $exists: false } }] }
-        : { type: jobType };
+        : jobType === "risk-scanner"
+          ? { type: "risk-scanner" }
+          : { type: jobType };
 
     const query: Record<string, unknown> = {
       ...typeQuery,

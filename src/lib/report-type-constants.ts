@@ -6,6 +6,7 @@ export const REPORT_HANDLER_KEYS = [
   "cleanup",
   "unifiedOptionsScanner",
   "deliverAlerts",
+  "riskScanner",
 ] as const;
 
 export type ReportHandlerKey = (typeof REPORT_HANDLER_KEYS)[number];

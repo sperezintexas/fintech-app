@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
-import type { WatchlistItem, WatchlistAlert, RiskLevel } from "@/types/portfolio";
+import type { WatchlistItem, WatchlistAlert, RiskLevel, Account } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "@/lib/watchlist-rules";
-import { getMultipleTickerOHLC } from "@/lib/yahoo";
+import { getMultipleTickerOHLC, getMultipleTickerPrices } from "@/lib/yahoo";
+import { computeRiskMetricsWithPositions } from "@/lib/risk-management";
+import { analyzeRiskWithGrok } from "@/lib/xai-grok";
 
 // Removed - using Yahoo Finance
 // Removed - using Yahoo Finance
@@ -224,6 +226,72 @@ export async function GET(request: NextRequest) {
       itemsProcessed++;
     }
 
+    // Risk analysis phase: compute portfolio risk, call Grok, create alert if high
+    let riskAlertsCreated = 0;
+    try {
+      const accountDocs = await db
+        .collection<Account & { _id: ObjectId }>("accounts")
+        .find({})
+        .toArray();
+      const accounts = accountDocs.map((a) => ({
+        ...a,
+        _id: a._id.toString(),
+        positions: a.positions ?? [],
+      }));
+
+      if (accounts.length > 0) {
+        const tickers = new Set<string>();
+        for (const acc of accounts) {
+          for (const pos of acc.positions ?? []) {
+            if (pos.ticker) tickers.add(pos.ticker);
+          }
+        }
+        const prices = await getMultipleTickerPrices(Array.from(tickers));
+        const accountsWithPrices = accounts.map((acc) => ({
+          ...acc,
+          positions: (acc.positions ?? []).map((pos) => {
+            if (pos.type === "stock" && pos.ticker) {
+              const p = prices.get(pos.ticker);
+              return { ...pos, currentPrice: p?.price ?? pos.currentPrice ?? pos.purchasePrice };
+            }
+            return pos;
+          }),
+        }));
+
+        const { metrics, positions: posSummary } = await computeRiskMetricsWithPositions(accountsWithPrices);
+        const profile = accounts[0]?.riskLevel ?? "medium";
+        const analysis = await analyzeRiskWithGrok({
+          profile,
+          metrics,
+          positions: posSummary,
+        });
+
+        if (analysis && (analysis.riskLevel === "high" || analysis.recommendations.length > 0)) {
+          const existingRisk = await db.collection("alerts").findOne({
+            type: "risk-scanner",
+            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
+          });
+          if (!existingRisk) {
+            const riskAlert = {
+              type: "risk-scanner",
+              symbol: "PORTFOLIO",
+              recommendation: analysis.riskLevel === "high" ? "WATCH" : "HOLD",
+              reason: analysis.explanation || `Risk level: ${analysis.riskLevel}. ${analysis.recommendations.join(" ")}`,
+              severity: analysis.riskLevel === "high" ? "warning" : "info",
+              metrics: { vaR95: metrics.vaR95, beta: metrics.beta, volatility: metrics.volatility },
+              details: { currentPrice: metrics.totalValue, entryPrice: metrics.totalValue, priceChange: 0, priceChangePercent: 0 },
+              createdAt: new Date().toISOString(),
+              acknowledged: false,
+            };
+            await db.collection("alerts").insertOne(riskAlert);
+            riskAlertsCreated++;
+          }
+        }
+      }
+    } catch (riskErr) {
+      console.error("Risk analysis phase failed:", riskErr);
+    }
+
     // Clean up old alerts (older than 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const deleteResult = await db.collection("alerts").deleteMany({
@@ -244,6 +312,7 @@ export async function GET(request: NextRequest) {
         itemsProcessed,
         itemsSkipped,
         alertsGenerated: alerts.length,
+        riskAlertsCreated,
         oldAlertsDeleted: deleteResult.deletedCount,
         duration,
       },
