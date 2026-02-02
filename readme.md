@@ -104,4 +104,4 @@ docker compose up -d
 **Alert config:** Delivery (Slack, Push, Twitter), templates, thresholds, quiet hours — in Setup → Alert Settings.
 
 ## Version
-1.0.6
+1.0.7
