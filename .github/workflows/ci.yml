@@ -119,3 +119,53 @@ jobs:
           build-args: |
             MONGODB_URI=mongodb://localhost:27017
             MONGODB_DB=myinvestments
+
+  notify-slack:
+    name: Notify Slack
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, build, docker]
+    if: always() && !cancelled()
+    steps:
+      - name: Send Slack build notification
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          STATUS: ${{ (needs.lint.result == 'failure' || needs.typecheck.result == 'failure' || needs.test.result == 'failure' || needs.build.result == 'failure' || needs.docker.result == 'failure') && 'failure' || (needs.lint.result == 'cancelled' || needs.typecheck.result == 'cancelled' || needs.test.result == 'cancelled' || needs.build.result == 'cancelled' || needs.docker.result == 'cancelled') && 'cancelled' || 'success' }}
+          RUN_URL: ${{ format('https://github.com/{0}/actions/runs/{1}', github.repository, github.run_id) }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set; skipping Slack notification."
+            exit 0
+          fi
+          if [ "$STATUS" = "success" ]; then
+            EMOJI=":white_check_mark:"
+            COLOR="good"
+            TEXT="CI passed"
+          elif [ "$STATUS" = "cancelled" ]; then
+            EMOJI=":warning:"
+            COLOR="warning"
+            TEXT="CI cancelled"
+          else
+            EMOJI=":x:"
+            COLOR="danger"
+            TEXT="CI failed"
+          fi
+          PAYLOAD=$(cat <<EOF
+          {
+            "attachments": [{
+              "color": "$COLOR",
+              "fallback": "$EMOJI $TEXT — $BRANCH",
+              "title": "$EMOJI Build $TEXT",
+              "title_link": "$RUN_URL",
+              "fields": [
+                { "title": "Branch", "value": "$BRANCH", "short": true },
+                { "title": "Author", "value": "$ACTOR", "short": true },
+                { "title": "Commit", "value": "<$RUN_URL|${COMMIT:0:7}>", "short": false }
+              ]
+            }]
+          }
+          EOF
+          )
+          curl -sSf -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$SLACK_WEBHOOK_URL" || true

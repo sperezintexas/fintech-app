@@ -71,6 +71,13 @@ npm run build
 npm start
 ```
 
+### CI build notifications (Slack)
+GitHub Actions CI (lint, typecheck, test, build, Docker) can post pass/fail to Slack.
+
+1. In Slack: **Apps** → **Incoming Webhooks** → **Add to Slack** → pick channel → copy the webhook URL (`https://hooks.slack.com/services/...`).
+2. In GitHub: repo **Settings** → **Secrets and variables** → **Actions** → **New repository secret** → name `SLACK_WEBHOOK_URL`, value = webhook URL.
+3. Push to `main` or `develop` (or open a PR); the **Notify Slack** job runs after the pipeline and posts an attachment with branch, author, commit link, and status (green/red/cancelled). If the secret is not set, the job skips posting.
+
 ## Scheduled Alerts
 The watchlist alert system analyzes positions daily and generates HOLD/CLOSE/BTC recommendations. Uses **Agenda.js** (MongoDB-backed) for persistent job scheduling.
 
@@ -97,4 +104,4 @@ docker compose up -d
 **Alert config:** Delivery (Slack, Push, Twitter), templates, thresholds, quiet hours — in Setup → Alert Settings.
 
 ## Version
-1.0.0
+1.0.6
