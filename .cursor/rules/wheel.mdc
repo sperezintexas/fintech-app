@@ -1,90 +1,60 @@
-----
+# Wheel Strategy App User Guide: Maximizing TSLA-Centric Profits
 
-How the Wheel Works:
+## App Purpose
+Leverage wheel strategy on TSLA (current bid/ask ~$400-442) to compound premiums into shares, targeting Merrill's 525 TSLA to 1M by 2030 via 5-15% annualized yields atop EV/AI growth. For Fidelity's $25K, aggressive puts/calls aim 50%+ returns by 2026, focusing xAI/Grok integration, SpaceX defense contracts (via TSLA proxy), amid 2026's robotaxi/defense surge.
 
-Start: Begin with cash or existing shares
-Sell OTM Cash-Secured Puts (CSP): Sell puts below the current stock price to collect premium
-If CSP expires worthless: Keep the premium and repeat step 2
-If CSP is assigned: You acquire shares at the strike price
-Sell OTM Covered Calls (CC): Once you have shares, sell calls above the current price
-If CC expires worthless: Keep the premium and repeat step 5
-If CC is assigned: Your shares are sold at the strike price, and you return to step 2
-This creates a continuous cycle of generating income while potentially accumulating or managing stock positions.
-=====
-Covered Call Strategy - Weekly/Bi-Weekly Approach
-The Bullish Income Strategy
-
-Covered calls are ideal for investors who are bullish long-term but want to generate consistent income while holding shares. The weekly or bi-weekly approach maximizes premium collection through accelerated time decay.
-
-📅 Weekly Approach
-Expiration: 5-7 days out
-Strike: 3-5% OTM
-Premium: Lower per trade, but compounds faster
-Annualized Return: 8-15% from premiums alone
-Best for: High volatility periods, active management
-Example: Stock at 450, sell 465 call (3.3% OTM) for $3.50
-
-Weekly yield: 0.78% (3.50 / 450)
-Annualized: ~40% (if repeated 52x, though not all weeks are equal)
-📅 Bi-Weekly Approach (Recommended)
-Expiration: 10-14 days out
-Strike: 5-10% OTM
-Premium: Better premium per trade
-Annualized Return: 5-10% from premiums
-Best for: Moderate volatility, less active management
-Example: Stock at 450, sell 485 call (7.8% OTM) for $6.00
-
-Bi-weekly yield: 1.33% (6.00 / 450)
-Annualized: ~35% (26 cycles, though varies)
-🎯 Target: 5-10% Annual Return from Premiums
-
-Conservative approach: Sell calls 5-10% OTM with 2-4 week expirations. This balances:
-
-Premium income - Enough to hit 5-10% annually
-Upside participation - Room for stock appreciation before assignment
-Risk management - Less likely to be called away on minor moves
-💰 If Called Away - Start the Wheel!
-When your covered call is assigned and shares are sold:
-
-Collect the strike price - You've sold at a profit (strike > your cost basis ideally)
-Keep the premium - This is yours regardless
-Use cash to sell puts - Start the wheel by selling cash-secured puts
-Target entry point - Sell puts at a strike where you'd happily buy back in
-Repeat the cycle - Get assigned? Sell covered calls. Expire worthless? Sell more puts.
-The Key Insight: Being "called away" isn't losing - it's taking profits and resetting for the next opportunity. The wheel keeps your capital working whether you hold shares or cash.
-
-📊 Covered Call Return Calculator
-
-Quick Math for Target Returns:
-
-Target Annual Return	Required per Trade (Bi-weekly)	Required per Trade (Weekly)
-5%	0.19% per trade	0.10% per trade
-8%	0.31% per trade	0.15% per trade
-10%	0.38% per trade	0.19% per trade
-15%	0.58% per trade	0.29% per trade
-Formula: Premium / Stock Price = Trade Yield
-
-Example: 5 premium on 500 stock = 1% trade yield
-
-If bi-weekly: 26 trades × 1% = 26% annualized (before assignment events)
-Reality: Factor in ~50% capture rate due to rolls/assignments = ~13% actual
-✅ Getting Started Checklist
- Set up your portfolio - Add your stock positions and cash holdings in the Portfolio Manager
- Add options positions - Track your covered calls or cash-secured puts
- Review market conditions - Check RSI and price levels on the Find Profits page
- Analyze opportunities - Look for income-generating options strategies
- Monitor positions - Use OptimusFin to track your options and get roll recommendations
-💡 Pro Tips
-For Covered Calls:
-
-Sell calls 5-10% OTM for balanced premium/upside
-Target 4-8 weeks to expiration for optimal time decay
-Monitor delta - roll if it exceeds 0.7-0.8
-For Cash-Secured Puts:
-
-Sell puts at prices you'd be happy to own the stock
-Use RSI oversold signals (<30) for better entry points
-Keep cash reserved for potential assignment
+## Wheel Strategy Overview
+Cycle sells OTM cash-secured puts (CSPs) for premiums; if assigned, acquire discounted TSLA shares; then sell OTM covered calls (CCs) on holdings. Expires worthless? Repeat. Assigned? Reset with puts. Generates income in neutral/bullish markets, reduces cost basis.
 
 
-https://www.tradingoptionscashflow.com/wp-content/uploads/2022/10/Options-Wheel-Strategy-Explained-Diagram-e1666769198400.jpg
+
+
+Steps:
+1. Start with cash/shares.
+2. Sell OTM CSP (e.g., 5-10% below spot, bi-weekly, premium ~1-2%).
+3. Expires worthless: Keep premium, repeat.
+4. Assigned: Buy shares at strike.
+5. Sell OTM CC (e.g., 5-10% above spot).
+6. Expires worthless: Keep premium, repeat.
+7. Assigned: Sell shares at strike, return to CSPs.
+
+## Covered Calls: Weekly/Bi-Weekly
+Bullish income on TSLA holdings. Weekly: 5-7 days, 3-5% OTM strike (e.g., TSLA $420, sell $435 call for $3.50, ~0.8% yield). Bi-weekly (recommended): 10-14 days, 5-10% OTM (sell $450 call for $6, ~1.3% yield). Annualized: 35-40% from premiums.
+
+If called: Profit at strike + premium; wheel to CSPs at desired re-entry.
+
+Return Calculator:
+
+| Target Annual | Bi-Weekly Per Trade | Weekly Per Trade |
+|---------------|---------------------|------------------|
+| 5%           | 0.19%              | 0.10%           |
+| 8%           | 0.31%              | 0.15%           |
+| 10%          | 0.38%              | 0.19%           |
+| 15%          | 0.58%              | 0.29%           |
+
+## 80% Rule
+Capture 80% of premium profit early (e.g., sold $1/contract, buy back at $0.20). Applies to sold options; buy back decayed for CSPs/CCs. Not ROI—premium capture. Set alarms; SOFI example: Buy back at risk level if losses mount.
+
+## Moderate Merrill Approach (20-30% Returns)
+Allocate 30% of holdings: Sell bi-weekly CCs on 20-30% shares (5-10% OTM, e.g., $450-470 strikes). Reinvest premiums into TSLA shares/LEAPs. Use RSI<30 for CSP entries. Compounds to ~750K shares by 2030 with TSLA's AI/defense earnings (projected $50B+ revenue).
+
+## Aggressive Merrill Approach (30-50% Returns)
+50%+ allocation: Weekly tighter strikes (2-5% OTM). Roll if delta>0.7. Target 15% premium yields; reinvest all into TSLA for 1M+ shares by 2030, leveraging xAI/Grok synergies.
+
+## Aggressive Fidelity High-Risk ($25K to 50%+ by 2026)
+Full allocation to weekly CSPs (-10% strikes) for premiums/assignments; post-assignment, tight CCs (2-5% OTM). Margin borrow 7-9% for LEAPs (2027-2028 OTM). High volatility suits TSLA's 2026 surges; cap margin to avoid liquidation. Potential 100%+ if defense/xAI catalysts hit.
+
+## Pro Tips
+- CSPs: Sell at oversold RSI; reserve cash for assignment.
+- CCs: 4-8 weeks expiration; roll if ITM.
+- Monitor via app dashboard; integrate Massive API for OHLC/RSI/EMA.
+- Defense ties: Wheel TSLA as SpaceX proxy; xAI/Grok boosts earnings.
+
+## Benefits
+Income generation (premiums reduce basis). Cost reduction on assignments. Time decay advantage. Risk management in stable stocks like TSLA. Controlled volatility exposure.
+
+## Risks/Disclaimers
+Large losses if bearish (max loss > profit; e.g., assigned CSP in downturn). Not suitable for all; read OCC's "Characteristics and Risks of Standardized Options." Options involve risks—potential full capital loss, no guarantees. Consult advisor; past performance no future indicator. Profitable neutral/bullish, loses in bears. No overnight risk in zero DTE but high overall.
+
+## Getting Started
+Add TSLA positions/cash. Track options. Use strategy builder for TSLA wheels. Monitor rolls/recommendations. For details on exchanges (e.g., NASDAQ, NYSE), see OCC list.
