@@ -17,6 +17,7 @@ vi.mock("../yahoo", () => ({
   getOptionChainDetailed: vi.fn(),
   getIVRankOrPercentile: vi.fn(),
   getOptionMarketConditions: vi.fn(),
+  getSuggestedCoveredCallOptions: vi.fn(),
 }));
 
 vi.mock("../xai-grok", () => ({
@@ -24,8 +25,13 @@ vi.mock("../xai-grok", () => ({
 }));
 
 const { getDb } = await import("../mongodb");
-const { getOptionMetrics, getOptionChainDetailed, getIVRankOrPercentile, getOptionMarketConditions } =
-  await import("../yahoo");
+const {
+  getOptionMetrics,
+  getOptionChainDetailed,
+  getIVRankOrPercentile,
+  getOptionMarketConditions,
+  getSuggestedCoveredCallOptions,
+} = await import("../yahoo");
 const { callCoveredCallDecision } = await import("../xai-grok");
 
 /** Assert CoveredCallRecommendation shape before persistence/alert delivery. */
@@ -504,6 +510,23 @@ describe("Covered Call Analyzer", () => {
       expect(result.pairs).toHaveLength(0);
       expect(result.opportunities).toHaveLength(0);
     });
+
+    it("returns synthetic opportunity when config.symbol is set (single-stock mode)", async () => {
+      const result = await getCoveredCallPositions(undefined, {
+        symbol: "TSLA",
+        minStockShares: 100,
+      });
+      expect(result.pairs).toHaveLength(0);
+      expect(result.standaloneCalls).toHaveLength(0);
+      expect(result.opportunities).toHaveLength(1);
+      expect(result.opportunities[0]).toMatchObject({
+        accountId: "symbol-mode",
+        symbol: "TSLA",
+        stockPositionId: "syn-TSLA",
+        stockShares: 100,
+        stockPurchasePrice: 0,
+      });
+    });
   });
 
   describe("analyzeCoveredCalls", () => {
@@ -831,6 +854,94 @@ describe("Covered Call Analyzer", () => {
         });
         expect(["HOLD", "BUY_TO_CLOSE", "SELL_NEW_CALL", "ROLL", "NONE"]).toContain(rec.recommendation);
       }
+    });
+
+    it("produces SELL_NEW_CALL for single-stock mode (config.symbol) with suggestedCalls", async () => {
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockImplementation((name: string) => {
+          if (name === "watchlist") {
+            return {
+              find: vi.fn().mockReturnValue({
+                toArray: vi.fn().mockResolvedValue([]),
+              }),
+            };
+          }
+          return {
+            find: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) }),
+            findOne: vi.fn().mockResolvedValue(null),
+          };
+        }),
+      } as never);
+      vi.mocked(getOptionChainDetailed).mockResolvedValue({
+        stock: { price: 442 },
+        calls: [{ strike: 450, bid: 8, ask: 8.5, impliedVolatility: 0.48 }],
+        puts: [],
+      });
+      vi.mocked(getSuggestedCoveredCallOptions).mockResolvedValue([
+        { strike: 460, expiration: "2026-02-14", dte: 7, bid: 5.5, ask: 5.8, premium: 5.65, otmPercent: 4.1 },
+      ]);
+
+      const result = await analyzeCoveredCalls(undefined, {
+        symbol: "TSLA",
+        grokEnabled: false,
+      });
+
+      expect(result.length).toBeGreaterThanOrEqual(1);
+      const rec = result.find((r) => r.symbol === "TSLA" && r.recommendation === "SELL_NEW_CALL");
+      expect(rec).toBeDefined();
+      expect(rec?.accountId).toBe("symbol-mode");
+      expect(rec?.suggestedCalls).toHaveLength(1);
+      expect(rec?.suggestedCalls?.[0]).toMatchObject({
+        strike: 460,
+        expiration: "2026-02-14",
+        dte: 7,
+        premium: 5.65,
+        otmPercent: 4.1,
+      });
+    });
+
+    it("skips watchlist when includeWatchlist is false", async () => {
+      const watchlistItems = [
+        {
+          _id: { toString: () => "wl1" },
+          symbol: "TSLA250130C475",
+          underlyingSymbol: "TSLA",
+          type: "call",
+          strikePrice: 475,
+          expirationDate: "2026-01-30",
+          entryPremium: 5.75,
+        },
+      ];
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockImplementation((name: string) => {
+          if (name === "accounts") {
+            return {
+              find: vi.fn().mockReturnValue({
+                toArray: vi.fn().mockResolvedValue([]),
+              }),
+              findOne: vi.fn().mockResolvedValue(null),
+            };
+          }
+          if (name === "watchlist") {
+            return {
+              find: vi.fn().mockReturnValue({
+                toArray: vi.fn().mockResolvedValue(watchlistItems),
+              }),
+            };
+          }
+          return {
+            find: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) }),
+            findOne: vi.fn().mockResolvedValue(null),
+          };
+        }),
+      } as never);
+
+      const result = await analyzeCoveredCalls(undefined, {
+        includeWatchlist: false,
+        grokEnabled: false,
+      });
+
+      expect(result.filter((r) => r.source === "watchlist")).toHaveLength(0);
     });
 
     // Expired option (getOptionMetrics returns null) → no recommendation for that position

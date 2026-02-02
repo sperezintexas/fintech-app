@@ -13,6 +13,7 @@ import {
   getOptionChainDetailed,
   getIVRankOrPercentile,
   getOptionMarketConditions,
+  getSuggestedCoveredCallOptions,
 } from "@/lib/yahoo";
 import { callCoveredCallDecision } from "@/lib/xai-grok";
 import type {
@@ -223,6 +224,10 @@ export type CoveredCallScannerConfig = {
   grokIvRankMin?: number;
   grokMaxParallel?: number;
   grokSystemPromptOverride?: string;
+  /** Single-stock mode: analyze only this symbol (mutually exclusive with account-based scan). */
+  symbol?: string;
+  /** Include watchlist call items. Default true. */
+  includeWatchlist?: boolean;
 };
 
 /** Fetch covered call pairs (stock + short call), opportunities (stock without call), and standalone call positions. */
@@ -234,16 +239,31 @@ export async function getCoveredCallPositions(
   opportunities: StockOpportunity[];
   standaloneCalls: StandaloneCallPosition[];
 }> {
-  const db = await getDb();
-  const query = accountId ? { _id: new ObjectId(accountId) } : {};
-  const accounts = await db.collection<AccountDoc>("accounts").find(query).toArray();
-
-  const minStockShares = (config as CoveredCallScannerConfig)?.minStockShares ?? DEFAULT_MIN_STOCK_SHARES;
-  const symbolFilter = (config as CoveredCallScannerConfig)?.symbols?.map((s) => s.toUpperCase());
+  const cfg = config as CoveredCallScannerConfig | undefined;
+  const minStockShares = cfg?.minStockShares ?? DEFAULT_MIN_STOCK_SHARES;
+  const symbolFilter = cfg?.symbols?.map((s) => s.toUpperCase());
 
   const pairs: CoveredCallPair[] = [];
   const opportunities: StockOpportunity[] = [];
   const standaloneCalls: StandaloneCallPosition[] = [];
+
+  if (cfg?.symbol) {
+    const sym = cfg.symbol.trim().toUpperCase();
+    if (!sym) return { pairs, opportunities, standaloneCalls };
+    if (symbolFilter?.length && !symbolFilter.includes(sym)) return { pairs, opportunities, standaloneCalls };
+    opportunities.push({
+      accountId: "symbol-mode",
+      symbol: sym,
+      stockPositionId: `syn-${sym}`,
+      stockShares: minStockShares,
+      stockPurchasePrice: 0,
+    });
+    return { pairs, opportunities, standaloneCalls };
+  }
+
+  const db = await getDb();
+  const query = accountId ? { _id: new ObjectId(accountId) } : {};
+  const accounts = await db.collection<AccountDoc>("accounts").find(query).toArray();
 
   if (accounts.length === 0) {
     console.warn("CoveredCallAnalyzer: no accounts found", accountId ? `(accountId=${accountId})` : "");
@@ -362,10 +382,18 @@ export async function analyzeCoveredCalls(
   accountId?: string,
   config?: CoveredCallScannerConfig | JobConfig
 ): Promise<CoveredCallRecommendation[]> {
-  const { pairs, opportunities, standaloneCalls } = await getCoveredCallPositions(accountId, config);
-  const watchlistCalls = await getWatchlistCallItems();
-  const recommendations: CoveredCallRecommendation[] = [];
   const cfg = config as CoveredCallScannerConfig | undefined;
+  const { pairs, opportunities, standaloneCalls } = await getCoveredCallPositions(accountId, config);
+  let watchlistCalls =
+    cfg?.includeWatchlist !== false ? await getWatchlistCallItems() : [];
+  if (cfg?.symbol && watchlistCalls.length > 0) {
+    const sym = cfg.symbol.trim().toUpperCase();
+    watchlistCalls = watchlistCalls.filter((item) => {
+      const raw = item.underlyingSymbol || item.symbol;
+      return raw?.toUpperCase() === sym;
+    });
+  }
+  const recommendations: CoveredCallRecommendation[] = [];
 
   for (const pair of pairs) {
     try {
@@ -476,8 +504,9 @@ export async function analyzeCoveredCalls(
       if (!chain) continue;
 
       const stockPrice = chain.stock.price;
+      const breakeven = opp.stockPurchasePrice > 0 ? opp.stockPurchasePrice : stockPrice;
 
-      recommendations.push({
+      const rec: CoveredCallRecommendation = {
         accountId: opp.accountId,
         symbol: opp.symbol,
         stockPositionId: opp.stockPositionId,
@@ -492,10 +521,20 @@ export async function analyzeCoveredCalls(
           dte: 0,
           netPremium: 0,
           unrealizedPl: 0,
-          breakeven: opp.stockPurchasePrice,
+          breakeven,
         },
         createdAt: new Date().toISOString(),
-      });
+      };
+
+      if (opp.accountId === "symbol-mode") {
+        rec.suggestedCalls = await getSuggestedCoveredCallOptions(opp.symbol, {
+          minDte: 1,
+          maxDte: 14,
+          limit: 10,
+        });
+      }
+
+      recommendations.push(rec);
     } catch (err) {
       console.error(`CoveredCallAnalyzer: error for opportunity ${opp.symbol}:`, err);
     }

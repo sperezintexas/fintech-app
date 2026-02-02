@@ -441,6 +441,22 @@ describe("Protective Put Analyzer", () => {
       expect(result.pairs).toHaveLength(0);
       expect(result.opportunities).toHaveLength(0);
     });
+
+    it("returns synthetic opportunity when config.symbol is set (single-stock mode)", async () => {
+      const result = await getProtectivePutPositions(undefined, {
+        symbol: "TSLA",
+        minStockShares: 100,
+      });
+      expect(result.pairs).toHaveLength(0);
+      expect(result.opportunities).toHaveLength(1);
+      expect(result.opportunities[0]).toMatchObject({
+        accountId: "symbol-mode",
+        symbol: "TSLA",
+        stockPositionId: "syn-TSLA",
+        stockShares: 100,
+        stockPurchasePrice: 0,
+      });
+    });
   });
 
   describe("analyzeProtectivePuts", () => {
@@ -678,6 +694,34 @@ describe("Protective Put Analyzer", () => {
           netProtectionCost: 0,
           effectiveFloor: 0,
         },
+      });
+    });
+
+    it("produces BUY_NEW_PUT for single-stock mode (config.symbol) when volatility high", async () => {
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          find: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) }),
+        }),
+      } as never);
+      vi.mocked(getOptionChainDetailed).mockResolvedValue({
+        stock: { price: 442 },
+        calls: [],
+        puts: [
+          { strike: 420, bid: 8.5, ask: 8.8, impliedVolatility: 0.52 },
+          { strike: 430, bid: 10, ask: 10.5, impliedVolatility: 0.48 },
+        ],
+      });
+
+      const result = await analyzeProtectivePuts(undefined, { symbol: "TSLA" });
+
+      expect(result.length).toBe(1);
+      const rec = result[0];
+      expectProtectivePutRecommendationShape(rec);
+      expect(rec).toMatchObject({
+        symbol: "TSLA",
+        accountId: "symbol-mode",
+        recommendation: "BUY_NEW_PUT",
+        stockPositionId: "syn-TSLA",
       });
     });
 

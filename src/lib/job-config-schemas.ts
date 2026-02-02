@@ -24,6 +24,8 @@ export const coveredCallScannerConfigSchema = z
     grokIvRankMin: z.number().min(0).max(100).optional(),
     grokMaxParallel: z.number().min(1).max(20).optional(),
     grokSystemPromptOverride: z.string().max(4000).optional(),
+    symbol: z.string().min(1).max(10).optional(),
+    includeWatchlist: z.boolean().optional(),
   })
   .strict()
   .optional();
@@ -37,6 +39,8 @@ export const cspAnalysisConfigSchema = z
     riskTolerance: z.enum(["low", "medium", "high"]).optional(),
     watchlistId: z.string().min(1).optional(),
     minStockShares: z.number().min(1).max(10000).optional(),
+    symbol: z.string().min(1).max(10).optional(),
+    includeWatchlist: z.boolean().optional(),
   })
   .strict()
   .optional();

@@ -446,6 +446,100 @@ export async function getOptionChainDetailed(symbol: string): Promise<{
   }
 }
 
+/** Suggested covered call options: OTM calls expiring 1–14 days, ranked by premium (highest first). */
+export async function getSuggestedCoveredCallOptions(
+  symbol: string,
+  opts?: { minDte?: number; maxDte?: number; limit?: number }
+): Promise<
+  Array<{
+    strike: number;
+    expiration: string;
+    dte: number;
+    bid: number;
+    ask: number;
+    premium: number;
+    otmPercent: number;
+  }>
+> {
+  const minDte = opts?.minDte ?? 1;
+  const maxDte = opts?.maxDte ?? 14;
+  const limit = opts?.limit ?? 10;
+
+  try {
+    const result = await yahooFinance.options(symbol.toUpperCase());
+    const r = result as {
+      quote?: { regularMarketPrice?: number };
+      expirationDates?: (Date | string)[];
+      options?: { expirationDate: Date | string; calls: { strike?: number; bid?: number; ask?: number; lastPrice?: number }[] }[];
+    };
+    const stockPrice = r.quote?.regularMarketPrice ?? 0;
+    if (!stockPrice) return [];
+
+    const now = Date.now();
+    const minExp = now + minDte * 24 * 60 * 60 * 1000;
+    const maxExp = now + maxDte * 24 * 60 * 60 * 1000;
+
+    const candidates: Array<{
+      strike: number;
+      expiration: string;
+      dte: number;
+      bid: number;
+      ask: number;
+      premium: number;
+      otmPercent: number;
+    }> = [];
+
+    const optsArr = r.options ?? [];
+    const expDates = r.expirationDates ?? [];
+
+    const collectFromGroup = (
+      group: { expirationDate: Date | string; calls: { strike?: number; bid?: number; ask?: number; lastPrice?: number }[] }
+    ) => {
+      const expDate = group.expirationDate instanceof Date ? group.expirationDate : new Date(group.expirationDate);
+      const expMs = expDate.getTime();
+      if (expMs < minExp || expMs > maxExp) return;
+
+      const expStr = expDate.toISOString().slice(0, 10);
+      const dte = Math.max(0, Math.ceil((expMs - now) / (24 * 60 * 60 * 1000)));
+
+      for (const c of group.calls ?? []) {
+        const strike = c.strike ?? 0;
+        if (strike <= stockPrice) continue;
+
+        const bid = c.bid ?? 0;
+        const ask = c.ask ?? 0;
+        const premium = bid > 0 && ask > 0 ? (bid + ask) / 2 : (c.lastPrice ?? (bid || ask || 0));
+        if (premium <= 0) continue;
+
+        const otmPercent = ((strike - stockPrice) / stockPrice) * 100;
+        candidates.push({ strike, expiration: expStr, dte, bid, ask, premium, otmPercent });
+      }
+    };
+
+    for (const group of optsArr) {
+      collectFromGroup(group);
+    }
+
+    if (candidates.length === 0 && expDates.length > 0) {
+      for (const d of expDates) {
+        const expDate = d instanceof Date ? d : new Date(d);
+        const expMs = expDate.getTime();
+        if (expMs < minExp || expMs > maxExp) continue;
+
+        const chain = await yahooFinance.options(symbol.toUpperCase(), { date: expDate });
+        const c2 = chain as { options?: { expirationDate: Date | string; calls: { strike?: number; bid?: number; ask?: number; lastPrice?: number }[] }[] };
+        const group = c2.options?.[0];
+        if (group) collectFromGroup(group);
+      }
+    }
+
+    candidates.sort((a, b) => b.premium - a.premium);
+    return candidates.slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
 // IV rank/percentile placeholder (0-100)
 export async function getIVRankOrPercentile(symbol: string): Promise<number> {
   try {

@@ -605,6 +605,16 @@ export type CoveredCallRecommendation = {
   grokEvaluated?: boolean;
   /** Grok's reasoning when grokEvaluated is true. */
   grokReasoning?: string;
+  /** Suggested call options (symbol-mode SELL_NEW_CALL: OTM calls 1–14 DTE, ranked by premium). */
+  suggestedCalls?: Array<{
+    strike: number;
+    expiration: string;
+    dte: number;
+    bid: number;
+    ask: number;
+    premium: number;
+    otmPercent: number;
+  }>;
 };
 
 // Protective Put Analyzer Types

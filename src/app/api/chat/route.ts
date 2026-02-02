@@ -54,13 +54,14 @@ function needsNewsTool(query: string): boolean {
 
 function needsPortfolioTool(query: string): boolean {
   const lower = query.toLowerCase();
-  return /\b(portfolio|holdings|positions|account|balance)\b/.test(lower);
+  return /\b(portfolio|holdings|positions|account|balance|watchlist|watching|tracking)\b/.test(lower);
 }
 
 function buildToolContext(toolResults: {
   marketNews?: unknown;
   stockPrices?: unknown;
   portfolio?: unknown;
+  watchlist?: unknown;
 }): string {
   const parts: string[] = [];
   if (toolResults.marketNews) {
@@ -100,12 +101,34 @@ function buildToolContext(toolResults: {
       }
     }
   }
+  if (toolResults.watchlist) {
+    const w = toolResults.watchlist as {
+      watchlists: { name: string; items: { symbol: string; type?: string; strategy?: string; quantity?: number; entryPrice?: number; strikePrice?: number; expirationDate?: string; currentPrice?: number; notes?: string }[] }[];
+    };
+    parts.push("\n## Watchlist\n");
+    for (const wl of w.watchlists ?? []) {
+      if (wl.items?.length > 0) {
+        parts.push(`${wl.name}:`);
+        for (const item of wl.items.slice(0, 10)) {
+          const priceStr = item.currentPrice != null ? ` @ $${item.currentPrice.toFixed(2)}` : "";
+          const optStr =
+            item.strikePrice != null && item.expirationDate
+              ? ` ${item.type ?? ""} ${item.strikePrice} exp ${item.expirationDate}`
+              : "";
+          parts.push(`  - ${item.symbol}${optStr} qty ${item.quantity ?? 0} entry $${(item.entryPrice ?? 0).toFixed(2)}${priceStr}${item.notes ? ` (${item.notes})` : ""}`);
+        }
+      }
+    }
+  }
   return parts.join("\n");
 }
 
-function buildFallbackResponse(
-  toolResults: { marketNews?: unknown; stockPrices?: unknown; portfolio?: unknown }
-): string {
+function buildFallbackResponse(toolResults: {
+  marketNews?: unknown;
+  stockPrices?: unknown;
+  portfolio?: unknown;
+  watchlist?: unknown;
+}): string {
   const ctx = buildToolContext(toolResults);
   if (!ctx.trim()) {
     return "I couldn't find relevant market data for your query. Try asking about a specific stock (e.g., \"What's the price of TSLA?\") or market conditions (e.g., \"What's the market outlook?\").";
@@ -138,18 +161,46 @@ export async function POST(request: NextRequest) {
     const grokConfig = await getGrokChatConfig();
     const { tools: toolConfig, context: ctxConfig } = grokConfig;
 
-    const toolResults: { marketNews?: unknown; stockPrices?: unknown; portfolio?: unknown } = {};
+    const toolResults: {
+      marketNews?: unknown;
+      stockPrices?: unknown;
+      portfolio?: unknown;
+      watchlist?: unknown;
+    } = {};
 
     if (toolConfig.portfolio && needsPortfolioTool(message)) {
       try {
         const db = await getDb();
         type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
         const accounts = await db.collection<AccountDoc>("accounts").find({}).toArray();
-        const prices = await import("@/lib/yahoo").then((m) =>
-          m.getMultipleTickerPrices(
-            accounts.flatMap((a) => a.positions?.map((p) => p.ticker).filter(Boolean) ?? []).filter(Boolean) as string[]
-          )
-        );
+        const portfolioTickers = accounts.flatMap((a) =>
+          (a.positions ?? []).map((p) => p.ticker).filter(Boolean)
+        ) as string[];
+
+        type WatchlistDoc = { _id: ObjectId; name: string };
+        type WatchlistItemDoc = {
+          watchlistId?: string | ObjectId;
+          symbol?: string;
+          underlyingSymbol?: string;
+          type?: string;
+          strategy?: string;
+          quantity?: number;
+          entryPrice?: number;
+          strikePrice?: number;
+          expirationDate?: string;
+          notes?: string;
+        };
+        const watchlists = await db.collection<WatchlistDoc>("watchlists").find({}).sort({ name: 1 }).toArray();
+        const watchlistItems = await db.collection<WatchlistItemDoc>("watchlist").find({}).sort({ addedAt: -1 }).toArray();
+        const watchlistTickers = [
+          ...new Set(
+            watchlistItems.map((i) => i.symbol ?? i.underlyingSymbol).filter(Boolean)
+          ),
+        ] as string[];
+
+        const allTickers = [...new Set([...portfolioTickers, ...watchlistTickers])];
+        const prices = await import("@/lib/yahoo").then((m) => m.getMultipleTickerPrices(allTickers));
+
         const accountsWithPrices = accounts.map((acc) => {
           const positions = (acc.positions ?? []).map((pos) => {
             const livePrice = pos.ticker ? prices.get(pos.ticker)?.price : undefined;
@@ -162,6 +213,33 @@ export async function POST(request: NextRequest) {
           return { name: acc.name, balance, positions };
         });
         toolResults.portfolio = { accounts: accountsWithPrices };
+
+        const defaultWatchlistId = watchlists.find((w) => w.name === "Default")?._id?.toString();
+        const watchlistsWithItems = watchlists.map((w) => {
+          const wlId = w._id.toString();
+          const isDefault = defaultWatchlistId && wlId === defaultWatchlistId;
+          const items = watchlistItems.filter((i) => {
+            const itemWlId = i.watchlistId != null ? String(i.watchlistId) : "";
+            return itemWlId === wlId || (isDefault && !itemWlId);
+          });
+          const enriched = items.slice(0, 15).map((item) => {
+            const sym = item.symbol ?? item.underlyingSymbol ?? "";
+            const livePrice = sym ? prices.get(sym)?.price : undefined;
+            return {
+              symbol: sym,
+              type: item.type,
+              strategy: item.strategy,
+              quantity: item.quantity,
+              entryPrice: item.entryPrice,
+              strikePrice: item.strikePrice,
+              expirationDate: item.expirationDate,
+              currentPrice: livePrice,
+              notes: item.notes,
+            };
+          });
+          return { name: w.name, items: enriched };
+        });
+        toolResults.watchlist = { watchlists: watchlistsWithItems };
       } catch (e) {
         console.error("Chat portfolio tool error:", e);
       }

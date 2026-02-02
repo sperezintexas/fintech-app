@@ -27,6 +27,10 @@ export type CspAnalysisConfig = {
   riskTolerance?: "low" | "medium" | "high";
   watchlistId?: string;
   minStockShares?: number;
+  /** Single-stock mode: analyze only this symbol (mutually exclusive with account-based scan). */
+  symbol?: string;
+  /** Include watchlist items when supported. Default true. */
+  includeWatchlist?: boolean;
 };
 
 type AccountDoc = { _id: ObjectId; positions?: Position[]; riskLevel?: RiskLevel };
@@ -196,13 +200,27 @@ export async function getProtectivePutPositions(
   accountId?: string,
   config?: CspAnalysisConfig | JobConfig
 ): Promise<{ pairs: ProtectivePutPair[]; opportunities: StockWithoutPut[] }> {
+  const cfg = config as CspAnalysisConfig | undefined;
+  const minStockShares = cfg?.minStockShares ?? DEFAULT_MIN_STOCK_SHARES;
+  const pairs: ProtectivePutPair[] = [];
+  const opportunities: StockWithoutPut[] = [];
+
+  if (cfg?.symbol) {
+    const sym = cfg.symbol.trim().toUpperCase();
+    if (!sym) return { pairs, opportunities };
+    opportunities.push({
+      accountId: "symbol-mode",
+      symbol: sym,
+      stockPositionId: `syn-${sym}`,
+      stockShares: minStockShares,
+      stockPurchasePrice: 0,
+    });
+    return { pairs, opportunities };
+  }
+
   const db = await getDb();
   const query = accountId ? { _id: new ObjectId(accountId) } : {};
   const accounts = await db.collection<AccountDoc>("accounts").find(query).toArray();
-
-  const minStockShares = (config as CspAnalysisConfig)?.minStockShares ?? DEFAULT_MIN_STOCK_SHARES;
-  const pairs: ProtectivePutPair[] = [];
-  const opportunities: StockWithoutPut[] = [];
 
   for (const acc of accounts) {
     const positions = (acc.positions ?? []) as Position[];
@@ -363,6 +381,9 @@ export async function analyzeProtectivePuts(
       if (!chain) continue;
 
       const stockPrice = chain.stock.price;
+      const purchasePrice = opp.stockPurchasePrice > 0 ? opp.stockPurchasePrice : stockPrice;
+      const stockUnrealizedPlPercent =
+        purchasePrice > 0 ? ((stockPrice - purchasePrice) / purchasePrice) * 100 : 0;
 
       const avgIV =
         chain.puts.filter((p) => p.impliedVolatility != null).length > 0
@@ -388,11 +409,8 @@ export async function analyzeProtectivePuts(
             dte: 0,
             netProtectionCost: 0,
             effectiveFloor: 0,
-            stockUnrealizedPl: (stockPrice - opp.stockPurchasePrice) * opp.stockShares,
-            stockUnrealizedPlPercent:
-              opp.stockPurchasePrice > 0
-                ? ((stockPrice - opp.stockPurchasePrice) / opp.stockPurchasePrice) * 100
-                : 0,
+            stockUnrealizedPl: (stockPrice - purchasePrice) * opp.stockShares,
+            stockUnrealizedPlPercent,
             protectionCostPercent: 0,
           },
           createdAt: new Date().toISOString(),
