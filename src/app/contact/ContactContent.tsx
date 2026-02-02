@@ -14,8 +14,11 @@ export function ContactContent({
   callbackUrl,
 }: Props) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-4">
-      <div className="text-center max-w-md">
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-4 bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: "url(/back1.jpeg)" }}
+    >
+      <div className="text-center max-w-md rounded-xl bg-white/90 px-6 py-8 shadow-lg">
         <h1 className="text-2xl font-bold text-gray-800 mb-2">
           myInvestments
         </h1>
