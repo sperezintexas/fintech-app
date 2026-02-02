@@ -1,7 +1,7 @@
 import Agenda, { Job as AgendaJob } from "agenda";
 import { NextRequest } from "next/server";
 import { ObjectId } from "mongodb";
-import { getDb } from "./mongodb";
+import { getDb, getMongoUri } from "./mongodb";
 import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, Job } from "@/types/portfolio";
 import { getReportTemplate } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
@@ -21,7 +21,7 @@ let agenda: Agenda | null = null;
 export async function getAgenda(): Promise<Agenda> {
   if (agenda) return agenda;
 
-  const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017";
+  const mongoUri = getMongoUri();
   const dbName = process.env.MONGODB_DB || "myinvestments";
 
   agenda = new Agenda({

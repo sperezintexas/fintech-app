@@ -1,6 +1,14 @@
 import { MongoClient, Db } from "mongodb";
 
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017";
+export function getMongoUri(): string {
+  if (process.env.MONGODB_URI) return process.env.MONGODB_URI;
+  if (process.env.MONGODB_URI_B64) {
+    return Buffer.from(process.env.MONGODB_URI_B64, "base64").toString("utf8");
+  }
+  return "mongodb://localhost:27017";
+}
+
+const MONGODB_URI = getMongoUri();
 const MONGODB_DB = process.env.MONGODB_DB || "SmartTrader";
 
 let cachedClient: MongoClient | null = null;
