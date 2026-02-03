@@ -70,14 +70,31 @@ function buildToolContext(toolResults: {
   portfolio?: unknown;
   watchlist?: unknown;
   riskAnalysis?: unknown;
+  symbol?: string;
 }): string {
   const parts: string[] = [];
+  const now = new Date();
+  const timestamp = now.toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+
+  // Add prominent data freshness header
+  parts.push("=== REAL-TIME DATA (USE THIS, NOT TRAINING DATA) ===");
+  parts.push(`Data retrieved: ${timestamp}\n`);
+
   if (toolResults.marketNews) {
     const m = toolResults.marketNews as {
       news?: { title: string; summary: string }[];
       outlook?: { summary: string; sentiment: string };
     };
-    parts.push("## Market Data\n");
+    parts.push("## Market Data (LIVE)\n");
     if (m.outlook?.summary) parts.push(m.outlook.summary);
     if (m.outlook?.sentiment) parts.push(`\nSentiment: ${m.outlook.sentiment}`);
     if (m.news?.length) {
@@ -90,21 +107,24 @@ function buildToolContext(toolResults: {
       stock: { price: number; change: number; volume: number; changePercent?: number };
       options?: { calls: unknown[]; puts: unknown[] };
     };
-    parts.push("\n## Stock Data\n");
-    parts.push(`Price: $${s.stock.price.toFixed(2)}, Change: ${s.stock.change >= 0 ? "+" : ""}$${s.stock.change.toFixed(2)} (${(s.stock.changePercent ?? 0).toFixed(2)}%), Volume: ${s.stock.volume.toLocaleString()}`);
+    const sym = toolResults.symbol ?? "Stock";
+    parts.push(`\n## ${sym} Price Data (LIVE - fetched ${timestamp})\n`);
+    parts.push(`CURRENT PRICE: $${s.stock.price.toFixed(2)}`);
+    parts.push(`Today's Change: ${s.stock.change >= 0 ? "+" : ""}$${s.stock.change.toFixed(2)} (${(s.stock.changePercent ?? 0).toFixed(2)}%)`);
+    parts.push(`Volume: ${s.stock.volume.toLocaleString()}`);
     if (s.options?.calls?.length || s.options?.puts?.length) parts.push("Options chain available.");
   }
   if (toolResults.portfolio) {
     const p = toolResults.portfolio as {
       accounts: { name: string; balance: number; positions: { ticker?: string; shares?: number; currentPrice?: number }[] }[];
     };
-    parts.push("\n## Portfolio\n");
+    parts.push("\n## Portfolio (LIVE PRICES)\n");
     for (const acc of p.accounts ?? []) {
       parts.push(`${acc.name}: $${acc.balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}`);
       for (const pos of acc.positions?.slice(0, 5) ?? []) {
         if (pos.ticker) {
           const val = (pos.shares ?? 0) * (pos.currentPrice ?? 0);
-          parts.push(`  - ${pos.ticker}: ${pos.shares} shares @ $${(pos.currentPrice ?? 0).toFixed(2)} = $${val.toFixed(2)}`);
+          parts.push(`  - ${pos.ticker}: ${pos.shares} shares @ $${(pos.currentPrice ?? 0).toFixed(2)} (CURRENT) = $${val.toFixed(2)}`);
         }
       }
     }
@@ -131,12 +151,12 @@ function buildToolContext(toolResults: {
     const w = toolResults.watchlist as {
       watchlists: { name: string; items: { symbol: string; type?: string; strategy?: string; quantity?: number; entryPrice?: number; strikePrice?: number; expirationDate?: string; currentPrice?: number; notes?: string }[] }[];
     };
-    parts.push("\n## Watchlist\n");
+    parts.push("\n## Watchlist (LIVE PRICES)\n");
     for (const wl of w.watchlists ?? []) {
       if (wl.items?.length > 0) {
         parts.push(`${wl.name}:`);
         for (const item of wl.items.slice(0, 10)) {
-          const priceStr = item.currentPrice != null ? ` @ $${item.currentPrice.toFixed(2)}` : "";
+          const priceStr = item.currentPrice != null ? ` @ $${item.currentPrice.toFixed(2)} (CURRENT)` : "";
           const optStr =
             item.strikePrice != null && item.expirationDate
               ? ` ${item.type ?? ""} ${item.strikePrice} exp ${item.expirationDate}`
@@ -324,8 +344,10 @@ export async function POST(request: NextRequest) {
     }
 
     const symbols = extractSymbols(message);
+    let queriedSymbol: string | undefined;
     if (toolConfig.marketData && needsPriceTool(message) && symbols.length > 0) {
       const symbol = symbols[0];
+      queriedSymbol = symbol;
       try {
         const prices = await getStockAndOptionPrices(symbol, {
           includeOptions: /\b(option|call|put|chain)\b/i.test(message),
@@ -336,7 +358,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const toolContext = buildToolContext(toolResults);
+    const toolContext = buildToolContext({ ...toolResults, symbol: queriedSymbol });
 
     let response: string;
 
@@ -354,7 +376,20 @@ export async function POST(request: NextRequest) {
       const toolsLine = toolConfig.webSearch
         ? "\nUse web_search for weather, news, general facts, or real-time data outside portfolio/market."
         : "";
-      const systemPrompt = `${basePrompt}${riskLine}${goalsLine}${toolsLine}\nUse the provided market/portfolio context when available. Reason step-by-step internally when combining multiple data sources.\nAlways include a brief disclaimer that this is not financial advice.`;
+
+      // Critical: Instruct Grok to use ONLY the provided real-time data for prices
+      const dataFreshnessInstructions = `
+CRITICAL DATA FRESHNESS RULES:
+- Your training data for stock prices is OUTDATED. Do NOT use prices from your training.
+- ALWAYS use the REAL-TIME prices provided in the [Context from tools] section below.
+- The data marked as "LIVE" or "CURRENT" was just fetched from Yahoo Finance and is accurate.
+- If the user asks about a stock price and real-time data is provided, use ONLY that data.
+- Never say "as of my last update" or similar - use the live data timestamp provided.
+- If no real-time data is provided for a specific stock, acknowledge you need to look it up.`;
+
+      const systemPrompt = `${basePrompt}${riskLine}${goalsLine}${toolsLine}${dataFreshnessInstructions}
+Use the provided market/portfolio context when available. Reason step-by-step internally when combining multiple data sources.
+Always include a brief disclaimer that this is not financial advice.`;
 
       const historyBlock =
         history.length > 0
@@ -364,7 +399,7 @@ export async function POST(request: NextRequest) {
               .join("\n\n") + "\n\n"
           : "";
       const userContent = toolContext.trim()
-        ? `${historyBlock}[Context from tools]\n${toolContext}\n\n[User question]\n${message}`
+        ? `${historyBlock}[Context from tools - REAL-TIME DATA - USE THIS FOR PRICES]\n${toolContext}\n\n[User question]\n${message}`
         : historyBlock
           ? `${historyBlock}[User question]\n${message}`
           : message;
