@@ -511,6 +511,8 @@ export type Job = {
   channels: AlertDeliveryChannel[];
   status: JobStatus;
   lastRunAt?: string;
+  /** Set when last run failed (e.g. handler or delivery error). */
+  lastRunError?: string;
   nextRunAt?: string;
   createdAt: string;
   updatedAt: string;

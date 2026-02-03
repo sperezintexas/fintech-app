@@ -59,6 +59,7 @@ function defineJobs(agenda: Agenda) {
       job.attrs.data = {
         ...job.attrs.data,
         lastRun: new Date().toISOString(),
+        lastError: undefined,
         result,
       };
       await job.save();
@@ -67,7 +68,14 @@ function defineJobs(agenda: Agenda) {
         `Alert Delivery complete: ${result.processed} processed, ${result.delivered} delivered, ${result.failed} failed, ${result.skipped} skipped`
       );
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       console.error("Alert Delivery failed:", error);
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        lastError: msg,
+      };
+      await job.save();
       throw error;
     }
   });
@@ -86,15 +94,28 @@ function defineJobs(agenda: Agenda) {
       job.attrs.data = {
         ...job.attrs.data,
         lastRun: new Date().toISOString(),
+        lastError: undefined,
         result,
       };
       await job.save();
 
+      if (result.errors.length > 0) {
+        console.warn(
+          `Unified Options Scanner completed with errors: ${result.errors.map((e) => `${e.scanner}: ${e.message}`).join("; ")}`
+        );
+      }
       console.log(
         `Unified Options Scanner complete: ${result.totalScanned} total, ${result.totalStored} stored, ${result.totalAlertsCreated} alerts`
       );
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       console.error("Unified Options Scanner failed:", error);
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        lastError: msg,
+      };
+      await job.save();
       throw error;
     }
   });
@@ -242,6 +263,27 @@ async function buildWatchlistConciseBlockForWatchlist(
   return buildWatchlistConciseBlockFromItems(rawItems);
 }
 
+function toErrorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+async function setJobLastRunError(
+  db: Awaited<ReturnType<typeof getDb>>,
+  jobId: string,
+  error: string
+): Promise<void> {
+  await db.collection("reportJobs").updateOne(
+    { _id: new ObjectId(jobId) },
+    {
+      $set: {
+        lastRunAt: new Date().toISOString(),
+        lastRunError: error,
+        updatedAt: new Date().toISOString(),
+      },
+    }
+  );
+}
+
 /** Execute a job synchronously (used by Run Now and scheduled runs). Returns { success, error?, deliveredChannels?, failedChannels?, summary? }. */
 export async function executeJob(jobId: string): Promise<{
   success: boolean;
@@ -250,11 +292,14 @@ export async function executeJob(jobId: string): Promise<{
   failedChannels?: { channel: string; error: string }[];
   summary?: string;
 }> {
+  const db = await getDb();
   try {
-    const db = await getDb();
     const job = (await db.collection("reportJobs").findOne({ _id: new ObjectId(jobId) })) as (Job & { _id: ObjectId }) | null;
     if (!job) return { success: false, error: "Job not found" };
-    if (job.status !== "active") return { success: false, error: "Job is paused" };
+    if (job.status !== "active") {
+      await setJobLastRunError(db, jobId, "Job is paused");
+      return { success: false, error: "Job is paused" };
+    }
 
     const deliveredChannels: string[] = [];
     const failedChannels: { channel: string; error: string }[] = [];
@@ -607,7 +652,7 @@ export async function executeJob(jobId: string): Promise<{
         const config = job.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
         const result = await runUnifiedOptionsScanner(accountId, config);
         title = job.name;
-        bodyText = [
+        const lines = [
           `Unified Options Scanner complete`,
           `• Total scanned: ${result.totalScanned}`,
           `• Stored: ${result.totalStored}`,
@@ -617,11 +662,16 @@ export async function executeJob(jobId: string): Promise<{
           `Covered Call: ${result.coveredCallScanner.analyzed} analyzed, ${result.coveredCallScanner.stored} stored`,
           `Protective Put: ${result.protectivePutScanner.analyzed} analyzed, ${result.protectivePutScanner.stored} stored`,
           `Straddle/Strangle: ${result.straddleStrangleScanner.analyzed} analyzed, ${result.straddleStrangleScanner.stored} stored`,
-        ].join("\n");
+        ];
+        if (result.errors.length > 0) {
+          lines.push("", "⚠️ Scanner errors:");
+          result.errors.forEach((e) => lines.push(`• ${e.scanner}: ${e.message}`));
+        }
+        bodyText = lines.join("\n");
       } catch (e) {
         console.error("Failed to run Unified Options Scanner:", e);
         title = job.name;
-        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+        bodyText = `Failed: ${toErrorMessage(e)}`;
       }
     } else if (handlerKey === "riskScanner") {
       try {
@@ -678,7 +728,9 @@ export async function executeJob(jobId: string): Promise<{
 
     if (job.channels.includes("slack")) {
       if (!slackConfig?.target) {
-        return { success: false, error: "Slack not configured. Go to Automation → Settings → Alert Settings and add a Slack webhook URL." };
+        const err = "Slack not configured. Go to Automation → Settings → Alert Settings and add a Slack webhook URL.";
+        await setJobLastRunError(db, jobId, err);
+        return { success: false, error: err };
       }
       try {
         for (const p of postsToSend) {
@@ -693,13 +745,16 @@ export async function executeJob(jobId: string): Promise<{
           });
           if (!slackRes.ok) {
             const errBody = await slackRes.text();
-            return { success: false, error: `Slack webhook failed (${slackRes.status}): ${errBody.slice(0, 200)}` };
+            const err = `Slack webhook failed (${slackRes.status}): ${errBody.slice(0, 200)}`;
+            await setJobLastRunError(db, jobId, err);
+            return { success: false, error: err };
           }
         }
         deliveredChannels.push("Slack");
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = toErrorMessage(e);
         console.error("Failed to post report to Slack:", e);
+        await setJobLastRunError(db, jobId, `Slack delivery failed: ${msg}`);
         return { success: false, error: `Slack delivery failed: ${msg}` };
       }
     }
@@ -726,7 +781,13 @@ export async function executeJob(jobId: string): Promise<{
 
     await db.collection("reportJobs").updateOne(
       { _id: new ObjectId(jobId) },
-      { $set: { lastRunAt: new Date().toISOString(), updatedAt: new Date().toISOString() } }
+      {
+        $set: {
+          lastRunAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          lastRunError: null,
+        },
+      }
     );
     return {
       success: true,
@@ -735,8 +796,13 @@ export async function executeJob(jobId: string): Promise<{
       summary: bodyText || undefined,
     };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = toErrorMessage(e);
     console.error("executeJob failed:", e);
+    try {
+      await setJobLastRunError(db, jobId, msg);
+    } catch {
+      // ignore if jobId invalid or db unavailable
+    }
     return { success: false, error: msg };
   }
 }

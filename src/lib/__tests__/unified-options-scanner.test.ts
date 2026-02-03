@@ -71,5 +71,21 @@ describe("Unified Options Scanner", () => {
     expect(result.totalScanned).toBe(0);
     expect(result.totalStored).toBe(0);
     expect(result.totalAlertsCreated).toBe(0);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("continues after a scanner throws and returns partial result with errors", async () => {
+    vi.mocked(optionScanner.scanOptions).mockRejectedValue(new Error("Yahoo API down"));
+    vi.mocked(coveredCallAnalyzer.analyzeCoveredCalls).mockResolvedValue([]);
+    vi.mocked(protectivePutAnalyzer.analyzeProtectivePuts).mockResolvedValue([]);
+    vi.mocked(straddleStrangleAnalyzer.analyzeStraddlesAndStrangles).mockResolvedValue([]);
+
+    const result = await runUnifiedOptionsScanner("acc1");
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toEqual({ scanner: "optionScanner", message: "Yahoo API down" });
+    expect(result.optionScanner.scanned).toBe(0);
+    expect(result.totalScanned).toBe(0);
+    expect(result.totalStored).toBe(0);
   });
 });
