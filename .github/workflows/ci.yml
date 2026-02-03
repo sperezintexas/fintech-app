@@ -120,6 +120,9 @@ jobs:
             MONGODB_URI=mongodb://localhost:27017
             MONGODB_DB=myinvestments
 
+  # Post build result to Slack. Requires SLACK_WEBHOOK_URL as a repo Secret
+  # (Settings → Secrets and variables → Actions → Secrets). The channel is set
+  # when you create the Incoming Webhook in Slack (#smart-trader-build).
   notify-slack:
     name: Notify Slack
     runs-on: ubuntu-latest
@@ -128,7 +131,7 @@ jobs:
     steps:
       - name: Send Slack build notification
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL || vars.SLACK_WEBHOOK_URL }}
           STATUS: ${{ (needs.lint.result == 'failure' || needs.typecheck.result == 'failure' || needs.test.result == 'failure' || needs.build.result == 'failure' || needs.docker.result == 'failure') && 'failure' || (needs.lint.result == 'cancelled' || needs.typecheck.result == 'cancelled' || needs.test.result == 'cancelled' || needs.build.result == 'cancelled' || needs.docker.result == 'cancelled') && 'cancelled' || 'success' }}
           RUN_URL: ${{ format('https://github.com/{0}/actions/runs/{1}', github.repository, github.run_id) }}
           BRANCH: ${{ github.ref_name }}
