@@ -2,8 +2,6 @@
 
 import { signIn } from "next-auth/react";
 
-import back1 from "./back1.jpeg";
-
 type Props = {
   accessDenied: boolean;
   calendlyUrl: string;
@@ -18,7 +16,7 @@ export function ContactContent({
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-4 bg-cover bg-center bg-no-repeat"
-      style={{ backgroundImage: `url(${back1.src})` }}
+      style={{ backgroundImage: "url(/back1.jpeg)" }}
     >
       <div className="text-center max-w-md rounded-xl bg-white/90 px-6 py-8 shadow-lg">
         <h1 className="text-2xl font-bold text-gray-800 mb-2">
