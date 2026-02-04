@@ -11,12 +11,12 @@ type Message = {
 };
 
 type GrokChatConfig = {
-  tools: { webSearch: boolean; marketData: boolean; portfolio: boolean };
+  tools: { webSearch: boolean; marketData: boolean; portfolio: boolean; coveredCallRecs: boolean };
   context: { riskProfile?: string; strategyGoals?: string; systemPromptOverride?: string };
 };
 
 const DEFAULT_CONFIG: GrokChatConfig = {
-  tools: { webSearch: true, marketData: true, portfolio: true },
+  tools: { webSearch: true, marketData: true, portfolio: true, coveredCallRecs: true },
   context: { riskProfile: "medium", strategyGoals: "", systemPromptOverride: "" },
 };
 
@@ -186,6 +186,20 @@ export function ChatInterface() {
                   className="rounded border-gray-300"
                 />
                 <span className="text-sm">Portfolio</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.tools.coveredCallRecs ?? true}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      tools: { ...c.tools, coveredCallRecs: e.target.checked },
+                    }))
+                  }
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm">Covered Call Recs</span>
               </label>
             </div>
           </div>

@@ -165,7 +165,7 @@ Each `CoveredCallRecommendation` includes:
 | **Data sources** | Accounts + watchlist | Accounts only |
 | **Recommendations** | HOLD, BUY_TO_CLOSE, SELL_NEW_CALL, ROLL, NONE | HOLD, BUY_TO_CLOSE |
 | **Architecture** | Pure rule-based | Hybrid: Stage 1 rules → Stage 2 Grok API for edge candidates |
-| **Grok integration** | None | Optional; candidates filtered by P/L magnitude > 12%, DTE < 14, IV > 55 |
+| **Grok integration** | Optional (hybrid); edge candidates get refined via `callCoveredCallDecision` | Optional; candidates filtered by P/L magnitude > 12%, DTE < 14, IV > 55 |
 | **Position types** | Pairs, opportunities, standalone calls, watchlist | Single option positions |
 | **Rule focus** | Moneyness, extrinsic %, unrealized stock gain, IV rank, assignment risk | DTE, P/L %, time value %, stop loss, IV (puts) |
 | **Config** | minPremium, maxDelta, symbols, expirationRange, minStockShares | holdDteMin, btcDteMax, btcStopLossPercent, holdTimeValuePercentMin, highVolatilityPercent, grok* |

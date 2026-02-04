@@ -38,6 +38,7 @@ export async function PUT(request: NextRequest) {
       if (typeof tools.webSearch === "boolean") t.webSearch = tools.webSearch;
       if (typeof tools.marketData === "boolean") t.marketData = tools.marketData;
       if (typeof tools.portfolio === "boolean") t.portfolio = tools.portfolio;
+      if (typeof tools.coveredCallRecs === "boolean") t.coveredCallRecs = tools.coveredCallRecs;
       if (Object.keys(t).length > 0) config.tools = t;
     }
     if (context && typeof context === "object") {

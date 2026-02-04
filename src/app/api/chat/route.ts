@@ -7,6 +7,7 @@ import { ObjectId } from "mongodb";
 import { callGrokWithTools, WEB_SEARCH_TOOL } from "@/lib/xai-grok";
 import { getGrokChatConfig } from "@/lib/grok-chat-config";
 import { appendChatHistory } from "@/lib/chat-history";
+import { getRecentCoveredCallRecommendations } from "@/lib/covered-call-analyzer";
 
 export const dynamic = "force-dynamic";
 
@@ -36,8 +37,10 @@ function checkRateLimit(clientId: string): boolean {
 
 const SYMBOL_REGEX = /\b([A-Z]{1,5})\b/g;
 
+/** Extract ticker symbols (2–5 chars). Normalizes case so "tsla" or "TSLA" both yield ["TSLA"]. */
 function extractSymbols(text: string): string[] {
-  const matches = text.match(SYMBOL_REGEX) ?? [];
+  const upper = text.toUpperCase();
+  const matches = upper.match(SYMBOL_REGEX) ?? [];
   return [...new Set(matches.filter((s) => s.length >= 2 && s.length <= 5))];
 }
 
@@ -64,12 +67,22 @@ function needsRiskTool(query: string): boolean {
   return /\b(risk|var|beta|sharpe|diversification|volatility|stress|analyze.*portfolio)\b/.test(lower);
 }
 
+function needsCoveredCallTool(query: string): boolean {
+  const lower = query.toLowerCase();
+  return (
+    /\b(covered call|my calls?|scanner|recommendations?|btc|buy to close|roll|assign|assignment|expiration|expiring)\b/.test(
+      lower
+    ) || /\b(should i (btc|roll|close)|what.*recommend)\b/.test(lower)
+  );
+}
+
 function buildToolContext(toolResults: {
   marketNews?: unknown;
   stockPrices?: unknown;
   portfolio?: unknown;
   watchlist?: unknown;
   riskAnalysis?: unknown;
+  coveredCallRecommendations?: unknown;
   symbol?: string;
 }): string {
   const parts: string[] = [];
@@ -166,6 +179,29 @@ function buildToolContext(toolResults: {
       }
     }
   }
+  if (toolResults.coveredCallRecommendations) {
+    const recs = toolResults.coveredCallRecommendations as Array<{
+      symbol: string;
+      recommendation: string;
+      reason: string;
+      source?: string;
+      confidence?: string;
+      strikePrice?: number;
+      expirationDate?: string;
+      metrics?: { stockPrice?: number; dte?: number; moneyness?: string };
+      storedAt?: string;
+      grokEvaluated?: boolean;
+    }>;
+    parts.push("\n## Covered Call Recommendations (from scanner)\n");
+    if (recs.length === 0) {
+      parts.push("No recent covered call recommendations in the system. Run the Covered Call Scanner (Automation) to generate recommendations.");
+    } else {
+      recs.slice(0, 15).forEach((r, i) => {
+        const meta = [r.strikePrice != null ? `$${r.strikePrice}` : "", r.expirationDate ?? "", r.metrics?.dte != null ? `DTE ${r.metrics.dte}` : ""].filter(Boolean).join(" ");
+        parts.push(`${i + 1}. ${r.symbol} ${r.recommendation} — ${r.reason}${meta ? ` (${meta})` : ""}${r.storedAt ? ` [stored ${r.storedAt}]` : ""}`);
+      });
+    }
+  }
   return parts.join("\n");
 }
 
@@ -175,6 +211,7 @@ function buildFallbackResponse(toolResults: {
   portfolio?: unknown;
   watchlist?: unknown;
   riskAnalysis?: unknown;
+  coveredCallRecommendations?: unknown;
 }): string {
   const ctx = buildToolContext(toolResults);
   if (!ctx.trim()) {
@@ -219,6 +256,7 @@ export async function POST(request: NextRequest) {
       portfolio?: unknown;
       watchlist?: unknown;
       riskAnalysis?: unknown;
+      coveredCallRecommendations?: unknown;
     } = {};
 
     if (toolConfig.portfolio && needsPortfolioTool(message)) {
@@ -343,6 +381,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (toolConfig.coveredCallRecs && needsCoveredCallTool(message)) {
+      try {
+        const recs = await getRecentCoveredCallRecommendations(20);
+        toolResults.coveredCallRecommendations = recs;
+      } catch (e) {
+        console.error("Chat covered call recommendations tool error:", e);
+      }
+    }
+
     const symbols = extractSymbols(message);
     let queriedSymbol: string | undefined;
     if (toolConfig.marketData && needsPriceTool(message) && symbols.length > 0) {
@@ -365,7 +412,7 @@ export async function POST(request: NextRequest) {
     try {
       const basePrompt = ctxConfig.systemPromptOverride?.trim()
         ? ctxConfig.systemPromptOverride
-        : `You are Grok, a leading financial expert for myInvestments. You advise on maximizing profits using current, mid, and future potential earnings for valuable companies like TESLA. Provide brief, direct answers with no leading intro; offer more details when asked. Focus on moderate and aggressive suggestions, sound options strategies around TSLA, SpaceX proxies, xAI/Grok proxies, and defense investments.`;
+        : `You are Grok, a leading financial expert for myInvestments. You advise on maximizing profits using current, mid, and future potential earnings for valuable companies like TESLA. Provide brief, direct answers with no leading intro; offer more details when asked. Focus on moderate and aggressive suggestions, sound options strategies around TSLA, SpaceX proxies, xAI/Grok proxies, and defense investments. When options/positions context shows price near or above strike, advise buy-to-close (BTC) to avoid assignment when appropriate.`;
 
       const riskLine = ctxConfig.riskProfile
         ? `\nUser risk profile: ${ctxConfig.riskProfile}. Tailor advice accordingly.`
@@ -374,18 +421,16 @@ export async function POST(request: NextRequest) {
         ? `\nUser strategy goals: ${ctxConfig.strategyGoals}`
         : "";
       const toolsLine = toolConfig.webSearch
-        ? "\nUse web_search for weather, news, general facts, or real-time data outside portfolio/market."
+        ? "\nFor current stock/option prices always use the pre-injected [Context from tools] data first. Use web_search only for earnings dates, news, sentiment, or facts not already in that context (e.g. 'TSLA earnings', 'Tesla FSD news')."
         : "";
 
-      // Critical: Instruct Grok to use ONLY the provided real-time data for prices
       const dataFreshnessInstructions = `
-CRITICAL DATA FRESHNESS RULES:
-- Your training data for stock prices is OUTDATED. Do NOT use prices from your training.
-- ALWAYS use the REAL-TIME prices provided in the [Context from tools] section below.
-- The data marked as "LIVE" or "CURRENT" was just fetched from Yahoo Finance and is accurate.
-- If the user asks about a stock price and real-time data is provided, use ONLY that data.
-- Never say "as of my last update" or similar - use the live data timestamp provided.
-- If no real-time data is provided for a specific stock, acknowledge you need to look it up.`;
+CRITICAL: Use ONLY the current stock/option data provided below.
+- Your training data is OUTDATED. Do NOT use prices from your training.
+- The [Context from tools] section contains REAL-TIME data (LIVE/CURRENT) just fetched from Yahoo Finance.
+- For any price, quote, or options question: use ONLY the numbers from that section when present.
+- Never say "as of my last update"; cite the live data and its timestamp.
+- If no real-time data is provided for a symbol, say so and use web_search only then for current price.`;
 
       const systemPrompt = `${basePrompt}${riskLine}${goalsLine}${toolsLine}${dataFreshnessInstructions}
 Use the provided market/portfolio context when available. Reason step-by-step internally when combining multiple data sources.

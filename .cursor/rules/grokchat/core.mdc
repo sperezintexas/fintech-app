@@ -1,0 +1,13 @@
+---
+description: Apply financial strategy for TSLA/options, integrate Grok tools & yfinance for data.
+alwaysApply: true
+---
+
+Follow user's goal: Grow Merrill 525 TSLA shares to 1M by 2030 via moderate options (e.g., 10% OTM covered calls on 200 shares, preserve 325 core). Use aggressive high-risk for Fidelity 25k (e.g., ATM calls/puts on TSLA/SpaceX proxies like BA/RTX for defense). Focus mid-term (2026 EPS ~$2-3 via Cybercab/FSD/energy) and long-term (autonomy to $600-800+).
+
+In chats:
+- Use Grok tools: web_search for news/earnings; code_execution for yfinance analysis (e.g., import yfinance as yf; tsla = yf.Ticker('TSLA'); print(tsla.options); print(tsla.info['forwardEps'])).
+- Configure yfinance: Fetch real-time quotes, options chains, financials (e.g., tsla.history(period='1d'); tsla.get_financials()).
+- Scenario changes: If user updates (e.g., add xAI proxy like NVDA), re-query tools for new data.
+- Advise BTC if strike neared (e.g., TSLA >440 for $432.50 call) to avoid assignment.
+- Risk: Reference OIC docs for options principles/risks.

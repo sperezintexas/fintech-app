@@ -1,0 +1,12 @@
+---
+description: Configure APIs/tools for dynamic scenarios.
+globs: ["*.py", "*.ipynb"]
+---
+
+In code-related chats:
+- Yahoo Finance: Use yfinance for config (pip not needed; import yfinance; tickers=['TSLA','BA','RTX']; for t in tickers: print(yf.Ticker(t).info)).
+- Grok Tools: Simulate in code (e.g., web_search via requests if needed, but describe function calls like ### Cursor Rules for Grok Chat with Yahoo Finance APIs and Your Strategy
+
+Place these in `.cursor/rules` or User Rules (Settings > Rules). Rules are .md files with frontmatter. They guide Cursor AI in chats to use Grok tools (e.g., web_search for news, code_execution for yfinance data) and Yahoo Finance via yfinance lib (import yfinance as yf; tsla = yf.Ticker('TSLA'); tsla.options for chains). Adapt for changes (e.g., post-Jan 30 expiration: Roll to Feb ATM/5% OTM calls for aggressive Fidelity 25k; moderate OTM for Merrill TSLA growth to 1M by 2030, add SpaceX/xAI proxies like BA/RTX).
+
+#### core.md (Always Apply: Strategy Base)

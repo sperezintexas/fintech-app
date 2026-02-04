@@ -7,11 +7,12 @@ type PositionListProps = {
   onEdit: (position: Position) => void;
   onDelete: (positionId: string) => void;
   onAddToWatchlist?: (position: Position) => void;
+  onBuyToClose?: (position: Position) => void;
   addToWatchlistLoadingId?: string | null;
   accountId?: string;
 };
 
-export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, addToWatchlistLoadingId, accountId }: PositionListProps) {
+export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, onBuyToClose, addToWatchlistLoadingId, accountId }: PositionListProps) {
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -305,6 +306,17 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, ad
                           )}
                         </button>
                       )}
+                      {onBuyToClose && isOption && (
+                        <button
+                          onClick={() => onBuyToClose(position)}
+                          className="p-2 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                          title="Buy to Close"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        </button>
+                      )}
                       <button
                         onClick={() => onEdit(position)}
                         className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -446,6 +458,17 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, ad
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                         </svg>
                       )}
+                    </button>
+                  )}
+                  {onBuyToClose && isOption && (
+                    <button
+                      onClick={() => onBuyToClose(position)}
+                      className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                      title="Buy to Close"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
                     </button>
                   )}
                   <button

@@ -12,6 +12,8 @@ export type GrokChatToolsConfig = {
   webSearch: boolean;
   marketData: boolean;
   portfolio: boolean;
+  /** When true, pre-fetch recent covered call recommendations when user asks about recommendations/BTC/roll. */
+  coveredCallRecs: boolean;
 };
 
 export type GrokChatContextConfig = {
@@ -36,6 +38,7 @@ const DEFAULT_TOOLS: GrokChatToolsConfig = {
   webSearch: true,
   marketData: true,
   portfolio: true,
+  coveredCallRecs: true,
 };
 
 const DEFAULT_CONTEXT: GrokChatContextConfig = {
@@ -56,6 +59,7 @@ export async function getGrokChatConfig(): Promise<GrokChatConfig> {
         webSearch: tools?.webSearch ?? DEFAULT_TOOLS.webSearch,
         marketData: tools?.marketData ?? DEFAULT_TOOLS.marketData,
         portfolio: tools?.portfolio ?? DEFAULT_TOOLS.portfolio,
+        coveredCallRecs: tools?.coveredCallRecs ?? DEFAULT_TOOLS.coveredCallRecs,
       },
       context: {
         riskProfile: context?.riskProfile ?? DEFAULT_CONTEXT.riskProfile,

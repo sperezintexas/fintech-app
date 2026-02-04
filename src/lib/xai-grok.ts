@@ -21,13 +21,14 @@ export const WEB_SEARCH_TOOL: OpenAI.Chat.ChatCompletionTool = {
   function: {
     name: "web_search",
     description:
-      "Search the web for current information like weather, news, general facts, or real-time data. Use when the user asks about topics outside portfolio/market data (e.g., weather, world events, definitions).",
+      "Search the web for current information: weather, news, general facts, earnings dates, analyst views, and real-time data. Use for: company/news (e.g. 'TSLA earnings date', 'Tesla FSD news'), market sentiment, weather, world events, definitions. Use when the user asks about topics not fully covered by the provided portfolio/market context.",
     parameters: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "The search query (e.g., 'current weather Austin TX', 'latest Tesla news')",
+          description:
+            "Search query. Examples: 'TSLA earnings date 2026', 'Tesla stock news today', 'BA defense sector outlook', 'current weather Austin TX'",
         },
         num_results: {
           type: "number",

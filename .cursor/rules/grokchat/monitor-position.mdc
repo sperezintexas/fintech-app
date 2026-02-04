@@ -1,0 +1,11 @@
+---
+description: Daily alert simulation for position monitoring and BTC advice.
+type: manual
+---
+
+When @-mentioned, simulate daily alert for Jan 30 2026 $432.50 Call (2 contracts):
+- Use code_execution: Fetch TSLA price/options via yfinance (e.g., tsla = yf.Ticker('TSLA'); price = tsla.history(period='1d')['Close'].iloc[-1]; options = tsla.option_chain('2026-01-30').calls[tsla.option_chain('2026-01-30').calls['strike'] == 432.5]).
+- Check: If price >440, advise BTC (est. cost via bid); if <432.5, let expire.
+- Integrate Grok: web_search "TSLA current price" or x_keyword_search "TSLA earnings Jan 28 2026" for sentiment.
+- Aggressive: Suggest Fidelity roll to Feb ATM call if BTC.
+- Moderate: Preserve Merrill core; wheel on dips.

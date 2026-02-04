@@ -984,3 +984,19 @@ export async function storeCoveredCallRecommendations(
 
   return { stored, alertsCreated };
 }
+
+export type StoredCoveredCallRec = CoveredCallRecommendation & { storedAt?: string };
+
+/** Fetch recent covered call recommendations from DB for chat context. */
+export async function getRecentCoveredCallRecommendations(
+  limit: number = 20
+): Promise<StoredCoveredCallRec[]> {
+  const db = await getDb();
+  const docs = await db
+    .collection<StoredCoveredCallRec>("coveredCallRecommendations")
+    .find({})
+    .sort({ storedAt: -1 })
+    .limit(limit)
+    .toArray();
+  return docs;
+}

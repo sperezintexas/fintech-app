@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Account, Position } from "@/types/portfolio";
 import { AppHeader } from "@/components/AppHeader";
+import { BuyToCloseModal } from "@/components/BuyToCloseModal";
 import { PositionForm } from "@/components/PositionForm";
 import { PositionList } from "@/components/PositionList";
 
@@ -24,6 +25,7 @@ function HoldingsContent() {
   const [editingPosition, setEditingPosition] = useState<Position | undefined>();
   const [addToWatchlistLoading, setAddToWatchlistLoading] = useState<string | null>(null);
   const [addToWatchlistMessage, setAddToWatchlistMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [btcPosition, setBtcPosition] = useState<Position | null>(null);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -411,17 +413,28 @@ function HoldingsContent() {
                 }}
               />
             ) : (
-              <PositionList
-                positions={holdings}
-                onEdit={(position) => {
-                  setEditingPosition(position);
-                  setShowForm(true);
-                }}
-                onDelete={handleDeletePosition}
-                onAddToWatchlist={handleAddToWatchlist}
-                addToWatchlistLoadingId={addToWatchlistLoading}
-                accountId={selectedAccountId}
-              />
+              <>
+                <PositionList
+                  positions={holdings}
+                  onEdit={(position) => {
+                    setEditingPosition(position);
+                    setShowForm(true);
+                  }}
+                  onDelete={handleDeletePosition}
+                  onAddToWatchlist={handleAddToWatchlist}
+                  onBuyToClose={setBtcPosition}
+                  addToWatchlistLoadingId={addToWatchlistLoading}
+                  accountId={selectedAccountId}
+                />
+                {btcPosition && selectedAccountId && (
+                  <BuyToCloseModal
+                    position={btcPosition}
+                    accountId={selectedAccountId}
+                    onClose={() => setBtcPosition(null)}
+                    onSuccess={fetchHoldings}
+                  />
+                )}
+              </>
             )}
           </div>
         )}
