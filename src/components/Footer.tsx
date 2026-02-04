@@ -40,7 +40,7 @@ export function Footer() {
           <div className="flex items-center gap-4 text-xs text-gray-400">
             <span>{currentTime}</span>
             <span>•</span>
-            <span>Market data by Polygon.io</span>
+            <span>Market data by Yahoo Finance</span>
           </div>
         </div>
       </div>
