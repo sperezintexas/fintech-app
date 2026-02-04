@@ -62,12 +62,14 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert (options display Call/Put, contracts count, formatted symbol; compact "Qty @ Cost")
+    // Assert (options display Call/Put, Qty, Price, Value, Unit Cost, Cost Basis)
     expect(screen.getAllByText(/TSLA/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Call").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/2\s*@/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("2").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$6.00").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$1,200.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$5.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$1,000.00").length).toBeGreaterThan(0);
   });
 
   it("should display positions with correct calculations for cash positions", () => {
@@ -277,8 +279,8 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert (5 contracts, market value = 5 * 12 * 100 = $6,000; compact "Qty @ Cost")
-    expect(screen.getAllByText(/5\s*@/).length).toBeGreaterThan(0);
+    // Assert (5 contracts, market value = 5 * 12 * 100 = $6,000; Qty and Unit Cost in separate columns)
+    expect(screen.getAllByText("5").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Put").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$6,000.00").length).toBeGreaterThan(0);
   });

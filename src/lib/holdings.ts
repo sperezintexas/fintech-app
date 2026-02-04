@@ -15,13 +15,18 @@ export type EnhancedPosition = Position & {
   isExpired?: boolean;
 };
 
+// Parse YYYY-MM-DD as local calendar date (avoids UTC midnight showing as previous day)
+function parseLocalDate(isoDate: string): Date {
+  const [y, m, d] = isoDate.slice(0, 10).split("-").map(Number);
+  return new Date(y ?? 0, (m ?? 1) - 1, d ?? 1);
+}
+
 function isOptionExpired(expiration: string | undefined): boolean {
   if (!expiration) return false;
-  const expDate = new Date(expiration);
+  const expDate = parseLocalDate(expiration);
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  expDate.setHours(0, 0, 0, 0);
-  return expDate < today;
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return expDate.getTime() < todayStart.getTime();
 }
 
 function intrinsicValue(

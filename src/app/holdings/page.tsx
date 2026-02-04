@@ -231,7 +231,7 @@ function HoldingsContent() {
           <div>
             <h2 className="text-3xl font-bold text-gray-900">Holdings</h2>
             <p className="text-gray-600 mt-1">
-              Symbol, shares, last price, market value, and unrealized P/L — live data every 30s
+              Symbol, description, qty, price, value, unit cost, cost basis — live data every 30s
             </p>
           </div>
           <div className="flex items-center gap-3">

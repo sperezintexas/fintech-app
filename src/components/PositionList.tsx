@@ -26,6 +26,12 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
     }).format(value);
   };
 
+  // Parse YYYY-MM-DD as local calendar date (avoids UTC midnight showing as previous day)
+  const parseLocalDate = (isoDate: string): Date => {
+    const [y, m, d] = isoDate.slice(0, 10).split("-").map(Number);
+    return new Date(y ?? 0, (m ?? 1) - 1, d ?? 1);
+  };
+
   // Format option name: TSLA260130C00475000
   // Format: SYMBOL + YYMMDD + C/P + STRIKE*1000 (8 digits)
   const formatOptionName = (position: Position): string => {
@@ -35,8 +41,8 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
 
     const underlying = position.ticker.toUpperCase();
 
-    // Parse expiration date (YYYY-MM-DD) to YYMMDD
-    const expDate = new Date(position.expiration);
+    // Parse expiration date (YYYY-MM-DD) to YYMMDD (local calendar date)
+    const expDate = parseLocalDate(position.expiration);
     const year = expDate.getFullYear().toString().slice(-2); // Last 2 digits
     const month = String(expDate.getMonth() + 1).padStart(2, "0");
     const day = String(expDate.getDate()).padStart(2, "0");
@@ -51,20 +57,21 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
     return `${underlying}${dateStr}${optionType}${strikeStr}`;
   };
 
-  // Calculate Days To Expiration for options
+  // Calculate Days To Expiration for options (calendar-day based)
   const calculateDTE = (expiration: string | undefined): number | null => {
     if (!expiration) return null;
-    const expDate = new Date(expiration);
+    const expDate = parseLocalDate(expiration);
     const now = new Date();
-    const diffTime = expDate.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffMs = expDate.getTime() - todayStart.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
     return diffDays >= 0 ? diffDays : null;
   };
 
   // Format expiration date for display (compact: omit year when current year)
   const formatExpiration = (expiration: string | undefined): string => {
     if (!expiration) return "";
-    const date = new Date(expiration);
+    const date = parseLocalDate(expiration);
     const now = new Date();
     const omitYear = date.getFullYear() === now.getFullYear();
     return date.toLocaleDateString("en-US", {
@@ -72,6 +79,27 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
       day: "numeric",
       ...(omitYear ? {} : { year: "2-digit" }),
     });
+  };
+
+  // Description column: stock = ticker; option = "CALL/PUT SYMBOL strike EXP MM-DD-YY"; cash = "Cash"
+  const getDescription = (position: Position): string => {
+    if (position.type === "cash") return "Cash";
+    if (position.type === "stock") return position.ticker ?? "—";
+    if (position.type === "option") {
+      const underlying = (position.ticker ?? "").toUpperCase();
+      const type = position.optionType === "put" ? "PUT" : "CALL";
+      const strike = position.strike != null ? position.strike.toFixed(2) : "—";
+      let exp = "—";
+      if (position.expiration) {
+        const d = parseLocalDate(position.expiration);
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const yy = String(d.getFullYear()).slice(-2);
+        exp = `${mm}-${dd}-${yy}`;
+      }
+      return `${type} ${underlying} ${strike} EXP ${exp}`;
+    }
+    return "—";
   };
 
   // Calculate position values (use API-enriched values when available)
@@ -168,18 +196,29 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
     );
   }
 
+  // Qty display: shares or contracts (can be negative for short options)
+  const formatQty = (position: Position, values: ReturnType<typeof calculatePositionValues>): string => {
+    if (position.type === "cash") return values.quantityLabel;
+    if (position.type === "stock") return values.quantityLabel;
+    const contracts = position.contracts ?? 0;
+    return String(contracts);
+  };
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      {/* Desktop Table View - Compact */}
+      {/* Desktop Table View - Symbol, Description, Qty, Price, Value, Unit Cost, Cost Basis */}
       <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
-                Position
+                Symbol
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
+                Description
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Qty @ Cost
+                Qty
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
                 Price
@@ -190,7 +229,16 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                 </th>
               )}
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Value / P/L
+                Value
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
+                Unit Cost
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
+                Cost Basis
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
+                Unrealized P/L
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase w-24">
                 Actions
@@ -206,7 +254,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
               const isPut = isOption && position.optionType === "put";
               const dte = isOption ? calculateDTE(position.expiration) : null;
               const hasChange = position.dailyChangePercent != null;
-              const isPositive = (position.dailyChangePercent || 0) >= 0;
+              const isPositive = (position.dailyChangePercent ?? 0) >= 0;
               const plPositive = (values.unrealizedPL ?? 0) >= 0;
               const typeBadgeClass = isStock
                 ? "bg-blue-100 text-blue-800"
@@ -235,15 +283,18 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                       </span>
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap">
-                    {values.quantityLabel} @ {formatCurrency(values.avgCost)}
+                  <td className="px-3 py-2 text-gray-600 truncate max-w-[12rem]" title={getDescription(position)}>
+                    {getDescription(position)}
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
+                    {formatQty(position, values)}
+                  </td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
                     {hasChange ? (
                       <span className="text-gray-900">
                         {formatCurrency(values.lastPrice)}{" "}
                         <span className={isPositive ? "text-green-600" : "text-red-600"}>
-                          ({isPositive ? "+" : ""}{formatNumber(position.dailyChangePercent || 0, 2)}%)
+                          ({isPositive ? "+" : ""}{formatNumber(position.dailyChangePercent ?? 0, 2)}%)
                         </span>
                       </span>
                     ) : (
@@ -251,7 +302,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                     )}
                   </td>
                   {positions.some((p) => p.type === "option") && (
-                    <td className="px-3 py-2 text-right text-gray-600">
+                    <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">
                       {isOption && position.expiration ? (
                         <span>
                           {formatExpiration(position.expiration)}
@@ -270,18 +321,30 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                       )}
                     </td>
                   )}
+                  <td className="px-3 py-2 text-right font-medium text-gray-900 whitespace-nowrap tabular-nums">
+                    {formatCurrency(values.marketValue)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
+                    {formatCurrency(values.avgCost)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
+                    {formatCurrency(values.totalCost)}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex flex-col items-end gap-0.5">
-                      <span className="font-semibold text-gray-900">
-                        {formatCurrency(values.marketValue)}
-                      </span>
                       <span
-                        className={`text-xs ${
+                        className={`text-xs font-medium tabular-nums ${
                           plPositive ? "text-green-600" : "text-red-600"
                         }`}
                       >
-                        {plPositive ? "+" : ""}{formatCurrency(values.unrealizedPL)} ({plPositive ? "+" : ""}
-                        {formatNumber(values.unrealizedPLPercent, 2)}%)
+                        {plPositive ? "+" : ""}{formatCurrency(values.unrealizedPL)}
+                      </span>
+                      <span
+                        className={`text-xs tabular-nums ${
+                          plPositive ? "text-green-600" : "text-red-600"
+                        }`}
+                      >
+                        ({plPositive ? "+" : ""}{formatNumber(values.unrealizedPLPercent, 2)}%)
                       </span>
                     </div>
                   </td>
@@ -364,7 +427,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
         </table>
       </div>
 
-      {/* Mobile Card View */}
+      {/* Mobile Card View - Symbol, Description, Qty, Price, Exp, Value, Unit Cost, Cost Basis, Unrealized P/L */}
       <div className="md:hidden divide-y divide-gray-100">
         {positions.map((position) => {
           const values = calculatePositionValues(position);
@@ -374,7 +437,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
           const isPut = isOption && position.optionType === "put";
           const dte = isOption ? calculateDTE(position.expiration) : null;
           const hasChange = position.dailyChangePercent != null;
-          const isPositive = (position.dailyChangePercent || 0) >= 0;
+          const isPositive = (position.dailyChangePercent ?? 0) >= 0;
           const plPositive = (values.unrealizedPL ?? 0) >= 0;
           const typeBadgeClass = isStock
             ? "bg-blue-100 text-blue-800"
@@ -403,41 +466,13 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                       {values.symbol}
                     </span>
                   </div>
+                  <p className="text-xs text-gray-600 truncate">{getDescription(position)}</p>
                   {hasChange && (
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={`text-sm font-medium ${
-                          isPositive ? "text-green-600" : "text-red-600"
-                        }`}
-                      >
-                        {isPositive ? "+" : ""}
-                        {formatNumber(position.dailyChangePercent || 0, 2)}%
-                      </span>
-                      <svg
-                        className={`w-4 h-4 ${
-                          isPositive ? "text-green-600" : "text-red-600"
-                        }`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        {isPositive ? (
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M5 15l7-7 7 7"
-                          />
-                        ) : (
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 9l-7 7-7-7"
-                          />
-                        )}
-                      </svg>
-                    </div>
+                    <span
+                      className={`text-xs font-medium ${isPositive ? "text-green-600" : "text-red-600"}`}
+                    >
+                      {isPositive ? "+" : ""}{formatNumber(position.dailyChangePercent ?? 0, 2)}% today
+                    </span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -514,18 +549,16 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
 
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 <div>
-                  <div className="text-xs text-gray-500 mb-0.5">Qty @ Cost</div>
-                  <div className="text-gray-900 font-medium">
-                    {values.quantityLabel} @ {formatCurrency(values.avgCost)}
-                  </div>
+                  <div className="text-xs text-gray-500 mb-0.5">Qty</div>
+                  <div className="text-gray-900 font-medium tabular-nums">{formatQty(position, values)}</div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 mb-0.5">Price</div>
-                  <div className="text-gray-900 font-medium">
+                  <div className="text-gray-900 font-medium tabular-nums">
                     {formatCurrency(values.lastPrice)}
                     {hasChange && (
                       <span className={isPositive ? "text-green-600 ml-1" : "text-red-600 ml-1"}>
-                        ({isPositive ? "+" : ""}{formatNumber(position.dailyChangePercent || 0, 2)}%)
+                        ({isPositive ? "+" : ""}{formatNumber(position.dailyChangePercent ?? 0, 2)}%)
                       </span>
                     )}
                   </div>
@@ -547,18 +580,24 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                     </div>
                   </div>
                 )}
-                <div className={isOption && position.expiration ? "" : "col-span-2"}>
-                  <div className="text-xs text-gray-500 mb-0.5">Value / P/L</div>
-                  <div className="text-gray-900 font-semibold">
-                    {formatCurrency(values.marketValue)}
-                  </div>
+                <div>
+                  <div className="text-xs text-gray-500 mb-0.5">Value</div>
+                  <div className="text-gray-900 font-semibold tabular-nums">{formatCurrency(values.marketValue)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 mb-0.5">Unit Cost</div>
+                  <div className="text-gray-900 font-medium tabular-nums">{formatCurrency(values.avgCost)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 mb-0.5">Cost Basis</div>
+                  <div className="text-gray-900 font-medium tabular-nums">{formatCurrency(values.totalCost)}</div>
+                </div>
+                <div className="col-span-2">
+                  <div className="text-xs text-gray-500 mb-0.5">Unrealized P/L</div>
                   <div
-                    className={`text-xs mt-0.5 font-medium ${
-                      plPositive ? "text-green-600" : "text-red-600"
-                    }`}
+                    className={`font-medium tabular-nums ${plPositive ? "text-green-600" : "text-red-600"}`}
                   >
-                    {plPositive ? "+" : ""}
-                    {formatCurrency(values.unrealizedPL)} ({plPositive ? "+" : ""}
+                    {plPositive ? "+" : ""}{formatCurrency(values.unrealizedPL)} ({plPositive ? "+" : ""}
                     {formatNumber(values.unrealizedPLPercent, 2)}%)
                   </div>
                 </div>
