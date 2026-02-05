@@ -592,10 +592,16 @@ export async function executeJob(jobId: string): Promise<{
               .replace(/\{account\}/g, w.name)
               .replace(/\{stocks\}/g, stocksBlock)
               .replace(/\{options\}/g, noOptions);
+            // X: only top 5 items per watchlist to reduce length and avoid rate limits
+            const stocksLines = stocksBlock.split("\n").filter((l) => l.trim());
+            const xStocksBlock =
+              stocksLines.length > 5
+                ? stocksLines.slice(0, 5).join("\n") + `\n… (${stocksLines.length - 5} more)`
+                : stocksBlock;
             const xBody = xTemplate
               .replace(/\{date\}/g, dateStr)
               .replace(/\{reportName\}/g, job.name)
-              .replace(/\{stocks\}/g, stocksBlock)
+              .replace(/\{stocks\}/g, xStocksBlock)
               .replace(/\{options\}/g, noOptions);
             posts.push({ title: `${job.name} – ${w.name}`, bodyText: body, xBodyText: xBody });
         }
@@ -695,6 +701,19 @@ export async function executeJob(jobId: string): Promise<{
           result.errors.forEach((e) => lines.push(`• ${e.scanner}: ${e.message}`));
         }
         bodyText = lines.join("\n");
+
+        // Inline delivery: send scanner alerts to Slack/X right after scan (so a separate deliverAlerts job is optional)
+        const configObj = job.config as { deliverAlertsAfter?: boolean } | undefined;
+        if (configObj?.deliverAlertsAfter !== false) {
+          try {
+            const deliveryResult = await processAlertDelivery(accountId);
+            bodyText += `\n\nAlerts delivered: ${deliveryResult.delivered} sent, ${deliveryResult.failed} failed, ${deliveryResult.skipped} skipped`;
+          } catch (deliveryErr) {
+            const msg = deliveryErr instanceof Error ? deliveryErr.message : String(deliveryErr);
+            console.error("Inline alert delivery after unified scanner failed:", deliveryErr);
+            bodyText += `\n\nAlert delivery failed: ${msg}`;
+          }
+        }
       } catch (e) {
         console.error("Failed to run Unified Options Scanner:", e);
         title = job.name;
@@ -787,40 +806,54 @@ export async function executeJob(jobId: string): Promise<{
     }
 
     if (job.channels.includes("twitter") && twitterConfig?.target) {
-      try {
-        for (const p of postsToSend) {
+      // Watchlist report: cap X posts per run to avoid rate limits (e.g. 5 watchlists max to X)
+      const maxXPosts = handlerKey === "watchlistreport" ? 5 : postsToSend.length;
+      const postsForX = postsToSend.slice(0, maxXPosts);
+      if (handlerKey === "watchlistreport" && postsToSend.length > maxXPosts) {
+        console.warn(`Watchlist report: posting first ${maxXPosts} of ${postsToSend.length} watchlists to X to avoid rate limits`);
+      }
+      let xPosted = 0;
+      for (const p of postsForX) {
+        try {
           const tweetTitle = xTitle ?? p.title;
           const tweetBody = p.xBodyText ?? p.bodyText;
           const fullText = `${tweetTitle}\n\n${tweetBody}${reportLink ? `\n\n${reportLink}` : ""}`;
           await postToXThread(fullText);
+          xPosted++;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error("Failed to post report to X:", msg);
+          failedChannels.push({ channel: "X", error: msg });
+          // Continue to next post; rate limit or one failure shouldn't stop the rest
         }
-        deliveredChannels.push("X");
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error("Failed to post report to X:", msg);
-        failedChannels.push({ channel: "X", error: msg });
       }
+      if (xPosted > 0) deliveredChannels.push("X");
     }
 
     if (job.channels.includes("push")) {
       console.log("Push delivery selected but not implemented server-side yet.");
     }
 
+    const lastRunErrorToSet =
+      failedChannels.length > 0
+        ? failedChannels.map((f) => `${f.channel}: ${f.error}`).join("; ")
+        : null;
     await db.collection("reportJobs").updateOne(
       { _id: new ObjectId(jobId) },
       {
         $set: {
           lastRunAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          lastRunError: null,
+          lastRunError: lastRunErrorToSet,
         },
       }
     );
     return {
-      success: true,
+      success: deliveredChannels.length > 0,
       deliveredChannels,
       failedChannels: failedChannels.length ? failedChannels : undefined,
       summary: bodyText || undefined,
+      error: lastRunErrorToSet ?? undefined,
     };
   } catch (e) {
     const msg = toErrorMessage(e);

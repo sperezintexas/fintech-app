@@ -237,5 +237,24 @@ Example: Create `coveredCallScanner-aggressive` with `handlerKey: coveredCallSca
 | Weekly Portfolio | portfoliosummary | `0 18 * * 0` (Sun 6 PM) | Multi-account overview; enable "Include AI insights" for SmartXAI sentiment |
 | Daily Options | unifiedOptionsScanner | `0 16 * * 1-5` (Mon–Fri 4 PM) | All option recommendations (Option, Covered Call, Protective Put, straddle/strangle) in one run |
 | Watchlist Snapshot | watchlistreport | `0 9,16 * * 1-5` (9 AM & 4 PM) | Market snapshot + rationale per item; also runs daily analysis and creates alerts |
-| Deliver Alerts | deliverAlerts | `30 16 * * 1-5` (4:30 PM) | Sends pending alerts to Slack/X (run after scanners) |
+| Deliver Alerts | deliverAlerts | `30 16 * * 1-5` (4:30 PM) | **Optional** if using inline delivery (see below). Sends pending alerts to Slack/X. |
 | Purge | cleanup | (existing) | Storage cleanup when nearing limit or on schedule |
+
+---
+
+## deliverAlerts and simplification
+
+**Is deliverAlerts required?** Yes, as the component that actually sends alert documents (from the `alerts` collection) to Slack/X per `AlertConfig`. Scanners only create alert documents; they do not post to channels.
+
+**Simplification: inline delivery after unified options scanner**
+
+When a job runs **unifiedOptionsScanner**, `executeJob` now calls **processAlertDelivery(accountId)** right after the scan (unless `config.deliverAlertsAfter === false`). So:
+
+- **Unified Options Scanner can run hourly** and post to alerts each run: scan → store recommendations + create alerts → deliver those alerts to Slack/X.
+- You can **drop the separate "Deliver Alerts" cron** (e.g. 4:30 PM) if you only need delivery right after the options scan.
+- Keep a **standalone Deliver Alerts job** if you want to (a) deliver only (e.g. retry failed sends), or (b) run delivery after other jobs (e.g. risk-scanner at 5 PM) without re-running the options scanner.
+
+**Flow**
+
+1. Scanners (unifiedOptionsScanner, riskScanner, watchlistreport) write recommendations and, when `createAlerts: true`, insert documents into `alerts`.
+2. **processAlertDelivery(accountId)** (used by the deliverAlerts job and now inline after unifiedOptionsScanner) reads undelivered alerts (last 24h, up to 50 per type), applies `AlertConfig` (channels, quiet hours, thresholds), and sends to Slack/X; it updates each alert’s `deliveryStatus` so they are not sent again.

@@ -92,12 +92,16 @@ export async function postToXTweet(rawText: string): Promise<{ id: string; text:
   }
 }
 
-/** Post full text as a thread (multiple tweets). No truncation. */
+/** Max tweets per thread to avoid rate limits and API errors. */
+const MAX_TWEETS_PER_THREAD = 5;
+
+/** Post full text as a thread (multiple tweets). Truncates to MAX_TWEETS_PER_THREAD chunks. */
 export async function postToXThread(rawText: string): Promise<{ ids: string[] }> {
   const chunks = splitForXThread(rawText, 280);
   if (chunks.length === 0) return { ids: [] };
-  if (chunks.length === 1) {
-    const res = await postToXTweet(chunks[0]!);
+  const toPost = chunks.length > MAX_TWEETS_PER_THREAD ? chunks.slice(0, MAX_TWEETS_PER_THREAD) : chunks;
+  if (toPost.length === 1) {
+    const res = await postToXTweet(toPost[0]!);
     return { ids: [res.id] };
   }
   try {
@@ -108,7 +112,7 @@ export async function postToXThread(rawText: string): Promise<{ ids: string[] }>
       accessToken: creds.accessToken,
       accessSecret: creds.accessSecret,
     });
-    const results = await client.v2.tweetThread(chunks);
+    const results = await client.v2.tweetThread(toPost);
     return { ids: results.map((r) => r.data.id) };
   } catch (e) {
     const err = e as RateLimitError & { rateLimitError?: boolean };
