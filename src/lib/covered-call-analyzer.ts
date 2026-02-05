@@ -14,6 +14,7 @@ import {
   getIVRankOrPercentile,
   getOptionMarketConditions,
   getSuggestedCoveredCallOptions,
+  type OptionChainDetailedData,
 } from "@/lib/yahoo";
 import { callCoveredCallDecision } from "@/lib/xai-grok";
 import type {
@@ -380,7 +381,8 @@ function getMoneyness(stockPrice: number, strike: number): "ITM" | "ATM" | "OTM"
 /** Main analysis: evaluate pairs, opportunities, standalone calls, and watchlist calls. */
 export async function analyzeCoveredCalls(
   accountId?: string,
-  config?: CoveredCallScannerConfig | JobConfig
+  config?: CoveredCallScannerConfig | JobConfig,
+  optionChainCache?: Map<string, OptionChainDetailedData>
 ): Promise<CoveredCallRecommendation[]> {
   const cfg = config as CoveredCallScannerConfig | undefined;
   const { pairs, opportunities, standaloneCalls } = await getCoveredCallPositions(accountId, config);
@@ -500,7 +502,8 @@ export async function analyzeCoveredCalls(
 
   for (const opp of opportunities) {
     try {
-      const chain = await getOptionChainDetailed(opp.symbol);
+      const chain =
+        optionChainCache?.get(opp.symbol) ?? (await getOptionChainDetailed(opp.symbol));
       if (!chain) continue;
 
       const stockPrice = chain.stock.price;

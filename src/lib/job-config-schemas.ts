@@ -5,6 +5,25 @@
 
 import { z } from "zod";
 
+/** Option Scanner config (optionScanner nested in unifiedOptionsScanner) */
+export const optionScannerConfigSchema = z
+  .object({
+    holdDteMin: z.number().min(0).max(365).optional(),
+    btcDteMax: z.number().min(0).max(365).optional(),
+    btcStopLossPercent: z.number().min(-100).max(0).optional(),
+    holdTimeValuePercentMin: z.number().min(0).max(100).optional(),
+    highVolatilityPercent: z.number().min(0).max(200).optional(),
+    riskProfile: z.enum(["low", "medium", "high"]).optional(),
+    grokEnabled: z.boolean().optional(),
+    grokCandidatesPlPercent: z.number().min(0).max(100).optional(),
+    grokCandidatesDteMax: z.number().min(0).max(365).optional(),
+    grokCandidatesIvMin: z.number().min(0).max(200).optional(),
+    grokMaxParallel: z.number().min(1).max(20).optional(),
+    grokSystemPromptOverride: z.string().max(4000).optional(),
+  })
+  .strict()
+  .optional();
+
 /** Covered Call Scanner config (jobType: coveredCallScanner) */
 export const coveredCallScannerConfigSchema = z
   .object({
@@ -48,14 +67,24 @@ export const cspAnalysisConfigSchema = z
 export type CspAnalysisConfig = z.infer<typeof cspAnalysisConfigSchema>;
 
 /** Unified Options Scanner config (runs all 4 scanners with optional per-scanner overrides) */
-const unifiedOptionsScannerConfigSchema = z
+export const unifiedOptionsScannerConfigSchema = z
   .object({
-    optionScanner: z.record(z.string(), z.unknown()).optional(),
+    optionScanner: optionScannerConfigSchema.optional(),
     coveredCall: coveredCallScannerConfigSchema.optional(),
     protectivePut: cspAnalysisConfigSchema.optional(),
   })
   .strict()
   .optional();
+
+/** Parse and merge unified scanner config: validate with Zod, merge with empty defaults. */
+export function parseUnifiedOptionsScannerConfig(
+  config: unknown
+): z.infer<typeof unifiedOptionsScannerConfigSchema> {
+  if (config == null || (typeof config === "object" && Object.keys(config as object).length === 0)) {
+    return undefined;
+  }
+  return unifiedOptionsScannerConfigSchema.parse(config);
+}
 
 /** Validate config by job type handler key. Returns parsed config or throws. */
 export function validateJobConfig(

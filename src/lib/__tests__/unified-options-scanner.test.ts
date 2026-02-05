@@ -12,10 +12,16 @@ vi.mock("../option-scanner", () => ({
 vi.mock("../covered-call-analyzer", () => ({
   analyzeCoveredCalls: vi.fn().mockResolvedValue([]),
   storeCoveredCallRecommendations: vi.fn().mockResolvedValue({ stored: 0, alertsCreated: 0 }),
+  getCoveredCallPositions: vi.fn().mockResolvedValue({
+    pairs: [],
+    opportunities: [],
+    standaloneCalls: [],
+  }),
 }));
 vi.mock("../protective-put-analyzer", () => ({
   analyzeProtectivePuts: vi.fn().mockResolvedValue([]),
   storeProtectivePutRecommendations: vi.fn().mockResolvedValue({ stored: 0, alertsCreated: 0 }),
+  getProtectivePutPositions: vi.fn().mockResolvedValue({ pairs: [], opportunities: [] }),
 }));
 vi.mock("../straddle-strangle-analyzer", () => ({
   analyzeStraddlesAndStrangles: vi.fn().mockResolvedValue([]),
@@ -29,7 +35,7 @@ describe("Unified Options Scanner", () => {
     vi.mocked(optionScanner.storeOptionRecommendations).mockResolvedValue({ stored: 0, alertsCreated: 0 });
   });
 
-  it("runs all four scanners and returns combined result", async () => {
+  it("runs all four scanners in parallel and returns combined result", async () => {
     vi.mocked(optionScanner.scanOptions).mockResolvedValue([{ positionId: "1" }] as never[]);
     vi.mocked(optionScanner.storeOptionRecommendations).mockResolvedValue({
       stored: 1,
@@ -39,8 +45,16 @@ describe("Unified Options Scanner", () => {
     const result = await runUnifiedOptionsScanner("acc1");
 
     expect(optionScanner.scanOptions).toHaveBeenCalledWith("acc1", undefined);
-    expect(coveredCallAnalyzer.analyzeCoveredCalls).toHaveBeenCalledWith("acc1", undefined);
-    expect(protectivePutAnalyzer.analyzeProtectivePuts).toHaveBeenCalledWith("acc1", undefined);
+    expect(coveredCallAnalyzer.analyzeCoveredCalls).toHaveBeenCalledWith(
+      "acc1",
+      undefined,
+      expect.any(Map)
+    );
+    expect(protectivePutAnalyzer.analyzeProtectivePuts).toHaveBeenCalledWith(
+      "acc1",
+      undefined,
+      expect.any(Map)
+    );
     expect(straddleStrangleAnalyzer.analyzeStraddlesAndStrangles).toHaveBeenCalledWith("acc1");
 
     expect(result.optionScanner.scanned).toBe(1);
@@ -51,7 +65,7 @@ describe("Unified Options Scanner", () => {
     expect(result.totalAlertsCreated).toBe(1);
   });
 
-  it("passes nested config to each scanner", async () => {
+  it("passes nested config to each scanner (validated and merged)", async () => {
     const config = {
       optionScanner: { holdDteMin: 21 },
       coveredCall: { minPremium: 1.5 },
@@ -61,8 +75,16 @@ describe("Unified Options Scanner", () => {
     await runUnifiedOptionsScanner("acc2", config);
 
     expect(optionScanner.scanOptions).toHaveBeenCalledWith("acc2", { holdDteMin: 21 });
-    expect(coveredCallAnalyzer.analyzeCoveredCalls).toHaveBeenCalledWith("acc2", { minPremium: 1.5 });
-    expect(protectivePutAnalyzer.analyzeProtectivePuts).toHaveBeenCalledWith("acc2", { minYield: 25 });
+    expect(coveredCallAnalyzer.analyzeCoveredCalls).toHaveBeenCalledWith(
+      "acc2",
+      { minPremium: 1.5 },
+      expect.any(Map)
+    );
+    expect(protectivePutAnalyzer.analyzeProtectivePuts).toHaveBeenCalledWith(
+      "acc2",
+      { minYield: 25 },
+      expect.any(Map)
+    );
   });
 
   it("returns zeros when no positions", async () => {

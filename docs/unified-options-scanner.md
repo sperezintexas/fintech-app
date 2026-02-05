@@ -53,7 +53,7 @@ The **Unified Options Scanner** is an orchestrator that runs four option scanner
 
 **Main module:** `src/lib/unified-options-scanner.ts`
 
-**Execution order:** Option Scanner → Covered Call → Protective Put → Straddle/Strangle. Each scanner runs sequentially; results are stored and alerts created before the next scanner runs.
+**Execution:** Config is validated and merged with Zod (`parseUnifiedOptionsScannerConfig`). Unique symbols needing option-chain data are collected from covered-call and protective-put positions; option chains are fetched once per symbol in parallel and passed to scanners via a shared `Map<symbol, chain>`. All four scanners run in parallel (`Promise.all`); then recommendations are persisted and alerts created in parallel via `storeRecommendationsAndCreateAlerts`. Each scanner is wrapped in try/catch with per-scanner timing (`console.time`/`timeEnd`) and error logging; partial results are returned on failure.
 
 ---
 
@@ -69,6 +69,10 @@ The **Unified Options Scanner** is an orchestrator that runs four option scanner
 ---
 
 ## Configuration
+
+### Config validation and merging
+
+Unified config is validated with Zod (`unifiedOptionsScannerConfigSchema` in `src/lib/job-config-schemas.ts`). Use `parseUnifiedOptionsScannerConfig(config)` to validate and merge early; invalid config throws. Defaults are applied per sub-scanner in their respective modules.
 
 ### UnifiedOptionsScannerConfig
 
@@ -212,6 +216,15 @@ const result = await runUnifiedOptionsScanner("accountId123", {
 3. **Scheduled:** Create job with `jobType: "unifiedOptionsScanner"`, `accountId` (or null for portfolio), `scheduleCron`, `config` (optional).
 
 ---
+
+## Best practices (implemented)
+
+- **Parallel execution:** Scanners run in parallel with `Promise.all`; only symbol collection and option-chain prefetch run first. Persist step runs in parallel after all scans complete.
+- **Shared option-chain cache:** Orchestrator collects unique symbols from covered-call and protective-put positions, fetches `getOptionChainDetailed` once per symbol in parallel, and passes a `Map<symbol, chain>` to covered-call and protective-put analyzers to avoid redundant Yahoo API calls.
+- **Config merging & validation:** Zod schema (`unifiedOptionsScannerConfigSchema`) and `parseUnifiedOptionsScannerConfig()` validate and merge config early to prevent invalid runs.
+- **Error resilience:** Each scanner is wrapped in try/catch; errors are collected in `result.errors` and logged per scanner (`[unified-options-scanner] <scanner>: <error>`). Partial results are returned.
+- **Persistence util:** `storeRecommendationsAndCreateAlerts(recommendations, storeFn)` centralizes persist + createAlerts logic.
+- **Performance metrics:** `console.time`/`console.timeEnd` per scanner for debugging slow runs.
 
 ## File Reference
 

@@ -10,6 +10,7 @@ import {
   getOptionMetrics,
   getOptionChainDetailed,
   getIVRankOrPercentile,
+  type OptionChainDetailedData,
 } from "@/lib/yahoo";
 import type {
   Position,
@@ -281,7 +282,8 @@ export async function getProtectivePutPositions(
 /** Main analysis: evaluate pairs and opportunities, return recommendations. */
 export async function analyzeProtectivePuts(
   accountId?: string,
-  config?: CspAnalysisConfig | JobConfig
+  config?: CspAnalysisConfig | JobConfig,
+  optionChainCache?: Map<string, OptionChainDetailedData>
 ): Promise<ProtectivePutRecommendation[]> {
   const { pairs, opportunities } = await getProtectivePutPositions(accountId, config);
   const recommendations: ProtectivePutRecommendation[] = [];
@@ -327,6 +329,7 @@ export async function analyzeProtectivePuts(
         .findOne({ _id: new ObjectId(pair.accountId) });
       const riskLevel = account?.riskLevel ?? "medium";
 
+      const putDelta = metrics.delta ?? null;
       const { recommendation, confidence, reason } = applyProtectivePutRules({
         stockPrice,
         strike: pair.putStrike,
@@ -337,7 +340,7 @@ export async function analyzeProtectivePuts(
         extrinsicPercentOfPremium,
         stockUnrealizedPlPercent,
         moneyness: getPutMoneyness(stockPrice, pair.putStrike),
-        putDelta: null,
+        putDelta,
         ivRank,
         riskLevel,
         stockAboveBreakeven: stockPrice >= pair.stockPurchasePrice,
@@ -358,7 +361,7 @@ export async function analyzeProtectivePuts(
           dte,
           netProtectionCost,
           effectiveFloor,
-          putDelta: undefined,
+          putDelta: metrics.delta,
           iv: metrics.impliedVolatility,
           ivRank: ivRank ?? undefined,
           stockUnrealizedPl: (stockPrice - pair.stockPurchasePrice) * pair.stockShares,
@@ -377,7 +380,8 @@ export async function analyzeProtectivePuts(
 
   for (const opp of opportunities) {
     try {
-      const chain = await getOptionChainDetailed(opp.symbol);
+      const chain =
+        optionChainCache?.get(opp.symbol) ?? (await getOptionChainDetailed(opp.symbol));
       if (!chain) continue;
 
       const stockPrice = chain.stock.price;

@@ -1,0 +1,89 @@
+---
+description: Protective Put Analyzer feature guidelines
+globs:
+alwaysApply: false
+---
+# Protective Put Analyzer Guidelines
+
+You are implementing or working on the **Protective Put Analyzer** — a rule-based recommendation engine for protective put positions (long stock + long put hedge) in the myInvestments app.
+
+This analyzer is part of the unified options scanning suite (alongside Covered Call Analyzer, Option Scanner, Straddle/Strangle Scanner).
+
+## Core Purpose
+Identify existing protective put structures in user accounts
+Evaluate whether the current hedge remains appropriate
+Generate conservative, capital-preservation-focused recommendations:
+- HOLD current protective put
+- SELL_TO_CLOSE (remove hedge)
+- ROLL (close current put → open new put at different strike/expiration)
+- BUY_NEW_PUT (add protection where none exists)
+- NONE (no action recommended)
+
+## Primary Responsibilities
+- Detect protective put positions: long stock (≥100 shares) + long put on same underlying / same account
+- Assess hedge effectiveness using:
+  - Current stock price vs put strike
+  - Remaining DTE and extrinsic/time value
+  - Net cost of protection (original premium – current put value)
+  - Effective downside floor
+  - Put delta (protection depth)
+  - Implied volatility change since entry
+  - Stock unrealized P/L and account risk profile
+- Produce actionable recommendations with:
+  - Confidence level (HIGH/MEDIUM/LOW)
+  - Clear reasoning
+  - Suggested strike/expiration when recommending ROLL or BUY_NEW_PUT
+- Persist recommendations to MongoDB
+- Create alerts for meaningful actions (SELL_TO_CLOSE, ROLL, BUY_NEW_PUT)
+
+## Key Evaluation Triggers & Decision Guidelines
+- Stock significantly above put strike (+10–15% buffer) → SELL_TO_CLOSE
+- Put extrinsic value decayed heavily (<10–15% of original premium) → SELL_TO_CLOSE or ROLL
+- DTE ≤ 10 and put still OTM → SELL_TO_CLOSE
+- Stock dropped meaningfully (>8–12%) and put now ITM → HOLD or ROLL down/out
+- IV spiked >40% since purchase → HOLD (protection more valuable)
+- Aggressive risk profile + stock well above breakeven → SELL_TO_CLOSE
+- No put exists + high recent volatility (>30–35%) → BUY_NEW_PUT opportunity
+- Put delta too low (≤ -0.25) and stock stable → SELL_TO_CLOSE (ineffective hedge)
+
+## Important Metrics to Calculate & Include
+- Current stock price
+- Put bid/ask/mid price
+- Days to expiration (DTE)
+- Net protection cost (positive = net cost, negative = net credit)
+- Effective floor price per share
+- Put delta
+- Current implied volatility & IV change since entry
+- Stock unrealized P/L
+- Protection cost as % of stock position value
+
+## Integration Points
+- Runs as scheduled job: `protectivePutScanner` (daily, Mon–Fri ~4 PM, same window as covered call / unified scanner)
+- Can be run for single account or portfolio-wide
+- Stores recommendations in dedicated collection or unified recommendations collection
+- Creates alerts of type "protective-put" with actions SELL_TO_CLOSE, ROLL, BUY_NEW_PUT
+- Alerts delivered via existing `deliverAlerts` job (Slack, X, etc.)
+
+## Naming & Type Conventions
+- Main function: `analyzeProtectivePuts(accountId?: string, config?: CspAnalysisConfig | JobConfig, optionChainCache?: Map<string, OptionChainDetailedData>)` — third param is optional shared cache from unified orchestrator to avoid redundant Yahoo API calls for opportunities.
+- Recommendation interface: `ProtectivePutRecommendation` (optional `suggestedStrike`, `suggestedExpiration` for ROLL/BUY_NEW_PUT).
+- Action enum/type: `ProtectivePutRecommendationAction` ('HOLD' | 'SELL_TO_CLOSE' | 'ROLL' | 'BUY_NEW_PUT' | 'NONE')
+- File: `src/lib/protective-put-analyzer.ts`
+- Types location: `src/types/portfolio.ts`
+- Full doc: `docs/protective-put-analyzer.md`
+
+## Design Priorities
+- Conservative bias — prefer keeping protection over removing it when uncertain
+- Clear, human-readable reasoning in every recommendation
+- Graceful handling of missing/expired data (no put found, expired option, etc.)
+- Strong typing and null/undefined safety throughout
+- Reuse existing Yahoo Finance helpers (option chain, IV, volatility); use put **delta** from `getOptionMetrics` when available for rule inputs
+- Align style & structure with Covered Call Analyzer and unified-scanner best practices (shared option-chain cache, Zod config, per-scanner error resilience)
+
+## Best Practices (aligned with unified scanner & covered call)
+- Accept optional `optionChainCache` so the orchestrator can prefetch option chains once per symbol and pass a `Map<symbol, OptionChainDetailedData>`; use cache for opportunities, fallback to `getOptionChainDetailed(symbol)` when cache not provided.
+- Use Zod-validated config (`cspAnalysisConfigSchema`); unified scanner merges via `parseUnifiedOptionsScannerConfig`.
+- Pass put delta from Yahoo `OptionMetrics.delta` into `applyProtectivePutRules` when available (e.g. ineffective-hedge rule: put delta ≥ -0.25 & OTM → SELL_TO_CLOSE).
+- Persist via `storeProtectivePutRecommendations(recs, { createAlerts: true })`; orchestrator may use shared `storeRecommendationsAndCreateAlerts` util.
+
+Prioritize correct position detection, sensible risk-aware recommendations, and clean integration with the existing scanner/alert system.

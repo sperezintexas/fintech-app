@@ -324,6 +324,8 @@ export type OptionMetrics = {
   intrinsicValue: number;
   timeValue: number;
   impliedVolatility?: number;
+  /** Put delta (e.g. -0.3); call delta (e.g. 0.5). From Yahoo when available. */
+  delta?: number;
 };
 
 export async function getOptionMetrics(
@@ -351,7 +353,14 @@ export async function getOptionMetrics(
     const c = contracts.find((x) => Math.abs((x.strike ?? 0) - strike) < 0.01);
     if (!c) return null;
 
-    const c2 = c as { lastPrice?: number; bid?: number; ask?: number; strike?: number; impliedVolatility?: number };
+    const c2 = c as {
+      lastPrice?: number;
+      bid?: number;
+      ask?: number;
+      strike?: number;
+      impliedVolatility?: number;
+      delta?: number;
+    };
     const bid = c2.bid ?? 0;
     const ask = c2.ask ?? 0;
     const premium = (c2.lastPrice ?? 0) > 0 ? c2.lastPrice! : bid > 0 && ask > 0 ? (bid + ask) / 2 : bid || ask || 0;
@@ -360,6 +369,7 @@ export async function getOptionMetrics(
       : Math.max(0, strike - stockPrice);
     const timeVal = Math.max(0, premium - intrinsic);
     const iv = c2.impliedVolatility ?? undefined;
+    const delta = c2.delta;
 
     return {
       price: premium,
@@ -369,6 +379,7 @@ export async function getOptionMetrics(
       intrinsicValue: intrinsic,
       timeValue: timeVal,
       impliedVolatility: iv,
+      ...(delta != null && { delta }),
     };
   } catch {
     return null;
@@ -417,12 +428,15 @@ export async function getOptionMarketConditions(symbol?: string): Promise<Option
   }
 }
 
-// Detailed option chain (for analyzers) - shape: { stock: { price }, calls, puts }
-export async function getOptionChainDetailed(symbol: string): Promise<{
+/** Option chain shape returned by getOptionChainDetailed (shared cache type). */
+export type OptionChainDetailedData = {
   stock: { price: number };
   calls: { strike?: number; bid?: number; ask?: number; impliedVolatility?: number }[];
   puts: { strike?: number; bid?: number; ask?: number; impliedVolatility?: number }[];
-} | null> {
+};
+
+// Detailed option chain (for analyzers) - shape: { stock: { price }, calls, puts }
+export async function getOptionChainDetailed(symbol: string): Promise<OptionChainDetailedData | null> {
   try {
     const result = await yahooFinance.options(symbol.toUpperCase());
     const r = result as {
