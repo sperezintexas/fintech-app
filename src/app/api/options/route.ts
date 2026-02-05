@@ -344,6 +344,16 @@ function toDateString(d: Date): string {
 
 const OPTIONS_LOG = "[options]";
 
+/** Normalize expiration to YYYY-MM-DD. Accepts YYYY-MM-DD or Yahoo-style Unix timestamp (seconds). */
+function normalizeExpiration(expiration: string): string {
+  const trimmed = expiration.trim();
+  const asUnix = parseInt(trimmed, 10);
+  if (Number.isInteger(asUnix) && asUnix >= 1e9 && asUnix <= 2e9) {
+    return new Date(asUnix * 1000).toISOString().slice(0, 10);
+  }
+  return trimmed.slice(0, 10);
+}
+
 // Find expiration group matching YYYY-MM-DD from options array; fallback to closest by date.
 // Prefer future expirations when requested date is ahead (avoids showing Jan 30 when user picked 4w = Feb 27).
 function findExpirationGroup(options: YahooOptionGroup[], expTarget: string): YahooOptionGroup {
@@ -361,7 +371,7 @@ function findExpirationGroup(options: YahooOptionGroup[], expTarget: string): Ya
     console.log(`${OPTIONS_LOG} findExpirationGroup: exact match found`);
     return exact;
   }
-  const targetTime = new Date(expTarget + "T12:00:00Z").getTime();
+  const targetTime = new Date(expTarget + "T00:00:00Z").getTime();
   const future = options.filter((g) => {
     const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
     return d.getTime() >= targetTime;
@@ -427,25 +437,26 @@ async function fetchFromYahooOptions(
     console.log(`${OPTIONS_LOG} Yahoo (no date): options.length=${rawOptions.length} expirationDates.length=${rawExpDates.length}`);
     let group: YahooOptionGroup | null = null;
     // Yahoo returns options.length=1 (nearest only) but expirationDates has all - use expirationDates to pick best, then re-fetch
+    // Use midnight UTC to match Yahoo's date= Unix timestamp (e.g. date=1771545600 = 2026-02-20T00:00:00Z)
     if (rawOptions.length <= 1 && expDateStrs.length > 0) {
-      const targetTime = new Date(expTarget + "T12:00:00Z").getTime();
-      const future = expDateStrs.filter((s) => new Date(s + "T12:00:00Z").getTime() >= targetTime);
+      const targetTime = new Date(expTarget + "T00:00:00Z").getTime();
+      const future = expDateStrs.filter((s) => new Date(s + "T00:00:00Z").getTime() >= targetTime);
       const bestDate =
         future.length > 0
           ? future.reduce((a, b) =>
-              Math.abs(new Date(a + "T12:00:00Z").getTime() - targetTime) <
-              Math.abs(new Date(b + "T12:00:00Z").getTime() - targetTime)
+              Math.abs(new Date(a + "T00:00:00Z").getTime() - targetTime) <
+              Math.abs(new Date(b + "T00:00:00Z").getTime() - targetTime)
                 ? a
                 : b
             )
           : expDateStrs.reduce((a, b) =>
-              Math.abs(new Date(a + "T12:00:00Z").getTime() - targetTime) <
-              Math.abs(new Date(b + "T12:00:00Z").getTime() - targetTime)
+              Math.abs(new Date(a + "T00:00:00Z").getTime() - targetTime) <
+              Math.abs(new Date(b + "T00:00:00Z").getTime() - targetTime)
                 ? a
                 : b
             );
       console.log(`${OPTIONS_LOG} Single option group from Yahoo, re-fetching with best date=${bestDate} (from ${expDateStrs.length} expirationDates)`);
-      result = await yahooFinance.options(underlying, { date: new Date(bestDate + "T12:00:00Z") });
+      result = await yahooFinance.options(underlying, { date: new Date(bestDate + "T00:00:00Z") });
       rawOptions = (result as { options?: YahooOptionGroup[] }).options ?? [];
       group = rawOptions?.[0] ?? null;
       if (group) {
@@ -527,9 +538,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const underlying = searchParams.get("underlying")?.toUpperCase();
-    const expiration = searchParams.get("expiration");
+    const expirationParam = searchParams.get("expiration");
     const targetStrike = parseFloat(searchParams.get("strike") || "0");
-    console.log(`${OPTIONS_LOG} GET request: underlying=${underlying} expiration=${expiration} strike=${targetStrike}`);
+    console.log(`${OPTIONS_LOG} GET request: underlying=${underlying} expiration=${expirationParam} strike=${targetStrike}`);
 
     if (!underlying) {
       return NextResponse.json(
@@ -538,12 +549,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!expiration) {
+    if (!expirationParam) {
       return NextResponse.json(
         { error: "expiration is required" },
         { status: 400 }
       );
     }
+
+    const expiration = normalizeExpiration(expirationParam);
 
     // Get current stock price
     let stockPrice = targetStrike;
@@ -554,7 +567,7 @@ export async function GET(request: NextRequest) {
       // Fallback to strike
     }
 
-    const expDate = new Date(expiration);
+    const expDate = new Date(expiration + "T00:00:00Z");
     const today = new Date();
     const daysToExp = Math.max(
       1,

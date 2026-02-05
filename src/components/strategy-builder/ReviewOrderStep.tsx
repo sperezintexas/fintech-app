@@ -1,8 +1,10 @@
 'use client';
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { toYahooOptionSymbol } from '@/lib/strategy-builder';
+
+type AccountOption = { _id: string; name: string };
 
 type ReviewOrderStepProps = {
   strategyName: string;
@@ -85,6 +87,66 @@ export function ReviewOrderStep({
   const [addMessage, setAddMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [scannerLoading, setScannerLoading] = useState(false);
   const [scannerMessage, setScannerMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [accounts, setAccounts] = useState<AccountOption[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [holdingsLoading, setHoldingsLoading] = useState(false);
+  const [holdingsMessage, setHoldingsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const showAddToHoldings =
+    strategyId === 'cash-secured-put' || strategyId === 'covered-call';
+
+  useEffect(() => {
+    if (!showAddToHoldings) return;
+    fetch('/api/accounts')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list: AccountOption[]) => {
+        setAccounts(list);
+        setSelectedAccountId((prev) => (prev === '' && list.length > 0 ? list[0]._id : prev));
+      })
+      .catch(() => setAccounts([]));
+  }, [showAddToHoldings]);
+
+  const handleAddToHoldings = useCallback(async () => {
+    if (!selectedAccountId) {
+      setHoldingsMessage({ type: 'error', text: 'Select an account' });
+      return;
+    }
+    setHoldingsLoading(true);
+    setHoldingsMessage(null);
+    try {
+      const prem = parseFloat(limitPrice) || (bid > 0 && ask > 0 ? (bid + ask) / 2 : 0);
+      const res = await fetch('/api/positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: selectedAccountId,
+          type: 'option',
+          ticker: symbol,
+          optionType: contractType,
+          strike,
+          expiration,
+          contracts: quantity,
+          premium: prem,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'Failed to add position');
+      }
+      setHoldingsMessage({
+        type: 'success',
+        text: `Added ${quantity} ${symbol} ${contractLabel}${quantity !== 1 ? 's' : ''} to holdings`,
+      });
+      setTimeout(() => setHoldingsMessage(null), 4000);
+    } catch (err) {
+      setHoldingsMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to add to holdings',
+      });
+    } finally {
+      setHoldingsLoading(false);
+    }
+  }, [selectedAccountId, symbol, contractType, strike, expiration, quantity, limitPrice, bid, ask, contractLabel]);
 
   const handleAddToWatchlist = useCallback(async () => {
     setAddLoading(true);
@@ -333,9 +395,10 @@ export function ReviewOrderStep({
       {/* 3. Descriptive Summary (mobile-friendly paragraph) */}
       <div className="p-4 border border-gray-200 rounded-xl bg-white">
         <p className="text-sm text-gray-700 leading-relaxed">
-          You are {action === 'sell' ? 'selling' : 'buying'}{' '}
-          <strong>{quantity}</strong> {contractLabel}
-          {quantity > 1 ? 's' : ''} to open with the strike price of{' '}
+          You are{' '}
+          <strong className="text-green-700">{action === 'sell' ? 'selling' : 'buying'}</strong>{' '}
+          <strong>{quantity}</strong> <strong>{symbol}</strong> {contractLabel}
+          {quantity > 1 ? 's' : ''} to <strong className="text-green-700">open</strong> with the strike price of{' '}
           <strong>${strike.toFixed(2)}</strong> that expires{' '}
           <strong>{formatExpiration(expiration)}</strong>.
           {action === 'sell' && credit > 0 && (
@@ -353,11 +416,19 @@ export function ReviewOrderStep({
               </strong>.
             </>
           )}
-          {' '}This trade has a <strong>{probOtm}%</strong> probability to be out of the money, which is{' '}
+          {' '}This trade has a <strong className={probOtm < 70 ? 'text-red-600' : undefined}>{probOtm}%</strong> probability to be out of the money, which is{' '}
           {contractType === 'call' ? 'below' : 'above'} <strong>${strike.toFixed(2)}</strong>, at expiration.
           {action === 'sell' && contractType === 'call' && (
             <> If assigned anytime, you have the obligation to sell <strong>({quantity})</strong>{' '}
               {symbol} at the strike price of <strong>${strike.toFixed(2)}</strong>, for a total of{' '}
+              <strong>
+                $
+                {(quantity * strike * 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </strong>.
+            </>
+          )}
+          {action === 'sell' && (
+            <> Total obligation to {contractType === 'call' ? 'sell shares' : 'put up cash'} if assigned:{' '}
               <strong>
                 $
                 {(quantity * strike * 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -378,6 +449,62 @@ export function ReviewOrderStep({
           read the options disclosure document before trading.
         </p>
       </details>
+
+      {/* Add to holdings (CSP / CC only) – collapsible */}
+      {showAddToHoldings && (
+        <details className="border border-gray-200 rounded-xl bg-gray-50 overflow-hidden group">
+          <summary className="cursor-pointer p-4 font-medium text-gray-900 hover:bg-gray-100 list-none flex items-center justify-between">
+            <span>Add to holdings</span>
+            <span className="text-gray-400 group-open:rotate-180 transition-transform" aria-hidden>▼</span>
+          </summary>
+          <div className="px-4 pb-4 pt-0 space-y-3 border-t border-gray-200">
+            <p className="text-xs text-gray-600 pt-3">
+              Record this {strategyId === 'covered-call' ? 'covered call' : 'cash-secured put'} as a position in an account.
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[12rem]">
+                <label htmlFor="holdings-account" className="block text-xs font-medium text-gray-700 mb-1">
+                  Account
+                </label>
+                <select
+                  id="holdings-account"
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  aria-label="Select account for position"
+                >
+                  {accounts.length === 0 ? (
+                    <option value="">No accounts</option>
+                  ) : (
+                    accounts.map((a) => (
+                      <option key={a._id} value={a._id}>
+                        {a.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddToHoldings}
+                disabled={holdingsLoading || accounts.length === 0}
+                className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {holdingsLoading ? 'Adding…' : 'Add to holdings'}
+              </button>
+            </div>
+            {holdingsMessage && (
+              <div
+                className={`text-sm rounded-lg p-2 ${
+                  holdingsMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                }`}
+              >
+                {holdingsMessage.text}
+              </div>
+            )}
+          </div>
+        </details>
+      )}
 
       {/* Add to Watchlist / Option Scanner messages */}
       {(addMessage || scannerMessage) && (

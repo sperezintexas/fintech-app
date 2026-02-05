@@ -1,24 +1,45 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import JobTypesPage from "./page";
 
-const mockReplace = vi.fn();
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mockReplace }),
+vi.mock("@/components/AppHeader", () => ({
+  AppHeader: () => <header data-testid="app-header">AppHeader</header>,
 }));
 
-describe("Job Types Page", () => {
-  it("redirects to automation jobs tab", async () => {
-    render(<JobTypesPage />);
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/job-types",
+}));
 
-    await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/automation?tab=jobs");
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
+
+describe("Job Types Page", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { _id: "1", id: "smartxai", name: "SmartXAI Report", enabled: true, supportsPortfolio: false, supportsAccount: true },
+      ],
     });
   });
 
-  it("shows loading spinner while redirecting", () => {
-    const { container } = render(<JobTypesPage />);
+  it("renders page title and back link", async () => {
+    render(<JobTypesPage />);
 
-    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Job types")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Define report/job types used by scheduled jobs.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Back to Setup/ })).toHaveAttribute("href", "/automation?tab=jobs");
+  });
+
+  it("fetches job types and shows New job type button", async () => {
+    render(<JobTypesPage />);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith("/api/report-types?all=true", expect.any(Object));
+    });
+    expect(screen.getByRole("button", { name: /New job type/ })).toBeInTheDocument();
   });
 });

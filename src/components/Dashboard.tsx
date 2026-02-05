@@ -3,7 +3,19 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Legend,
+  Tooltip,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from "recharts";
 import { PortfolioCard } from "./PortfolioCard";
 import type { Portfolio } from "@/types/portfolio";
 
@@ -24,6 +36,9 @@ type DashboardData = {
   stats: DashboardStats;
 };
 
+type TimelinePoint = { date: string; value: number };
+type TimelineRange = "1w" | "1mo" | "1yr";
+
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -36,11 +51,11 @@ export function Dashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [schedulerLoading, setSchedulerLoading] = useState(false);
-  const [schedulerMessage, setSchedulerMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [timelineRange, setTimelineRange] = useState<TimelineRange>("1mo");
+  const [timelineData, setTimelineData] = useState<TimelinePoint[]>([]);
   const pathname = usePathname();
 
 
@@ -58,36 +73,23 @@ export function Dashboard() {
     }
   }, []);
 
+  // Timeline fetch
+  const fetchTimeline = useCallback(async (range: TimelineRange) => {
+    try {
+      const res = await fetch(`/api/dashboard/timeline?range=${range}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const { points } = await res.json();
+      setTimelineData(Array.isArray(points) ? points : []);
+    } catch {
+      setTimelineData([]);
+    }
+  }, []);
+
   // Manual refresh
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await fetchDashboard();
     setIsRefreshing(false);
-  };
-
-  // Run portfolio scanners (Option Scanner, Covered Call, etc.)
-  const runPortfolioScanners = async () => {
-    setSchedulerMessage("");
-    setSchedulerLoading(true);
-    try {
-      const res = await fetch("/api/scheduler", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "runPortfolio" }),
-      });
-      const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
-      if (res.ok && data.success) {
-        setSchedulerMessage(data.message ?? "Portfolio scanners triggered.");
-        setTimeout(() => setSchedulerMessage(""), 5000);
-        await fetchDashboard();
-      } else {
-        setSchedulerMessage(`Error: ${data.error ?? "Failed to run portfolio scanners"}`);
-      }
-    } catch {
-      setSchedulerMessage("Error: Failed to run portfolio scanners");
-    } finally {
-      setSchedulerLoading(false);
-    }
   };
 
   // Refresh when pathname changes (user navigates back to dashboard)
@@ -126,6 +128,11 @@ export function Dashboard() {
     const interval = setInterval(fetchDashboard, 60000);
     return () => clearInterval(interval);
   }, [autoRefresh, fetchDashboard]);
+
+  // Timeline: fetch when range changes or on pathname to dashboard
+  useEffect(() => {
+    if (pathname === "/") fetchTimeline(timelineRange);
+  }, [pathname, timelineRange, fetchTimeline]);
 
 
   if (isLoading) {
@@ -169,28 +176,8 @@ export function Dashboard() {
               Last updated: {lastUpdated.toLocaleTimeString()}
             </span>
           )}
-          {schedulerMessage && (
-            <span className={`text-xs ${schedulerMessage.startsWith("Error") ? "text-red-600" : "text-green-600"}`}>
-              {schedulerMessage}
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={runPortfolioScanners}
-            disabled={schedulerLoading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {schedulerLoading ? (
-              <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            )}
-            {schedulerLoading ? "Running…" : "Run scanners"}
-          </button>
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
@@ -278,6 +265,61 @@ export function Dashboard() {
             {stats?.totalCostBasis != null && stats.totalCostBasis > 0 ? "Since cost basis" : "—"}
           </p>
         </div>
+      </div>
+
+      {/* Portfolio Timeline */}
+      <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-800">Portfolio timeline</h2>
+          <div className="flex gap-2">
+            {(["1w", "1mo", "1yr"] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => setTimelineRange(r)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  timelineRange === r
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {r === "1w" ? "1W" : r === "1mo" ? "1M" : "1Y"}
+              </button>
+            ))}
+          </div>
+        </div>
+        {timelineData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={timelineData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+              <defs>
+                <linearGradient id="timelineFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 11 }}
+                tickFormatter={(d) => {
+                  const date = new Date(d);
+                  return timelineRange === "1yr" ? date.toLocaleDateString("en-US", { month: "short", year: "2-digit" }) : date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                }}
+              />
+              <YAxis
+                tick={{ fontSize: 11 }}
+                tickFormatter={(v) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1000)}k`)}
+                domain={["auto", "auto"]}
+              />
+              <Tooltip
+                formatter={(value: number | undefined) => [value != null ? formatCurrency(value) : "—", "Value"]}
+                labelFormatter={(d) => new Date(d).toLocaleDateString()}
+              />
+              <Area type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} fill="url(#timelineFill)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <p className="text-gray-500 text-sm py-12 text-center">No stock positions or data for this range.</p>
+        )}
       </div>
 
       {/* Main Grid */}

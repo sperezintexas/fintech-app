@@ -818,3 +818,33 @@ export async function getBatchPriceAndRSI(
     return map;
   }
 }
+
+export type HistoricalClose = { date: string; close: number };
+
+/** Fetch daily close prices for a symbol over the last `days` days. */
+export async function getHistoricalCloses(
+  symbol: string,
+  days: number
+): Promise<HistoricalClose[]> {
+  try {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    const chart = await yahooFinance.chart(symbol.toUpperCase(), {
+      period1: Math.floor(startDate.getTime() / 1000),
+      period2: Math.floor(endDate.getTime() / 1000),
+      interval: "1d",
+    });
+    const quotes = (chart?.quotes ?? []) as { date?: Date | number | string; close: number | null }[];
+    return quotes
+      .filter((q) => q.close != null && q.close > 0 && q.date != null)
+      .map((q) => {
+        const d =
+          typeof q.date === "number" ? new Date(q.date * 1000) : q.date ? new Date(q.date) : new Date(0);
+        return { date: d.toISOString().slice(0, 10), close: q.close as number };
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+  } catch {
+    return [];
+  }
+}

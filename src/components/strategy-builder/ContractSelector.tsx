@@ -103,6 +103,8 @@ export function ContractSelector({
     cashOnHand: number;
     sharesForSymbol: number;
   }>({ cashOnHand: 0, sharesForSymbol: 0 });
+  /** Strike filter: 'all' = show all strikes (Yahoo "All Strike Prices"); number = show only that strike */
+  const [strikeFilter, setStrikeFilter] = useState<'all' | number>('all');
 
   useEffect(() => {
     if (!symbol) return;
@@ -183,11 +185,25 @@ export function ContractSelector({
   }, [plData]);
 
   const filteredChain = useMemo(() => {
-    const range = stockPrice * 0.15;
+    // CSP: wider range (±25%) so put chain aligns with Yahoo options page; others ±15%
+    const rangePct = strategyId === 'cash-secured-put' ? 0.25 : 0.15;
+    const range = stockPrice * rangePct;
     const min = stockPrice - range;
     const max = stockPrice + range;
     return optionChain.filter((c) => c.strike >= min && c.strike <= max);
-  }, [optionChain, stockPrice]);
+  }, [optionChain, stockPrice, strategyId]);
+
+  /** Rows to show: all strikes or single strike when "Strike price" dropdown filters to one */
+  const displayChain = useMemo(() => {
+    if (strikeFilter === 'all') return filteredChain;
+    return filteredChain.filter((c) => c.strike === strikeFilter);
+  }, [filteredChain, strikeFilter]);
+
+  useEffect(() => {
+    if (strikeFilter === 'all') return;
+    const hasStrike = filteredChain.some((c) => c.strike === strikeFilter);
+    if (!hasStrike) setStrikeFilter('all');
+  }, [filteredChain, strikeFilter]);
 
   const isItm = (strike: number) =>
     contractType === 'call' ? strike < stockPrice : strike > stockPrice;
@@ -388,16 +404,28 @@ export function ContractSelector({
           </select>
         </div>
         <div>
-          <label htmlFor="strike" className="block text-sm font-medium text-gray-700 mb-1">
-            Strike price
+          <label htmlFor="strike-filter" className="block text-sm font-medium text-gray-700 mb-1">
+            All Strike Prices
           </label>
           <select
-            id="strike"
-            value={selectedStrike ?? ''}
-            onChange={(e) => onStrikeChange(parseFloat(e.target.value))}
+            id="strike-filter"
+            value={strikeFilter === 'all' ? 'all' : strikeFilter}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === 'all') {
+                setStrikeFilter('all');
+              } else {
+                const strike = parseFloat(v);
+                if (Number.isFinite(strike)) {
+                  setStrikeFilter(strike);
+                  onStrikeChange(strike);
+                }
+              }
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            aria-label="Select strike price"
+            aria-label="Filter or select strike price"
           >
+            <option value="all">All Strike Prices</option>
             {filteredChain.map((c) => (
               <option key={c.strike} value={c.strike}>
                 ${c.strike.toFixed(2)}
@@ -538,7 +566,7 @@ export function ContractSelector({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredChain.map((row) => {
+                  {displayChain.map((row) => {
                     const c = contractType === 'call' ? row.call : row.put;
                     const bidVal = c?.last_quote?.bid ?? c?.premium ?? 0;
                     const prem = c?.premium ?? bidVal;
@@ -552,10 +580,14 @@ export function ContractSelector({
                         key={row.strike}
                         role="row"
                         tabIndex={0}
-                        onClick={() => onStrikeChange(row.strike)}
+                        onClick={() => {
+                          setStrikeFilter('all');
+                          onStrikeChange(row.strike);
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === ' ' || e.key === 'Enter') {
                             e.preventDefault();
+                            setStrikeFilter('all');
                             onStrikeChange(row.strike);
                           }
                         }}
@@ -568,7 +600,10 @@ export function ContractSelector({
                             type="radio"
                             name="strike"
                             checked={selected}
-                            onChange={() => onStrikeChange(row.strike)}
+                            onChange={() => {
+                              setStrikeFilter('all');
+                              onStrikeChange(row.strike);
+                            }}
                             className="sr-only"
                             aria-label={`Select strike $${row.strike}`}
                           />

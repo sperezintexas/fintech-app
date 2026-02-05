@@ -62,6 +62,27 @@ describe("GET /api/options", () => {
     expect(data.error).toBe("expiration is required");
   });
 
+  it("accepts Yahoo-style Unix timestamp (date=1771545600) and returns matching expiration", async () => {
+    const unixTs = "1771545600";
+    const expDate = "2026-02-20";
+    const group = makeYahooOptionGroup(new Date(expDate + "T00:00:00Z"));
+
+    mockOptions.mockResolvedValueOnce({
+      options: [group],
+    });
+
+    const req = new Request(
+      `http://localhost/api/options?underlying=CIFR&expiration=${unixTs}&strike=10`
+    );
+    const res = await GET(req as never);
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.expiration).toBe(expDate);
+    expect(data.requestedExpiration).toBe(expDate);
+    expect(data.dataSource).toBe("yahoo");
+  });
+
   it("returns exact expiration when Yahoo has matching date", async () => {
     const requestedExp = "2026-02-27";
     const group = makeYahooOptionGroup(new Date(requestedExp + "T12:00:00Z"));

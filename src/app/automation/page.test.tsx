@@ -63,7 +63,7 @@ describe("Automation Page", () => {
     expect(screen.getByText("Alert Delivery Channels")).toBeInTheDocument();
   });
 
-  it("renders Manage Jobs when Scheduled Jobs tab is active", async () => {
+  it("renders Scheduler, Job run history, Job types links when Scheduled Jobs tab is active", async () => {
     render(<AutomationPage />);
 
     await waitFor(() => {
@@ -76,8 +76,9 @@ describe("Automation Page", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Manage Jobs")).toBeInTheDocument();
+      expect(screen.getByText("Scheduler")).toBeInTheDocument();
     });
-    expect(screen.getByText("Job Types")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Job run history/ }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("link", { name: /Job types/ }).length).toBeGreaterThanOrEqual(1);
   });
 });
