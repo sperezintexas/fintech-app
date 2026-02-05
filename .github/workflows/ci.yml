@@ -120,9 +120,13 @@ jobs:
             MONGODB_URI=mongodb://localhost:27017
             MONGODB_DB=myinvestments
 
-  # Post build result to Slack. Requires SLACK_WEBHOOK_URL as a repo Secret
-  # (Settings → Secrets and variables → Actions → Secrets). The channel is set
-  # when you create the Incoming Webhook in Slack (#smart-trader-build).
+  # Post build result to Slack. Requires SLACK_WEBHOOK_URL as a repo Secret.
+  # To configure:
+  #   1. Go to GitHub repo Settings → Secrets and variables → Actions
+  #   2. Click "New repository secret"
+  #   3. Name: SLACK_WEBHOOK_URL (case-sensitive, must be exact)
+  #   4. Value: Your Slack Incoming Webhook URL (starts with https://hooks.slack.com/...)
+  # The Slack channel is set when you create the Incoming Webhook (#smart-trader-build).
   notify-slack:
     name: Notify Slack
     runs-on: ubuntu-latest
@@ -131,7 +135,7 @@ jobs:
     steps:
       - name: Send Slack build notification
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL || vars.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           STATUS: ${{ (needs.lint.result == 'failure' || needs.typecheck.result == 'failure' || needs.test.result == 'failure' || needs.build.result == 'failure' || needs.docker.result == 'failure') && 'failure' || (needs.lint.result == 'cancelled' || needs.typecheck.result == 'cancelled' || needs.test.result == 'cancelled' || needs.build.result == 'cancelled' || needs.docker.result == 'cancelled') && 'cancelled' || 'success' }}
           RUN_URL: ${{ format('https://github.com/{0}/actions/runs/{1}', github.repository, github.run_id) }}
           BRANCH: ${{ github.ref_name }}
@@ -139,7 +143,11 @@ jobs:
           ACTOR: ${{ github.actor }}
         run: |
           if [ -z "$SLACK_WEBHOOK_URL" ]; then
-            echo "SLACK_WEBHOOK_URL not set; skipping Slack notification."
+            echo "::warning::SLACK_WEBHOOK_URL secret not found. To enable Slack notifications:"
+            echo "  1. Go to GitHub repo Settings → Secrets and variables → Actions → Secrets"
+            echo "  2. Create a repository secret named exactly: SLACK_WEBHOOK_URL"
+            echo "  3. Paste your Slack Incoming Webhook URL as the value"
+            echo "Skipping Slack notification."
             exit 0
           fi
           if [ "$STATUS" = "success" ]; then
