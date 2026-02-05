@@ -18,6 +18,6 @@ export default function middleware(req: NextRequest, event: NextFetchEvent) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/auth|api/health|health|icon.svg|apple-icon.svg|contact).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/auth|api/health|health|icon.svg|apple-icon.svg|contact|login-error).*)",
   ],
 };

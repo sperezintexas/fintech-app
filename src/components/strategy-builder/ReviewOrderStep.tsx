@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState, useCallback, useEffect } from 'react';
-import Link from 'next/link';
 import { toYahooOptionSymbol } from '@/lib/strategy-builder';
 
 type AccountOption = { _id: string; name: string };
@@ -232,47 +231,6 @@ export function ReviewOrderStep({
       setScannerLoading(false);
     }
   }, []);
-
-  const handleRunCoveredCallScanner = useCallback(async () => {
-    setScannerLoading(true);
-    setScannerMessage(null);
-    setAddMessage(null);
-    try {
-      const premium = parseFloat(limitPrice) || (bid > 0 && ask > 0 ? (bid + ask) / 2 : 0);
-      const res = await fetch('/api/covered-call/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol,
-          strike,
-          expiration,
-          entryPremium: premium,
-          quantity,
-          stockPurchasePrice: stockPrice,
-          accountId: null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Failed to run Covered Call Scanner');
-      const channels = data.deliveredChannels?.length
-        ? data.deliveredChannels.join(', ')
-        : 'default channel';
-      setScannerMessage({
-        type: 'success',
-        text: data.success
-          ? `Covered Call Scanner complete. Results sent to ${channels}.`
-          : data.message ?? 'Covered Call Scanner completed.',
-      });
-      setTimeout(() => setScannerMessage(null), 5000);
-    } catch (err) {
-      setScannerMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Failed to run Covered Call Scanner',
-      });
-    } finally {
-      setScannerLoading(false);
-    }
-  }, [symbol, strike, expiration, limitPrice, bid, ask, quantity, stockPrice]);
 
   return (
     <div className="space-y-6">
@@ -527,31 +485,7 @@ export function ReviewOrderStep({
           ← Go back
         </button>
         <div className="flex gap-3">
-          {strategyId === 'covered-call' && action === 'sell' && contractType === 'call' && (
-            <Link
-              href={`/chat?${new URLSearchParams({
-                symbol,
-                strike: strike.toString(),
-                expiration,
-                credit: credit.toString(),
-                quantity: quantity.toString(),
-                probOtm: probOtm.toString(),
-              }).toString()}`}
-              className="px-6 py-3 rounded-xl border-2 border-blue-600 bg-white text-blue-600 font-medium hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-500 inline-flex items-center"
-            >
-              Find better value with Grok
-            </Link>
-          )}
-          {strategyId === 'covered-call' ? (
-            <button
-              type="button"
-              onClick={handleRunCoveredCallScanner}
-              disabled={scannerLoading}
-              className="px-6 py-3 rounded-xl border-2 border-indigo-600 bg-white text-indigo-600 font-medium hover:bg-indigo-50 focus:outline-none focus:ring-4 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {scannerLoading ? 'Running…' : 'Covered Call Scanner'}
-            </button>
-          ) : (
+          {strategyId !== 'covered-call' && (
             <button
               type="button"
               onClick={handleRunOptionScanner}

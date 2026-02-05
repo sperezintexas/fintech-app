@@ -108,6 +108,7 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `callBid`, 
 
 **Strategy settings** (account-level, `strategy-settings` API):
 
+- `excludeWatchlist` (default **true**): when true, the Covered Call Scanner does **not** evaluate watchlist items during the daily job, to save time. Set to false in Setup → Strategy settings to include watchlist call/covered-call items in the scan.
 - `covered-call.minOpenInterest` (default 500)
 - `covered-call.minVolume` (default 0)
 - `covered-call.maxAssignmentProbability` (default 100)

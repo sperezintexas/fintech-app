@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { AppHeader } from '@/components/AppHeader';
 import { StrategyWizard } from '@/components/strategy-builder/StrategyWizard';
+import { OUTLOOKS, STRATEGIES } from '@/lib/strategy-builder';
+import type { Outlook } from '@/types/strategy';
 
 type TickerQuote = { symbol: string; name: string; price: number; change: number; changePercent: number };
 type SMAData = { sma50: number; sma50Plus15: number; sma50Minus15: number };
@@ -11,6 +13,8 @@ export default function XStrategyBuilderPage() {
   const [selectedQuote, setSelectedQuote] = useState<TickerQuote | null>(null);
   const [smaData, setSmaData] = useState<SMAData | null>(null);
   const [smaLoading, setSmaLoading] = useState(false);
+  const [selectedOutlook, setSelectedOutlook] = useState<Outlook | null>(null);
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!selectedQuote?.symbol) {
@@ -43,34 +47,61 @@ export default function XStrategyBuilderPage() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-900">xStrategyBuilder</h2>
           <p className="text-gray-600 mt-1">
-            Build sophisticated option strategies with real-time data and P/L analysis.
+            Build sophisticated option strategies with real-time data and P/L analysis, using real world xAI.
           </p>
           {selectedQuote && (
-            <p className="mt-2 text-xs text-gray-500">
-              <span className="font-medium text-gray-700">{selectedQuote.symbol}</span>
-              {' · '}
-              <span>${selectedQuote.price.toFixed(2)}</span>
-              {' · '}
-              <span className={selectedQuote.change >= 0 ? 'text-green-600' : 'text-red-600'}>
-                {selectedQuote.change >= 0 ? '+' : ''}{selectedQuote.changePercent.toFixed(2)}%
-              </span>
-              {smaLoading && <span className="ml-2">50 MA…</span>}
-              {!smaLoading && smaData && (
-                <>
-                  {' · '}
-                  <span>50 MA ${smaData.sma50.toFixed(2)}</span>
-                  {' · '}
-                  <span className="text-red-600">−15% ${smaData.sma50Minus15.toFixed(2)}</span>
-                  {' · '}
-                  <span className="text-green-600">+15% ${smaData.sma50Plus15.toFixed(2)}</span>
-                </>
+            <>
+              <p className="mt-2 text-xs text-gray-500">
+                <span className="font-medium text-gray-700">{selectedQuote.symbol}</span>
+                {' · '}
+                <span>${selectedQuote.price.toFixed(2)}</span>
+                {' · '}
+                <span className={selectedQuote.change >= 0 ? 'text-green-600' : 'text-red-600'}>
+                  {selectedQuote.change >= 0 ? '+' : ''}{selectedQuote.changePercent.toFixed(2)}%
+                </span>
+                {smaLoading && <span className="ml-2">50 MA…</span>}
+                {!smaLoading && smaData && (
+                  <>
+                    {' · '}
+                    <span>50 MA ${smaData.sma50.toFixed(2)}</span>
+                    {' · '}
+                    <span className="text-red-600">−15% ${smaData.sma50Minus15.toFixed(2)}</span>
+                    {' · '}
+                    <span className="text-green-600">+15% ${smaData.sma50Plus15.toFixed(2)}</span>
+                  </>
+                )}
+              </p>
+              {(selectedOutlook != null || selectedStrategyId != null) && (
+                <p className="mt-1 text-xs text-gray-500">
+                  {selectedOutlook != null && (
+                    <>
+                      <span className="text-gray-600">Outlook: </span>
+                      <span className="font-medium text-gray-700">
+                        {OUTLOOKS.find((o) => o.id === selectedOutlook)?.label ?? selectedOutlook}
+                      </span>
+                    </>
+                  )}
+                  {selectedOutlook != null && selectedStrategyId != null && <span> · </span>}
+                  {selectedStrategyId != null && (
+                    <>
+                      <span className="text-gray-600">Strategy: </span>
+                      <span className="font-medium text-gray-700">
+                        {STRATEGIES.find((s) => s.id === selectedStrategyId)?.name ?? selectedStrategyId}
+                      </span>
+                    </>
+                  )}
+                </p>
               )}
-            </p>
+            </>
           )}
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sm:p-8">
-          <StrategyWizard onSymbolSelected={setSelectedQuote} />
+          <StrategyWizard
+          onSymbolSelected={setSelectedQuote}
+          onOutlookChange={setSelectedOutlook}
+          onStrategyChange={setSelectedStrategyId}
+        />
         </div>
       </main>
     </div>

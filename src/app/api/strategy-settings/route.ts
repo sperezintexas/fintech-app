@@ -42,8 +42,10 @@ export async function GET(request: NextRequest) {
           maxAssignmentProbability: existing.thresholds?.["cash-secured-put"]?.maxAssignmentProbability ?? defaults["cash-secured-put"].maxAssignmentProbability,
         },
       };
+      const excludeWatchlist = existing.excludeWatchlist !== false;
       return NextResponse.json({
         ...existing,
+        excludeWatchlist,
         thresholds,
         _id: existing._id.toString(),
       });
@@ -53,6 +55,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       _id: "default",
       accountId,
+      excludeWatchlist: true,
       thresholds: defaultThresholds(),
       createdAt: now,
       updatedAt: now,
@@ -68,6 +71,7 @@ export async function PUT(request: NextRequest) {
   try {
     const body = (await request.json()) as {
       accountId?: string;
+      excludeWatchlist?: boolean;
       thresholds?: Partial<StrategySettings["thresholds"]>;
     };
 
@@ -76,6 +80,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "accountId is required" }, { status: 400 });
     }
 
+    const excludeWatchlist = typeof body.excludeWatchlist === "boolean" ? body.excludeWatchlist : true;
     const defaults = defaultThresholds();
     const thresholds = {
       "covered-call": {
@@ -124,6 +129,7 @@ export async function PUT(request: NextRequest) {
     const now = new Date().toISOString();
     const update: Omit<StrategySettingsDoc, "_id"> = {
       accountId,
+      excludeWatchlist,
       thresholds: thresholds as StrategySettings["thresholds"],
       createdAt: now, // will be overridden if exists
       updatedAt: now,
@@ -136,11 +142,12 @@ export async function PUT(request: NextRequest) {
     if (existing) {
       await db.collection<StrategySettingsDoc>("strategySettings").updateOne(
         { _id: existing._id },
-        { $set: { thresholds: update.thresholds, updatedAt: now } }
+        { $set: { excludeWatchlist: update.excludeWatchlist, thresholds: update.thresholds, updatedAt: now } }
       );
 
       return NextResponse.json({
         ...existing,
+        excludeWatchlist: update.excludeWatchlist,
         thresholds: update.thresholds,
         updatedAt: now,
         _id: existing._id.toString(),
@@ -149,6 +156,7 @@ export async function PUT(request: NextRequest) {
 
     const insertDoc: Omit<StrategySettingsDoc, "_id"> = {
       accountId,
+      excludeWatchlist: update.excludeWatchlist,
       thresholds: update.thresholds,
       createdAt: now,
       updatedAt: now,

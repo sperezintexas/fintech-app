@@ -53,6 +53,7 @@ function AutomationContent() {
   const [strategySettingsError, setStrategySettingsError] = useState<string>("");
   const [strategySettings, setStrategySettings] = useState<StrategySettings | null>(null);
   const [strategyThresholdsForm, setStrategyThresholdsForm] = useState({
+    excludeWatchlist: true,
     coveredCallMinOI: 500,
     cashSecuredPutMinOI: 500,
     coveredCallMinVolume: 0,
@@ -289,14 +290,16 @@ function AutomationContent() {
 
       const settings = data as StrategySettings;
       setStrategySettings(settings);
-      setStrategyThresholdsForm({
+      setStrategyThresholdsForm((p) => ({
+        ...p,
+        excludeWatchlist: settings.excludeWatchlist !== false,
         coveredCallMinOI: settings.thresholds?.["covered-call"]?.minOpenInterest ?? 500,
         cashSecuredPutMinOI: settings.thresholds?.["cash-secured-put"]?.minOpenInterest ?? 500,
         coveredCallMinVolume: settings.thresholds?.["covered-call"]?.minVolume ?? 0,
         cashSecuredPutMinVolume: settings.thresholds?.["cash-secured-put"]?.minVolume ?? 0,
         coveredCallMaxAssignProb: settings.thresholds?.["covered-call"]?.maxAssignmentProbability ?? 100,
         cashSecuredPutMaxAssignProb: settings.thresholds?.["cash-secured-put"]?.maxAssignmentProbability ?? 100,
-      });
+      }));
     } catch (e) {
       console.error("Failed to fetch strategy settings:", e);
       setStrategySettingsError("Failed to load strategy settings");
@@ -322,6 +325,7 @@ function AutomationContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accountId: selectedAccountId,
+          excludeWatchlist: Boolean(strategyThresholdsForm.excludeWatchlist),
           thresholds: {
             "covered-call": {
               minOpenInterest: Number(strategyThresholdsForm.coveredCallMinOI),
@@ -1105,6 +1109,24 @@ function AutomationContent() {
                 </div>
               ) : (
                 <div className="space-y-6">
+                  <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/50">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={strategyThresholdsForm.excludeWatchlist}
+                        onChange={(e) =>
+                          setStrategyThresholdsForm((p) => ({ ...p, excludeWatchlist: e.target.checked }))
+                        }
+                        className="mt-1 w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      />
+                      <div>
+                        <span className="font-medium text-gray-900">Exclude Watchlist</span>
+                        <p className="text-xs text-gray-600 mt-1">
+                          When on (default), the Covered Call Scanner does not evaluate watchlist items during the daily job, to save time. Turn off to include watchlist call/covered-call items in the scan.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="p-4 rounded-xl border border-gray-200">
                       <p className="font-medium text-gray-900 mb-1">Covered Calls</p>

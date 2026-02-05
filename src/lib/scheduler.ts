@@ -86,7 +86,22 @@ function defineJobs(agenda: Agenda) {
 
     const data = job.attrs.data as { accountId?: string; config?: Record<string, unknown> } | undefined;
     const accountId = data?.accountId;
-    const config = data?.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
+    let config = data?.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
+
+    // Merge Strategy Settings: excludeWatchlist (default true) -> coveredCall.includeWatchlist = false
+    if (accountId) {
+      const db = await getDb();
+      const strategySettings = await db
+        .collection<{ accountId: string; excludeWatchlist?: boolean }>("strategySettings")
+        .findOne({ accountId });
+      const excludeWatchlist = strategySettings?.excludeWatchlist !== false;
+      config = {
+        ...config,
+        coveredCall: { ...config?.coveredCall, includeWatchlist: !excludeWatchlist },
+      };
+    } else {
+      config = { ...config, coveredCall: { ...config?.coveredCall, includeWatchlist: false } };
+    }
 
     try {
       const result = await runUnifiedOptionsScanner(accountId, config);
@@ -649,7 +664,19 @@ export async function executeJob(jobId: string): Promise<{
     } else if (handlerKey === "unifiedOptionsScanner") {
       try {
         const accountId = job.accountId ?? undefined;
-        const config = job.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
+        let config = job.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
+        if (accountId) {
+          const strategySettings = await db
+            .collection<{ accountId: string; excludeWatchlist?: boolean }>("strategySettings")
+            .findOne({ accountId });
+          const excludeWatchlist = strategySettings?.excludeWatchlist !== false;
+          config = {
+            ...config,
+            coveredCall: { ...config?.coveredCall, includeWatchlist: !excludeWatchlist },
+          };
+        } else {
+          config = { ...config, coveredCall: { ...config?.coveredCall, includeWatchlist: false } };
+        }
         const result = await runUnifiedOptionsScanner(accountId, config);
         title = job.name;
         const lines = [

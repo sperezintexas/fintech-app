@@ -122,6 +122,8 @@ export type StrategyTag = "covered-call" | "cash-secured-put";
 export type StrategySettings = {
   _id: string;
   accountId: string;
+  /** When true (default), Covered Call Scanner does not evaluate watchlist items during daily job to save time. */
+  excludeWatchlist?: boolean;
   thresholds: Record<
     StrategyTag,
     { minOpenInterest: number; minVolume: number; maxAssignmentProbability: number }

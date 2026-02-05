@@ -40,9 +40,11 @@ function Button({
 
 type StrategyWizardProps = {
   onSymbolSelected?: (quote: TickerQuote | null) => void;
+  onOutlookChange?: (outlook: Outlook | null) => void;
+  onStrategyChange?: (strategyId: string | null) => void;
 };
 
-export function StrategyWizard({ onSymbolSelected }: StrategyWizardProps) {
+export function StrategyWizard({ onSymbolSelected, onOutlookChange, onStrategyChange }: StrategyWizardProps) {
   const [step, setStep] = useState(1);
   const STEPS = ['Symbol', 'Outlook', 'Strategy', 'Contract', 'Review order'];
 
@@ -71,6 +73,14 @@ export function StrategyWizard({ onSymbolSelected }: StrategyWizardProps) {
 
   const selectedStrategy = STRATEGIES.find((s) => s.id === strategyId);
   const filteredStrategies = outlook ? STRATEGIES.filter((s) => s.outlooks.includes(outlook)) : [];
+
+  useEffect(() => {
+    onOutlookChange?.(outlook);
+  }, [outlook, onOutlookChange]);
+
+  useEffect(() => {
+    onStrategyChange?.(strategyId);
+  }, [strategyId, onStrategyChange]);
 
   const searchSymbols = useCallback(async (q: string) => {
     if (!q || q.length < 2) {
