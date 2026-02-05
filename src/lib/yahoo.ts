@@ -540,6 +540,79 @@ export async function getSuggestedCoveredCallOptions(
   }
 }
 
+/** Probability OTM (0–99) for a short call: higher strike = higher prob OTM. Same formula as ReviewOrderStep. */
+function probOtmCall(stockPrice: number, strike: number): number {
+  if (!stockPrice || stockPrice <= 0) return 50;
+  const otmPercent = ((strike - stockPrice) / stockPrice) * 100;
+  if (otmPercent <= 0) return 0;
+  return Math.min(99, Math.round(50 + otmPercent * 2));
+}
+
+export type CoveredCallAlternative = {
+  strike: number;
+  expiration: string;
+  dte: number;
+  bid: number;
+  ask: number;
+  premium: number;
+  credit: number;
+  probOtm: number;
+};
+
+/**
+ * Find covered call alternatives: same or next week, higher prob OTM (e.g. ~70%) and higher premium.
+ * Uses getSuggestedCoveredCallOptions (1–14 DTE) then filters by minProbOtm and min credit.
+ */
+export async function getCoveredCallAlternatives(
+  symbol: string,
+  opts: {
+    currentStrike: number;
+    currentExpiration: string;
+    currentCredit: number;
+    quantity: number;
+    minProbOtm?: number;
+    limit?: number;
+  }
+): Promise<CoveredCallAlternative[]> {
+  const minProbOtm = opts.minProbOtm ?? 70;
+  const limit = opts.limit ?? 10;
+
+  try {
+    const quote = await yahooFinance.quote(symbol.toUpperCase());
+    const stockPrice = quote?.regularMarketPrice ?? 0;
+    if (!stockPrice) return [];
+
+    const candidates = await getSuggestedCoveredCallOptions(symbol, {
+      minDte: 1,
+      maxDte: 14,
+      limit: 30,
+    });
+
+    const results: CoveredCallAlternative[] = [];
+    for (const c of candidates) {
+      const probOtm = probOtmCall(stockPrice, c.strike);
+      const credit = opts.quantity * c.premium * 100;
+      if (probOtm < minProbOtm) continue;
+      if (credit < opts.currentCredit) continue;
+      results.push({
+        strike: c.strike,
+        expiration: c.expiration,
+        dte: c.dte,
+        bid: c.bid,
+        ask: c.ask,
+        premium: c.premium,
+        credit,
+        probOtm,
+      });
+    }
+
+    results.sort((a, b) => b.premium - a.premium);
+    return results.slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
 // IV rank/percentile placeholder (0-100)
 export async function getIVRankOrPercentile(symbol: string): Promise<number> {
   try {

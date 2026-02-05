@@ -446,20 +446,42 @@ export function ContractSelector({
         </div>
       </div>
 
-      {/* Total cost if assigned / called away */}
-      {assignmentCost && selectedStrike && (
-        <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-200">
-          <p className="text-sm font-medium text-indigo-900">{assignmentCost.label}</p>
-          <p className="text-2xl font-bold text-indigo-700 mt-1">
-            ${assignmentCost.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-          <p className="text-xs text-indigo-600 mt-1">
-            {contractType === 'put'
-              ? `Strike $${selectedStrike.toFixed(2)} × 100 × ${quantity} − premium $${(effectivePremium * 100 * quantity).toFixed(2)}`
-              : `Strike $${selectedStrike.toFixed(2)} × 100 × ${quantity} + premium $${(effectivePremium * 100 * quantity).toFixed(2)}`}
-          </p>
-        </div>
-      )}
+      {/* Current price, strike targets, and total cost — collapsible sections */}
+      <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-200 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <details className="group rounded-lg border border-indigo-200/60 bg-white/50" open>
+          <summary className="cursor-pointer list-none py-2 px-3 text-sm font-medium text-indigo-900 hover:text-indigo-700 [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+            <span>Current price</span>
+            <span className="text-indigo-600 text-xs select-none inline-block transition-transform group-open:rotate-180" aria-hidden>▼</span>
+          </summary>
+          <div className="px-3 pb-3 pt-0">
+            <p className="text-2xl font-bold text-indigo-700">
+              ${stockPrice.toFixed(2)}
+            </p>
+          </div>
+        </details>
+        <details className="group rounded-lg border border-indigo-200/60 bg-white/50">
+          <summary className="cursor-pointer list-none py-2 px-3 text-sm font-medium text-indigo-900 hover:text-indigo-700 [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+            <span>Strike targets ±5%, ±10%, ±15%</span>
+            <span className="text-indigo-600 text-xs select-none inline-block transition-transform group-open:rotate-180" aria-hidden>▼</span>
+          </summary>
+          <div className="px-3 pb-3 pt-0">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-indigo-700">
+              <span>−15%</span>
+              <span>${(stockPrice * 0.85).toFixed(2)}</span>
+              <span>−10%</span>
+              <span>${(stockPrice * 0.9).toFixed(2)}</span>
+              <span>−5%</span>
+              <span>${(stockPrice * 0.95).toFixed(2)}</span>
+              <span>+5%</span>
+              <span>${(stockPrice * 1.05).toFixed(2)}</span>
+              <span>+10%</span>
+              <span>${(stockPrice * 1.1).toFixed(2)}</span>
+              <span>+15%</span>
+              <span>${(stockPrice * 1.15).toFixed(2)}</span>
+            </div>
+          </div>
+        </details>
+      </div>
 
       {/* Contract type toggle */}
       <div className="flex gap-2">
@@ -683,6 +705,21 @@ export function ContractSelector({
           )}
         </div>
       </div>
+
+      {/* Total proceeds / net cost — non-collapsible, above How to pick options */}
+      {assignmentCost && selectedStrike && (
+        <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-200">
+          <p className="text-sm font-medium text-indigo-900">{assignmentCost.label}</p>
+          <p className="text-2xl font-bold text-indigo-700 mt-1">
+            ${assignmentCost.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <p className="text-xs text-indigo-600 mt-1">
+            {contractType === 'put'
+              ? `Strike $${selectedStrike.toFixed(2)} × 100 × ${quantity} − premium $${(effectivePremium * 100 * quantity).toFixed(2)}`
+              : `Strike $${selectedStrike.toFixed(2)} × 100 × ${quantity} + premium $${(effectivePremium * 100 * quantity).toFixed(2)}`}
+          </p>
+        </div>
+      )}
 
       {/* Helper tooltips - compact */}
       <details className="text-sm text-gray-600">

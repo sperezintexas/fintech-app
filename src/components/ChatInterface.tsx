@@ -20,15 +20,35 @@ const DEFAULT_CONFIG: GrokChatConfig = {
   context: { riskProfile: "medium", strategyGoals: "", systemPromptOverride: "" },
 };
 
-export function ChatInterface() {
+export type OrderContext = {
+  symbol: string;
+  strike: number;
+  expiration: string;
+  credit: number;
+  quantity?: number;
+  probOtm?: number;
+};
+
+type ChatInterfaceProps = {
+  initialMessage?: string;
+  initialOrderContext?: OrderContext;
+};
+
+export function ChatInterface({ initialMessage, initialOrderContext }: ChatInterfaceProps = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(initialMessage ?? "");
+  const [orderContext, setOrderContext] = useState<OrderContext | undefined>(initialOrderContext);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [config, setConfig] = useState<GrokChatConfig>(DEFAULT_CONFIG);
   const [configSaving, setConfigSaving] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (initialMessage != null) setInput(initialMessage);
+    if (initialOrderContext != null) setOrderContext(initialOrderContext);
+  }, [initialMessage, initialOrderContext]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -98,10 +118,15 @@ export function ChatInterface() {
 
     try {
       const historyForApi = messages.map((m) => ({ role: m.role, content: m.content }));
+      const body: { message: string; history: { role: string; content: string }[]; orderContext?: OrderContext } = {
+        message: trimmed,
+        history: historyForApi,
+      };
+      if (orderContext) body.orderContext = orderContext;
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, history: historyForApi }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();

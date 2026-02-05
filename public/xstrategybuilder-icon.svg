@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#2D3748" flood-opacity="0.25" />
+    </filter>
+  </defs>
+  <!-- Light grey circle with subtle shadow -->
+  <circle cx="256" cy="256" r="200" fill="#CBD5E0" filter="url(#shadow)" />
+  <!-- Four curved X segments (dark blue-grey), rounded ends -->
+  <path
+    d="M220 220 Q 180 180 220 140"
+    stroke="#4A5568"
+    stroke-width="36"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <path
+    d="M292 220 Q 332 180 292 140"
+    stroke="#4A5568"
+    stroke-width="36"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <path
+    d="M220 292 Q 180 332 220 372"
+    stroke="#4A5568"
+    stroke-width="36"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <path
+    d="M292 292 Q 332 332 292 372"
+    stroke="#4A5568"
+    stroke-width="36"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <!-- Dollar sign centered in void -->
+  <text
+    x="256"
+    y="278"
+    text-anchor="middle"
+    font-family="system-ui, -apple-system, sans-serif"
+    font-size="140"
+    font-weight="700"
+    fill="#4A5568"
+  >
+    $
+  </text>
+</svg>

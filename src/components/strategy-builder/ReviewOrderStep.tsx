@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { toYahooOptionSymbol } from '@/lib/strategy-builder';
 
 type ReviewOrderStepProps = {
@@ -399,6 +400,21 @@ export function ReviewOrderStep({
           ← Go back
         </button>
         <div className="flex gap-3">
+          {strategyId === 'covered-call' && action === 'sell' && contractType === 'call' && (
+            <Link
+              href={`/chat?${new URLSearchParams({
+                symbol,
+                strike: strike.toString(),
+                expiration,
+                credit: credit.toString(),
+                quantity: quantity.toString(),
+                probOtm: probOtm.toString(),
+              }).toString()}`}
+              className="px-6 py-3 rounded-xl border-2 border-blue-600 bg-white text-blue-600 font-medium hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-500 inline-flex items-center"
+            >
+              Find better value with Grok
+            </Link>
+          )}
           {strategyId === 'covered-call' ? (
             <button
               type="button"

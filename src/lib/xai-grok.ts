@@ -102,6 +102,96 @@ export async function executeWebSearch(
   return formatted || JSON.stringify({ results: [], message: "No results found" });
 }
 
+/** Covered call alternatives tool: find options with higher prob OTM and higher premium (same/next week). */
+export const COVERED_CALL_ALTERNATIVES_TOOL: OpenAI.Chat.ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "covered_call_alternatives",
+    description:
+      "Find covered call alternatives for a given scenario: same or next week expirations, with higher probability of expiring OTM (e.g. ~70%) and higher premium. Use when the user describes a short call trade (symbol, strike, expiration, credit, prob OTM) and asks for better value, higher OTM%, or alternatives.",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Underlying symbol (e.g. TSLA)" },
+        strike: { type: "number", description: "Current strike price" },
+        expiration: { type: "string", description: "Current expiration date (YYYY-MM-DD)" },
+        credit: { type: "number", description: "Current expected credit (total $)" },
+        quantity: { type: "number", description: "Number of contracts (default 1)" },
+        min_prob_otm: { type: "number", description: "Minimum probability OTM target (default 70)" },
+      },
+      required: ["symbol", "strike", "expiration", "credit"],
+    },
+  },
+};
+
+export type CoveredCallAlternativesArgs = {
+  symbol?: string;
+  strike?: number;
+  expiration?: string;
+  credit?: number;
+  quantity?: number;
+  min_prob_otm?: number;
+};
+
+/** Execute covered_call_alternatives tool using Yahoo data. */
+export async function executeCoveredCallAlternatives(
+  args: CoveredCallAlternativesArgs
+): Promise<string> {
+  const symbol = typeof args?.symbol === "string" ? args.symbol.trim().toUpperCase() : "";
+  const strike = typeof args?.strike === "number" ? args.strike : undefined;
+  const expiration = typeof args?.expiration === "string" ? args.expiration.trim() : "";
+  const credit = typeof args?.credit === "number" ? args.credit : undefined;
+  const quantity = typeof args?.quantity === "number" ? args.quantity : 1;
+  const minProbOtm = typeof args?.min_prob_otm === "number" ? args.min_prob_otm : 70;
+
+  if (!symbol || strike == null || !expiration || credit == null) {
+    return JSON.stringify({
+      error: "Missing required parameters: symbol, strike, expiration, credit",
+      alternatives: [],
+    });
+  }
+
+  const { getCoveredCallAlternatives } = await import("@/lib/yahoo");
+  const alternatives = await getCoveredCallAlternatives(symbol, {
+    currentStrike: strike,
+    currentExpiration: expiration,
+    currentCredit: credit,
+    quantity,
+    minProbOtm,
+    limit: 10,
+  });
+
+  if (alternatives.length === 0) {
+    return JSON.stringify({
+      message: `No alternatives found for ${symbol} with prob OTM >= ${minProbOtm}% and credit >= $${credit.toLocaleString()}. Try a lower min_prob_otm or check expirations.`,
+      alternatives: [],
+    });
+  }
+
+  const lines = alternatives.map(
+    (a, i) =>
+      `${i + 1}. Strike $${a.strike.toFixed(2)} exp ${a.expiration} (DTE ${a.dte}): ` +
+      `credit $${a.credit.toLocaleString()}, prob OTM ${a.probOtm}%, bid $${a.bid.toFixed(2)}/ask $${a.ask.toFixed(2)}`
+  );
+  return JSON.stringify({
+    symbol,
+    currentStrike: strike,
+    currentExpiration: expiration,
+    currentCredit: credit,
+    minProbOtm,
+    alternatives: alternatives.map((a) => ({
+      strike: a.strike,
+      expiration: a.expiration,
+      dte: a.dte,
+      credit: a.credit,
+      probOtm: a.probOtm,
+      bid: a.bid,
+      ask: a.ask,
+    })),
+    summary: lines.join("\n"),
+  });
+}
+
 /**
  * Call Grok with tools; handles tool-calling loop for web_search.
  * Pre-injected context (portfolio, news, prices) is passed in userContent.
@@ -172,6 +262,8 @@ export async function callGrokWithTools(
       let resultContent = "";
       if (name === "web_search") {
         resultContent = await executeWebSearch(args as { query?: string; num_results?: number });
+      } else if (name === "covered_call_alternatives") {
+        resultContent = await executeCoveredCallAlternatives(args as CoveredCallAlternativesArgs);
       } else {
         resultContent = JSON.stringify({ error: `Unknown tool: ${name}` });
       }

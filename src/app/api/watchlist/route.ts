@@ -1,10 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import YahooFinance from "yahoo-finance2";
 import type { WatchlistItem } from "@/types/portfolio";
 import { getRiskDisclosure } from "@/lib/watchlist-rules";
 
 export const dynamic = "force-dynamic";
+
+const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
+
+async function getCompanyNames(symbols: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const unique = [...new Set(symbols.map((s) => s.toUpperCase()).filter(Boolean))];
+  await Promise.all(
+    unique.map(async (symbol) => {
+      try {
+        const quote = await yahooFinance.quote(symbol);
+        const name = quote?.longName ?? quote?.shortName ?? null;
+        if (name) map.set(symbol, name);
+      } catch {
+        // ignore per-symbol failures
+      }
+    })
+  );
+  return map;
+}
 
 // GET /api/watchlist - Get watchlist items by watchlistId (primary) or accountId (legacy)
 export async function GET(request: NextRequest) {
@@ -31,11 +51,29 @@ export async function GET(request: NextRequest) {
       .sort({ addedAt: -1 })
       .toArray();
 
-    // Transform MongoDB _id to string
-    const watchlistItems = items.map((item) => ({
-      ...item,
-      _id: item._id.toString(),
-    }));
+    // Symbols to resolve: use underlyingSymbol for options (show stock company name), else symbol
+    const symbolsToResolve = items.map((item) => {
+      const doc = item as Record<string, unknown>;
+      return (doc.type !== "stock" && doc.underlyingSymbol
+        ? String(doc.underlyingSymbol)
+        : String(doc.symbol ?? "")
+      ).toUpperCase();
+    });
+    const companyNames = await getCompanyNames(symbolsToResolve);
+
+    // Transform MongoDB _id to string and attach companyDescription
+    const watchlistItems = items.map((item: Record<string, unknown>) => {
+      const symbolKey =
+        item.type !== "stock" && item.underlyingSymbol
+          ? String(item.underlyingSymbol).toUpperCase()
+          : String(item.symbol ?? "").toUpperCase();
+      const companyDescription = companyNames.get(symbolKey) ?? undefined;
+      return {
+        ...item,
+        _id: (item._id as ObjectId).toString(),
+        companyDescription,
+      };
+    });
 
     return NextResponse.json(watchlistItems);
   } catch (error) {

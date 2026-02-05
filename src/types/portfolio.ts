@@ -157,6 +157,8 @@ export type WatchlistItem = {
   breakeven?: number;
   // Metadata
   notes?: string;
+  /** Company name (e.g. longName from quote); enriched by API when loading watchlist */
+  companyDescription?: string;
   addedAt: string;
   updatedAt: string;
 };

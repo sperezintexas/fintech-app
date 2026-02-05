@@ -75,10 +75,17 @@ export function AppHeader() {
               </Link>
               <Link
                 href="/chat"
-              className={`p-2 rounded-lg transition-colors ${(pathname ?? "").startsWith("/chat") ? "bg-blue-50 ring-2 ring-blue-500/30" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
-              aria-label="Smart Grok"
+                className={`p-2 rounded-lg transition-colors ${(pathname ?? "").startsWith("/chat") ? "bg-blue-50 ring-2 ring-blue-500/30" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
+                aria-label="Smart Grok"
               >
                 <img src="/apple-icon.svg" alt="" width={20} height={20} className="w-5 h-5" />
+              </Link>
+              <Link
+                href="/xstrategybuilder"
+                className={`p-2 rounded-lg transition-colors ${(pathname ?? "").startsWith("/xstrategybuilder") ? "bg-blue-50 ring-2 ring-blue-500/30" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
+                aria-label="xStrategyBuilder"
+              >
+                <img src="/xstrategybuilder-icon.svg" alt="" width={20} height={20} className="w-5 h-5" />
               </Link>
               <Link
                 href="/automation"

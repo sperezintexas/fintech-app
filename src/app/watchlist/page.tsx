@@ -675,10 +675,9 @@ export default function WatchlistPage() {
                         <table className="w-full text-xs sm:text-sm">
                           <thead>
                             <tr className="border-b border-gray-200">
-                              <th className="text-left py-2 px-1.5 font-medium text-gray-600">Symbol</th>
+                              <th className="text-left py-2 px-1.5 font-medium text-gray-600 w-[1%]">Symbol</th>
                               <th className="text-left py-2 px-1.5 font-medium text-gray-600">Type · Strategy</th>
-                              <th className="text-right py-2 px-1.5 font-medium text-gray-600">Qty</th>
-                              <th className="text-right py-2 px-1.5 font-medium text-gray-600">Entry</th>
+                              <th className="text-right py-2 px-1.5 font-medium text-gray-600">Entry target</th>
                               <th className="text-right py-2 px-1.5 font-medium text-gray-600">Current</th>
                               <th className="text-right py-2 px-1.5 font-medium text-gray-600">P/L</th>
                               <th className="text-center py-2 px-1.5 font-medium text-gray-600">Exp</th>
@@ -695,14 +694,22 @@ export default function WatchlistPage() {
                                     selectedItemId === item._id ? "bg-indigo-50" : "hover:bg-gray-50"
                                   }`}
                                 >
-                                  <td className="py-2 px-1.5">
-                                    <span className="font-medium">{item.symbol}</span>
+                                  <td className="py-2 px-1.5 align-top w-[1%]">
+                                    <div className="flex flex-col gap-0.5 min-w-0 max-w-[100px] sm:max-w-[140px]">
+                                      <span className="font-medium truncate" title={item.symbol}>{item.symbol}</span>
+                                      {item.companyDescription && (
+                                        <span className="text-xs text-gray-500 leading-tight truncate" title={item.companyDescription}>
+                                          {item.companyDescription}
+                                        </span>
+                                      )}
+                                    </div>
                                   </td>
                                   <td className="py-2 px-1.5 text-gray-600">
                                     {getTypeLabel(item.type)} · {getStrategyLabel(item.strategy)}
                                   </td>
-                                  <td className="py-2 px-1.5 text-right">{item.quantity}</td>
-                                  <td className="py-2 px-1.5 text-right">{formatCurrency(item.entryPrice)}</td>
+                                  <td className="py-2 px-1.5 text-right">
+                                    {formatCurrency(item.type === "stock" ? item.quantity * item.entryPrice : item.quantity * 100 * item.entryPrice)}
+                                  </td>
                                   <td className="py-2 px-1.5 text-right">{formatCurrency(item.currentPrice)}</td>
                                   <td className={`py-2 px-1.5 text-right font-medium ${
                                     (item.profitLossPercent ?? 0) >= 0 ? "text-green-600" : "text-red-600"

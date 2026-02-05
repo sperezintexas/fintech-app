@@ -4,7 +4,7 @@ import { getMarketNewsAndOutlook, getStockAndOptionPrices } from "@/lib/yahoo";
 import { getDb } from "@/lib/mongodb";
 import type { Account } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
-import { callGrokWithTools, WEB_SEARCH_TOOL } from "@/lib/xai-grok";
+import { callGrokWithTools, WEB_SEARCH_TOOL, COVERED_CALL_ALTERNATIVES_TOOL } from "@/lib/xai-grok";
 import { getGrokChatConfig } from "@/lib/grok-chat-config";
 import { appendChatHistory } from "@/lib/chat-history";
 import { getRecentCoveredCallRecommendations } from "@/lib/covered-call-analyzer";
@@ -72,7 +72,9 @@ function needsCoveredCallTool(query: string): boolean {
   return (
     /\b(covered call|my calls?|scanner|recommendations?|btc|buy to close|roll|assign|assignment|expiration|expiring)\b/.test(
       lower
-    ) || /\b(should i (btc|roll|close)|what.*recommend)\b/.test(lower)
+    ) ||
+    /\b(should i (btc|roll|close)|what.*recommend)\b/.test(lower) ||
+    /\b(better value|alternatives?|higher (premium|prob|otm)|same week|next week)\b/.test(lower)
   );
 }
 
@@ -83,6 +85,7 @@ function buildToolContext(toolResults: {
   watchlist?: unknown;
   riskAnalysis?: unknown;
   coveredCallRecommendations?: unknown;
+  orderContext?: unknown;
   symbol?: string;
 }): string {
   const parts: string[] = [];
@@ -179,6 +182,19 @@ function buildToolContext(toolResults: {
       }
     }
   }
+  if (toolResults.orderContext) {
+    const o = toolResults.orderContext as {
+      symbol?: string;
+      strike?: number;
+      expiration?: string;
+      credit?: number;
+      quantity?: number;
+      probOtm?: number;
+    };
+    parts.push("\n## xStrategyBuilder Order (use for covered_call_alternatives)\n");
+    parts.push(`Symbol: ${o.symbol ?? "—"}, Strike: $${o.strike ?? "—"}, Expiration: ${o.expiration ?? "—"}, Credit: $${o.credit ?? "—"}, Quantity: ${o.quantity ?? 1}, Prob OTM: ${o.probOtm ?? "—"}%`);
+    parts.push("\nWhen the user asks for better value or alternatives, call covered_call_alternatives with these values.");
+  }
   if (toolResults.coveredCallRecommendations) {
     const recs = toolResults.coveredCallRecommendations as Array<{
       symbol: string;
@@ -230,8 +246,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    const body = (await request.json()) as {
+      message?: string;
+      history?: { role?: string; content?: string }[];
+      orderContext?: {
+        symbol?: string;
+        strike?: number;
+        expiration?: string;
+        credit?: number;
+        quantity?: number;
+        probOtm?: number;
+      };
+    };
     const message = typeof body?.message === "string" ? body.message.trim() : "";
+    const orderContext = body?.orderContext;
     const history = Array.isArray(body?.history)
       ? (body.history as { role?: string; content?: string }[]).filter(
           (m) => m?.role && m?.content && ["user", "assistant"].includes(m.role)
@@ -257,7 +285,12 @@ export async function POST(request: NextRequest) {
       watchlist?: unknown;
       riskAnalysis?: unknown;
       coveredCallRecommendations?: unknown;
+      orderContext?: unknown;
     } = {};
+
+    if (orderContext && typeof orderContext === "object") {
+      toolResults.orderContext = orderContext;
+    }
 
     if (toolConfig.portfolio && needsPortfolioTool(message)) {
       try {
@@ -449,7 +482,10 @@ Always include a brief disclaimer that this is not financial advice.`;
           ? `${historyBlock}[User question]\n${message}`
           : message;
 
-      const grokTools = toolConfig.webSearch ? [WEB_SEARCH_TOOL] : [];
+      const grokTools = [...(toolConfig.webSearch ? [WEB_SEARCH_TOOL] : [])];
+      if (toolConfig.coveredCallRecs && (orderContext || needsCoveredCallTool(message))) {
+        grokTools.push(COVERED_CALL_ALTERNATIVES_TOOL);
+      }
       response = await callGrokWithTools(systemPrompt, userContent, { tools: grokTools });
       if (!response?.trim() || response.includes("Tool loop limit")) {
         response = buildFallbackResponse(toolResults);

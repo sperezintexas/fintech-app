@@ -11,15 +11,17 @@ vi.mock("@/components/ChatInterface", () => ({
 }));
 
 describe("Chat Page", () => {
-  it("renders Smart Grok Chat title and description", () => {
-    render(<ChatPage />);
+  it("renders Smart Grok Chat title and description", async () => {
+    const Page = await ChatPage({ searchParams: {} });
+    render(Page);
 
     expect(screen.getByText("Smart Grok Chat")).toBeInTheDocument();
     expect(screen.getByText(/Ask about stocks, market outlook, portfolio, or investment strategies/)).toBeInTheDocument();
   });
 
-  it("renders ChatInterface component", () => {
-    render(<ChatPage />);
+  it("renders ChatInterface component", async () => {
+    const Page = await ChatPage({ searchParams: {} });
+    render(Page);
 
     expect(screen.getByTestId("chat-interface")).toBeInTheDocument();
   });
