@@ -120,19 +120,73 @@ jobs:
             MONGODB_URI=mongodb://localhost:27017
             MONGODB_DB=myinvestments
 
-  # Post build result to Slack. Requires SLACK_WEBHOOK_URL as a repo Secret.
-  # To configure:
-  #   1. Go to GitHub repo Settings → Secrets and variables → Actions
-  #   2. Click "New repository secret"
-  #   3. Name: SLACK_WEBHOOK_URL (case-sensitive, must be exact)
-  #   4. Value: Your Slack Incoming Webhook URL (starts with https://hooks.slack.com/...)
-  # The Slack channel is set when you create the Incoming Webhook (#smart-trader-build).
+  # Post build: get Vercel deployment status and app health (push to main/develop only),
+  # then notify Slack with commit message, commit id, deployment status, and health result.
+  # Secrets: SLACK_WEBHOOK_URL; VERCEL_TOKEN (for deployment status); vars: APP_URL (production URL for health check).
   notify-slack:
     name: Notify Slack
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test, build, docker]
     if: always() && !cancelled()
     steps:
+      - name: Get Vercel deployment status
+        id: vercel
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "state=skipped" >> $GITHUB_OUTPUT
+            echo "url=" >> $GITHUB_OUTPUT
+            echo "Vercel token or project id not set; skipping deployment status."
+            exit 0
+          fi
+          QUERY="projectId=$VERCEL_PROJECT_ID"
+          [ -n "$VERCEL_ORG_ID" ] && QUERY="${QUERY}&teamId=${VERCEL_ORG_ID}"
+          RES=$(curl -sSf -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v6/deployments?${QUERY}&limit=1")
+          STATE=$(echo "$RES" | jq -r '.deployments[0].state // "unknown"')
+          DEPLOY_URL=$(echo "$RES" | jq -r '.deployments[0].url // ""')
+          echo "state=$STATE" >> $GITHUB_OUTPUT
+          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+
+      - name: App health check
+        id: health
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+        env:
+          APP_URL: ${{ vars.APP_URL || steps.vercel.outputs.url }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "status=skipped" >> $GITHUB_OUTPUT
+            echo "APP_URL not set and no Vercel deployment url; skipping health check."
+            exit 0
+          fi
+          case "$APP_URL" in http://*|https://*) ;; *) APP_URL="https://$APP_URL";; esac
+          BASE="${APP_URL%/}"
+          HEALTH_URL="${BASE}/api/health"
+          RES=$(curl -sSf -w "\n%{http_code}" "$HEALTH_URL" || true)
+          BODY=$(echo "$RES" | head -n -1)
+          CODE=$(echo "$RES" | tail -n 1)
+          if [ "$CODE" = "200" ]; then
+            RAW=$(echo "$BODY" | jq -r '.status // "unknown"')
+            case "$(echo "$RAW" | tr '[:upper:]' '[:lower:]')" in
+              ok|degraded|healthy|success) STATUS="ok" ;;
+              *) STATUS="$RAW" ;;
+            esac
+          else
+            STATUS="error"
+          fi
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+      - name: Validate health
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && steps.health.outputs.status != '' && steps.health.outputs.status != 'skipped'
+        run: |
+          case "$(echo "${{ steps.health.outputs.status }}" | tr '[:upper:]' '[:lower:]')" in
+            ok) exit 0 ;;
+            *) echo "Health check failed: ${{ steps.health.outputs.status }}"; exit 1 ;;
+          esac
+
       - name: Send Slack build notification
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -140,7 +194,11 @@ jobs:
           RUN_URL: ${{ format('https://github.com/{0}/actions/runs/{1}', github.repository, github.run_id) }}
           BRANCH: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.pull_request.title || github.ref_name }}
           ACTOR: ${{ github.actor }}
+          VERCEL_STATE: ${{ steps.vercel.outputs.state }}
+          VERCEL_URL: ${{ steps.vercel.outputs.url }}
+          HEALTH_STATUS: ${{ steps.health.outputs.status }}
         run: |
           if [ -z "$SLACK_WEBHOOK_URL" ]; then
             echo "::warning::SLACK_WEBHOOK_URL secret not found. To enable Slack notifications:"
@@ -150,6 +208,7 @@ jobs:
             echo "Skipping Slack notification."
             exit 0
           fi
+          COMMIT_MSG_ONE=$(echo "$COMMIT_MSG" | head -n 1 | tr -d '\n')
           if [ "$STATUS" = "success" ]; then
             EMOJI=":white_check_mark:"
             COLOR="good"
@@ -163,20 +222,34 @@ jobs:
             COLOR="danger"
             TEXT="CI failed"
           fi
-          PAYLOAD=$(cat <<EOF
-          {
-            "attachments": [{
-              "color": "$COLOR",
-              "fallback": "$EMOJI $TEXT — $BRANCH",
-              "title": "$EMOJI Build $TEXT",
-              "title_link": "$RUN_URL",
-              "fields": [
-                { "title": "Branch", "value": "$BRANCH", "short": true },
-                { "title": "Author", "value": "$ACTOR", "short": true },
-                { "title": "Commit", "value": "<$RUN_URL|${COMMIT:0:7}>", "short": false }
-              ]
-            }]
-          }
-          EOF
-          )
+          PAYLOAD=$(jq -n \
+            --arg color "$COLOR" \
+            --arg fallback "$EMOJI $TEXT — $BRANCH" \
+            --arg title "$EMOJI Build $TEXT" \
+            --arg run_url "$RUN_URL" \
+            --arg branch "$BRANCH" \
+            --arg actor "$ACTOR" \
+            --arg commit "$COMMIT" \
+            --arg commit_msg "$COMMIT_MSG_ONE" \
+            --arg vercel_state "${VERCEL_STATE:-}" \
+            --arg vercel_url "${VERCEL_URL:-}" \
+            --arg health_status "${HEALTH_STATUS:-}" \
+            '{
+              attachments: [{
+                color: $color,
+                fallback: $fallback,
+                title: $title,
+                title_link: $run_url,
+                fields: (
+                  [
+                    { title: "Branch", value: $branch, short: true },
+                    { title: "Author", value: $actor, short: true },
+                    { title: "Commit ID", value: $commit, short: false },
+                    { title: "Commit", value: $commit_msg, short: false }
+                  ]
+                  + (if $vercel_state != "" and $vercel_state != "skipped" then [{ title: "Vercel", value: $vercel_state, short: true }, (if $vercel_url != "" then { title: "Deploy URL", value: $vercel_url, short: true } else null end)] | map(select(. != null)) else [] end)
+                  + (if $health_status != "" and $health_status != "skipped" then [{ title: "Health", value: $health_status, short: true }] else [] end)
+                )
+              }]
+            }')
           curl -sSf -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$SLACK_WEBHOOK_URL" || true

@@ -1,6 +1,8 @@
 /**
  * Risk Scanner: computes portfolio risk metrics, calls Grok for analysis,
  * creates alerts when risk is high.
+ *
+ * Scope: holdings only (account positions). Watchlist items are not included.
  */
 
 import { ObjectId } from "mongodb";

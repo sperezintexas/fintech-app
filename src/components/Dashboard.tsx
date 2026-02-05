@@ -17,7 +17,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { PortfolioCard } from "./PortfolioCard";
-import type { Portfolio } from "@/types/portfolio";
+import type { Portfolio, Position } from "@/types/portfolio";
 
 type DashboardStats = {
   totalValue: number;
@@ -45,6 +45,34 @@ function formatCurrency(value: number): string {
     currency: "USD",
     minimumFractionDigits: 2,
   }).format(value);
+}
+
+function positionValue(pos: Position): number {
+  if (pos.type === "cash") return pos.amount ?? 0;
+  if (pos.type === "stock" && pos.ticker) {
+    const price = pos.currentPrice ?? pos.purchasePrice ?? 0;
+    return (pos.shares ?? 0) * price;
+  }
+  if (pos.type === "option" && pos.ticker) {
+    const premium = pos.currentPrice ?? pos.premium ?? 0;
+    return (pos.contracts ?? 0) * premium * 100;
+  }
+  return pos.marketValue ?? 0;
+}
+
+function allocationByAssetClass(portfolio: Portfolio): { name: string; value: number }[] {
+  const buckets: Record<string, number> = { Stocks: 0, Options: 0, Cash: 0 };
+  for (const account of portfolio.accounts) {
+    for (const pos of account.positions) {
+      const v = positionValue(pos);
+      if (pos.type === "stock") buckets.Stocks += v;
+      else if (pos.type === "option") buckets.Options += v;
+      else if (pos.type === "cash") buckets.Cash += v;
+    }
+  }
+  return Object.entries(buckets)
+    .filter(([, value]) => value > 0)
+    .map(([name, value]) => ({ name, value }));
 }
 
 export function Dashboard() {
@@ -387,6 +415,54 @@ export function Dashboard() {
             ) : (
               <p className="text-gray-500 text-sm py-8 text-center">
                 Add accounts and positions to see allocation.
+              </p>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+              Allocation by asset class
+            </h2>
+            {portfolio ? (() => {
+              const assetData = allocationByAssetClass(portfolio);
+              const hasValue = assetData.length > 0 && assetData.some((d) => d.value > 0);
+              if (!hasValue) {
+                return (
+                  <p className="text-gray-500 text-sm py-8 text-center">
+                    Add positions to see allocation by asset class.
+                  </p>
+                );
+              }
+              return (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={assetData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={80}
+                      paddingAngle={2}
+                      dataKey="value"
+                      label={({ name, percent }) =>
+                        `${name} ${(((percent ?? 0) as number) * 100).toFixed(0)}%`
+                      }
+                    >
+                      {assetData.map((_, i) => (
+                        <Cell
+                          key={i}
+                          fill={["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"][i % 5]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              );
+            })() : (
+              <p className="text-gray-500 text-sm py-8 text-center">
+                Add accounts and positions to see allocation by asset class.
               </p>
             )}
           </div>

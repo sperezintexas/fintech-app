@@ -18,7 +18,7 @@ const DEFAULT_REPORT_TYPES: ReportTypeSeed[] = [
   { id: "cleanup", handlerKey: "cleanup", name: "Data Cleanup", description: "Delete old reports and alerts (30+ days)", supportsPortfolio: true, supportsAccount: true, order: 3, enabled: true },
   { id: "unifiedOptionsScanner", handlerKey: "unifiedOptionsScanner", name: "Unified Options Scanner", description: "Runs Option, Covered Call, Protective Put, and Straddle/Strangle scanners in one job", supportsPortfolio: false, supportsAccount: true, order: 4, enabled: true },
   { id: "deliverAlerts", handlerKey: "deliverAlerts", name: "Deliver Alerts", description: "Sends pending alerts to Slack/X per AlertConfig", supportsPortfolio: true, supportsAccount: true, order: 5, enabled: true },
-  { id: "riskScanner", handlerKey: "riskScanner", name: "Risk Scanner", description: "Portfolio risk analysis with Grok; creates alerts when risk is high", supportsPortfolio: true, supportsAccount: true, order: 6, enabled: true },
+  { id: "riskScanner", handlerKey: "riskScanner", name: "Risk Scanner", description: "Portfolio risk analysis with Grok (holdings only, no watchlist); creates alerts when risk is high", supportsPortfolio: true, supportsAccount: true, order: 6, enabled: true },
 ];
 
 const REMOVED_IDS = ["daily-analysis", "straddleStrangleScanner", "OptionScanner", "coveredCallScanner", "protectivePutScanner"];
@@ -45,6 +45,11 @@ export async function ensureDefaultReportTypes(db: Awaited<ReturnType<typeof get
       await coll.updateOne(
         { id: t.id },
         { $set: { supportsPortfolio: true, description: t.description, updatedAt: now } }
+      );
+    } else if (t.id === "riskScanner") {
+      await coll.updateOne(
+        { id: t.id },
+        { $set: { description: t.description, updatedAt: now } }
       );
     }
   }
