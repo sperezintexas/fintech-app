@@ -1,5 +1,6 @@
 import { AppHeader } from "@/components/AppHeader";
 import { ChatInterface } from "@/components/ChatInterface";
+import { XAI_MODEL } from "@/lib/xai-grok";
 
 export const metadata = {
   title: "Smart Grok Chat | myInvestments",
@@ -44,7 +45,7 @@ export default async function ChatPage({
         <div className="mb-6">
           <h2 className="text-3xl font-bold text-gray-900">Smart Grok Chat</h2>
           <p className="text-gray-600 mt-1">
-            Ask about stocks, market outlook, portfolio, or investment strategies. Powered by Yahoo Finance data.
+            Ask about stocks, market outlook, portfolio, or investment strategies. Powered by yahooFinance data and xAI {XAI_MODEL}.
           </p>
         </div>
         <ChatInterface initialMessage={initialMessage} initialOrderContext={orderContext} />

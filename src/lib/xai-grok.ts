@@ -6,7 +6,13 @@
 import OpenAI from "openai";
 import { searchWeb } from "./web-search";
 
-const XAI_MODEL = "grok-4";
+export const XAI_MODEL = process.env.XAI_MODEL || "grok-4";
+
+export type GrokUsage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+};
 
 export type GrokMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
@@ -192,6 +198,12 @@ export async function executeCoveredCallAlternatives(
   });
 }
 
+export type GrokWithToolsResult = {
+  text: string;
+  usage?: GrokUsage;
+  model?: string;
+};
+
 /**
  * Call Grok with tools; handles tool-calling loop for web_search.
  * Pre-injected context (portfolio, news, prices) is passed in userContent.
@@ -200,10 +212,10 @@ export async function callGrokWithTools(
   systemPrompt: string,
   userContent: string,
   options?: { tools?: OpenAI.Chat.ChatCompletionTool[] }
-): Promise<string> {
+): Promise<GrokWithToolsResult> {
   const client = getXaiClient();
   if (!client) {
-    return "Grok API is not configured. Add XAI_API_KEY to .env.local.";
+    return { text: "Grok API is not configured. Add XAI_API_KEY to .env.local." };
   }
 
   const tools = options?.tools ?? [WEB_SEARCH_TOOL];
@@ -219,12 +231,20 @@ export async function callGrokWithTools(
       messages,
       max_tokens: 1024,
     });
-    const text = completion.choices[0]?.message?.content?.trim();
-    return text || "No response from Grok.";
+    const text = completion.choices[0]?.message?.content?.trim() || "No response from Grok.";
+    const usage = completion.usage
+      ? {
+          prompt_tokens: completion.usage.prompt_tokens ?? 0,
+          completion_tokens: completion.usage.completion_tokens ?? 0,
+          total_tokens: completion.usage.total_tokens ?? 0,
+        }
+      : undefined;
+    return { text, usage, model: completion.model ?? XAI_MODEL };
   }
 
   const maxToolRounds = 3;
   let round = 0;
+  const totalUsage: GrokUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
   while (round < maxToolRounds) {
     const completion = await client.chat.completions.create({
@@ -235,18 +255,28 @@ export async function callGrokWithTools(
       max_tokens: 1024,
     });
 
+    if (completion.usage) {
+      totalUsage.prompt_tokens += completion.usage.prompt_tokens ?? 0;
+      totalUsage.completion_tokens += completion.usage.completion_tokens ?? 0;
+      totalUsage.total_tokens += completion.usage.total_tokens ?? 0;
+    }
+
     const choice = completion.choices[0];
     const msg = choice?.message;
 
     if (!msg) {
-      return "No response from Grok.";
+      return { text: "No response from Grok.", usage: totalUsage, model: completion.model ?? XAI_MODEL };
     }
 
     const text = msg.content?.trim();
     const toolCalls = msg.tool_calls;
 
     if (!toolCalls?.length) {
-      return text || "No response from Grok.";
+      return {
+        text: text || "No response from Grok.",
+        usage: totalUsage,
+        model: completion.model ?? XAI_MODEL,
+      };
     }
 
     for (const tc of toolCalls) {
@@ -283,7 +313,11 @@ export async function callGrokWithTools(
     round++;
   }
 
-  return "Tool loop limit reached. Please try a simpler query.";
+  return {
+    text: "Tool loop limit reached. Please try a simpler query.",
+    usage: totalUsage,
+    model: XAI_MODEL,
+  };
 }
 
 /** Context for option decision (used by OptionScanner hybrid). */

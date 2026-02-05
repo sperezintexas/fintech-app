@@ -6,14 +6,15 @@ import {
   type GrokChatToolsConfig,
   type GrokChatContextConfig,
 } from "@/lib/grok-chat-config";
+import { XAI_MODEL } from "@/lib/xai-grok";
 
 export const dynamic = "force-dynamic";
 
-/** GET - Return Grok chat config (tools, context) */
+/** GET - Return Grok chat config (tools, context, model in use) */
 export async function GET() {
   try {
     const config = await getGrokChatConfig();
-    return NextResponse.json(config);
+    return NextResponse.json({ ...config, model: XAI_MODEL });
   } catch (error) {
     console.error("Failed to fetch Grok chat config:", error);
     return NextResponse.json(

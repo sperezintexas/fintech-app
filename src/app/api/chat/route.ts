@@ -441,6 +441,8 @@ export async function POST(request: NextRequest) {
     const toolContext = buildToolContext({ ...toolResults, symbol: queriedSymbol });
 
     let response: string;
+    let usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined;
+    let model: string | undefined;
 
     try {
       const basePrompt = ctxConfig.systemPromptOverride?.trim()
@@ -486,9 +488,13 @@ Always include a brief disclaimer that this is not financial advice.`;
       if (toolConfig.coveredCallRecs && (orderContext || needsCoveredCallTool(message))) {
         grokTools.push(COVERED_CALL_ALTERNATIVES_TOOL);
       }
-      response = await callGrokWithTools(systemPrompt, userContent, { tools: grokTools });
+      const grokResult = await callGrokWithTools(systemPrompt, userContent, { tools: grokTools });
+      response = grokResult.text;
       if (!response?.trim() || response.includes("Tool loop limit")) {
         response = buildFallbackResponse(toolResults);
+      } else {
+        usage = grokResult.usage;
+        model = grokResult.model;
       }
     } catch (e) {
       console.error("xAI Grok API error:", e);
@@ -511,6 +517,8 @@ Always include a brief disclaimer that this is not financial advice.`;
     return NextResponse.json({
       response,
       toolResults: Object.keys(toolResults).length > 0 ? toolResults : undefined,
+      usage: usage ?? undefined,
+      model: model ?? undefined,
     });
   } catch (error) {
     console.error("Chat API error:", error);

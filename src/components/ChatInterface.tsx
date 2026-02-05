@@ -43,6 +43,12 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
   const [configOpen, setConfigOpen] = useState(false);
   const [config, setConfig] = useState<GrokChatConfig>(DEFAULT_CONFIG);
   const [configSaving, setConfigSaving] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [lastStats, setLastStats] = useState<{
+    usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+    model?: string;
+  } | null>(null);
+  const [modelInUse, setModelInUse] = useState<string>("grok-4");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,6 +70,7 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
             context: { ...DEFAULT_CONFIG.context, ...data.context },
           });
         }
+        if (typeof data?.model === "string") setModelInUse(data.model);
       })
       .catch(() => {});
   }, []);
@@ -134,6 +141,20 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
       if (!res.ok) {
         throw new Error(data.error ?? "Failed to get response");
       }
+
+      if (data.usage != null || data.model != null) {
+        setLastStats({
+          usage:
+            data.usage &&
+            typeof data.usage.prompt_tokens === "number" &&
+            typeof data.usage.completion_tokens === "number" &&
+            typeof data.usage.total_tokens === "number"
+              ? data.usage
+              : undefined,
+          model: typeof data.model === "string" ? data.model : undefined,
+        });
+      }
+      if (typeof data.model === "string") setModelInUse(data.model);
 
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
@@ -296,8 +317,9 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
           <div className="text-center py-12 text-gray-500">
             <p className="text-lg font-medium mb-2">Smart Grok Chat</p>
             <p className="text-sm max-w-md mx-auto">
-              Ask about stock prices, market outlook, portfolio, or watchlist. Try:
+              Ask about stocks, market outlook, portfolio, or investment strategies. Powered by yahooFinance data and xAI {modelInUse}.
             </p>
+            <p className="text-xs mt-2 text-gray-400">Try:</p>
             <ul className="mt-3 text-sm space-y-1 text-gray-600">
               <li>• What&apos;s the price of TSLA?</li>
               <li>• What&apos;s the market outlook?</li>
@@ -406,7 +428,40 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
           >
             Send
           </button>
+          <button
+            type="button"
+            onClick={() => setStatsOpen((o) => !o)}
+            className="px-4 py-3 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium"
+            title="Grok usage stats (tokens, model)"
+          >
+            Stats
+          </button>
         </div>
+        {statsOpen && (
+          <div className="mt-3 p-3 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-700">
+            <p className="font-medium text-gray-800 mb-2">Grok status</p>
+            {lastStats && (lastStats.usage != null || lastStats.model != null) ? (
+              <dl className="space-y-1">
+                {lastStats.model != null && (
+                  <>
+                    <dt className="text-gray-500">Model</dt>
+                    <dd className="font-mono">{lastStats.model}</dd>
+                  </>
+                )}
+                {lastStats?.usage != null && (
+                  <>
+                    <dt className="text-gray-500 mt-2">Tokens</dt>
+                    <dd className="font-mono">
+                      prompt: {lastStats.usage.prompt_tokens} · completion: {lastStats.usage.completion_tokens} · total: {lastStats.usage.total_tokens}
+                    </dd>
+                  </>
+                )}
+              </dl>
+            ) : (
+              <p className="text-gray-500">Send a message to see Grok usage stats (tokens, model).</p>
+            )}
+          </div>
+        )}
       </form>
     </div>
   );
