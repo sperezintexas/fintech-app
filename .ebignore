@@ -1,6 +1,9 @@
 # AWS Elastic Beanstalk ignore file
 # Similar to .gitignore but for eb deploy
 
+# Docker compose (conflicts with Dockerrun.aws.json)
+docker-compose.yml
+
 # Dependencies
 node_modules/
 

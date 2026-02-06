@@ -1,0 +1,114 @@
+# Build Docker image in GitHub Actions and deploy to Elastic Beanstalk via ECR
+# This avoids building on the small EC2 instance
+#
+# Required secrets:
+#   - AWS_ACCESS_KEY_ID
+#   - AWS_SECRET_ACCESS_KEY
+#
+# Required variables:
+#   - AWS_REGION (default: us-east-1)
+#   - EB_ENV_NAME (default: myinvestments-prod)
+
+name: Build & Deploy to EB (ECR)
+
+on:
+  workflow_dispatch:
+  # Uncomment to auto-deploy on push to main:
+  # push:
+  #   branches: [main]
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  APP_NAME: myinvestments
+  EB_ENV_NAME: ${{ vars.EB_ENV_NAME || 'myinvestments-prod' }}
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Create ECR repository (if not exists)
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.APP_NAME }} || \
+          aws ecr create-repository --repository-name ${{ env.APP_NAME }}
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            --build-arg MONGODB_URI=placeholder \
+            --build-arg MONGODB_DB=myinvestments \
+            -t $ECR_REGISTRY/${{ env.APP_NAME }}:$IMAGE_TAG \
+            -t $ECR_REGISTRY/${{ env.APP_NAME }}:latest \
+            .
+          docker push $ECR_REGISTRY/${{ env.APP_NAME }}:$IMAGE_TAG
+          docker push $ECR_REGISTRY/${{ env.APP_NAME }}:latest
+
+      - name: Update Dockerrun.aws.json
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          cat > Dockerrun.aws.json << EOF
+          {
+            "AWSEBDockerrunVersion": "1",
+            "Image": {
+              "Name": "$ECR_REGISTRY/${{ env.APP_NAME }}:latest",
+              "Update": "true"
+            },
+            "Ports": [
+              {
+                "ContainerPort": 3000,
+                "HostPort": 3000
+              }
+            ],
+            "Logging": "/var/log/nodejs"
+          }
+          EOF
+          cat Dockerrun.aws.json
+
+      - name: Generate deployment package
+        run: |
+          zip -r deploy.zip . \
+            -x "*.git*" \
+            -x "node_modules/*" \
+            -x ".next/*" \
+            -x "tests/*" \
+            -x "docs/*" \
+            -x "docker-compose.yml"
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: ${{ env.APP_NAME }}
+          environment_name: ${{ env.EB_ENV_NAME }}
+          version_label: ${{ github.sha }}
+          region: ${{ env.AWS_REGION }}
+          deployment_package: deploy.zip
+          wait_for_environment_recovery: 120
+
+      - name: Deployment summary
+        run: |
+          echo "=========================================="
+          echo "Deployment Complete!"
+          echo "=========================================="
+          echo "Image: ${{ steps.login-ecr.outputs.registry }}/${{ env.APP_NAME }}:latest"
+          echo "Environment: ${{ env.EB_ENV_NAME }}"
