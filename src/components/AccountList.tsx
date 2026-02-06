@@ -1,22 +1,89 @@
 "use client";
 
-import type { Account } from "@/types/portfolio";
+import type { Account, Position } from "@/types/portfolio";
 import { useRouter } from "next/navigation";
 
 type AccountListProps = {
   accounts: Account[];
   onEdit: (account: Account) => void;
   onDelete: (id: string) => void;
-  onRunAnalysis: (accountId: string) => void;
   isDeleting?: string;
-  analyzingAccountId?: string | null;
 };
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatPercent(value: number): string {
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+type AccountMetrics = {
+  costBasis: number;
+  marketValue: number;
+  dayChange: number;
+  dayChangePercent: number;
+  unrealizedPL: number;
+  unrealizedPLPercent: number;
+};
+
+function getPositionCostBasis(pos: Position): number {
+  if (pos.type === "cash") return pos.amount ?? 0;
+  if (pos.type === "stock") return (pos.shares ?? 0) * (pos.purchasePrice ?? 0);
+  if (pos.type === "option") return (pos.contracts ?? 0) * Math.abs(pos.premium ?? 0) * 100;
+  return 0;
+}
+
+function getPositionMarketValue(pos: Position): number {
+  if (pos.type === "cash") return pos.amount ?? 0;
+  if (pos.type === "stock") return (pos.shares ?? 0) * (pos.currentPrice ?? pos.purchasePrice ?? 0);
+  if (pos.type === "option") return (pos.contracts ?? 0) * (pos.currentPrice ?? 0) * 100;
+  return 0;
+}
+
+function getPositionDayChange(pos: Position): number {
+  if (pos.type === "cash") return 0;
+  const mv = pos.marketValue ?? getPositionMarketValue(pos);
+  if (pos.dailyChange != null) return pos.dailyChange;
+  if (pos.dailyChangePercent != null && mv) return (mv * pos.dailyChangePercent) / 100;
+  return 0;
+}
+
+function computeAccountMetrics(account: Account): AccountMetrics {
+  const positions = account.positions ?? [];
+  let costBasis = 0;
+  let marketValue = 0;
+  let dayChange = 0;
+
+  for (const pos of positions) {
+    costBasis += getPositionCostBasis(pos);
+    marketValue += getPositionMarketValue(pos);
+    dayChange += getPositionDayChange(pos);
+  }
+
+  if (marketValue === 0 && costBasis === 0) {
+    marketValue = account.balance ?? 0;
+    costBasis = account.balance ?? 0;
+  }
+
+  const unrealizedPL = marketValue - costBasis;
+  const unrealizedPLPercent = costBasis > 0 ? (unrealizedPL / costBasis) * 100 : 0;
+  const dayChangePercent = marketValue > 0 ? (dayChange / marketValue) * 100 : 0;
+
+  return {
+    costBasis,
+    marketValue,
+    dayChange,
+    dayChangePercent,
+    unrealizedPL,
+    unrealizedPLPercent,
+  };
 }
 
 function getRiskColor(risk: Account["riskLevel"]): string {
@@ -47,7 +114,7 @@ function getStrategyBadge(strategy: Account["strategy"]): { bg: string; text: st
   }
 }
 
-export function AccountList({ accounts, onEdit, onDelete, onRunAnalysis, isDeleting, analyzingAccountId }: AccountListProps) {
+export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountListProps) {
   const router = useRouter();
 
   if (accounts.length === 0) {
@@ -73,105 +140,131 @@ export function AccountList({ accounts, onEdit, onDelete, onRunAnalysis, isDelet
   }
 
   return (
-    <div className="space-y-4">
-      {accounts.map((account) => {
-        const strategyStyle = getStrategyBadge(account.strategy);
-        const accountValue = account.positions.reduce((total, pos) => {
-          if (pos.type === "cash") return total + (pos.amount || 0);
-          if (pos.type === "stock") return total + (pos.shares || 0) * (pos.currentPrice || 0);
-          if (pos.type === "option") return total + (pos.contracts || 0) * (pos.currentPrice || 0) * 100;
-          return total;
-        }, 0);
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm" aria-label="Accounts">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50/80">
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Account
+              </th>
+              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">
+                Positions
+              </th>
+              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Cost basis
+              </th>
+              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Market value
+              </th>
+              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Day change
+              </th>
+              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                P&L
+              </th>
+              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-28">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {accounts.map((account) => {
+              const strategyStyle = getStrategyBadge(account.strategy);
+              const metrics = computeAccountMetrics(account);
 
-        return (
-          <div
-            key={account._id}
-            className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-            role="button"
-            tabIndex={0}
-            onClick={() => router.push(`/holdings?accountId=${account._id}`)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                router.push(`/holdings?accountId=${account._id}`);
-              }
-            }}
-          >
-            <div className="p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`w-3 h-3 rounded-full ${getRiskColor(account.riskLevel)}`}
-                    title={`${account.riskLevel} risk`}
-                  />
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">{account.name}</h3>
-                    <div className="flex items-center gap-2 mt-1">
+              return (
+                <tr
+                  key={account._id}
+                  className="hover:bg-gray-50 cursor-pointer transition-colors"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => router.push(`/holdings?accountId=${account._id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      router.push(`/holdings?accountId=${account._id}`);
+                    }
+                  }}
+                >
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                      <div
+                        className={`shrink-0 w-2.5 h-2.5 rounded-full ${getRiskColor(account.riskLevel)}`}
+                        title={`${account.riskLevel} risk`}
+                        aria-hidden
+                      />
+                      <span className="font-medium text-gray-900 truncate">{account.name}</span>
+                      <span className="text-xs text-gray-500 capitalize">{account.riskLevel}</span>
                       <span
-                        className={`text-xs font-medium px-2 py-1 rounded-full ${strategyStyle.bg} ${strategyStyle.text} capitalize`}
+                        className={`text-xs font-medium px-1.5 py-0.5 rounded capitalize ${strategyStyle.bg} ${strategyStyle.text}`}
                       >
                         {account.strategy}
                       </span>
-                      <span className="text-sm text-gray-500">
-                        {account.riskLevel} risk
-                      </span>
                     </div>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-gray-900">
-                    {formatCurrency(accountValue || account.balance)}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {account.positions.length} position{account.positions.length !== 1 ? "s" : ""}
-                  </p>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 mt-6 pt-4 border-t border-gray-100">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRunAnalysis(account._id);
-                  }}
-                  disabled={analyzingAccountId === account._id}
-                  className="flex-1 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
-                >
-                  {analyzingAccountId === account._id ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                      Analyzing...
-                    </>
-                  ) : (
-                    "Run Analysis"
-                  )}
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit(account);
-                  }}
-                  className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(account._id);
-                  }}
-                  disabled={isDeleting === account._id}
-                  className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
-                >
-                  {isDeleting === account._id ? "Deleting..." : "Delete"}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-gray-600 tabular-nums">
+                    {account.positions?.length ?? 0}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-gray-700 tabular-nums whitespace-nowrap">
+                    {formatCurrency(metrics.costBasis)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-medium text-gray-900 tabular-nums whitespace-nowrap">
+                    {formatCurrency(metrics.marketValue)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                    <span
+                      className={
+                        metrics.dayChange >= 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"
+                      }
+                    >
+                      {metrics.dayChange >= 0 ? "+" : ""}
+                      {formatCurrency(metrics.dayChange)}
+                      {metrics.dayChangePercent !== 0 && (
+                        <span className="ml-0.5 text-xs">
+                          ({formatPercent(metrics.dayChangePercent)})
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                    <span
+                      className={
+                        metrics.unrealizedPL >= 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"
+                      }
+                    >
+                      {metrics.unrealizedPL >= 0 ? "+" : ""}
+                      {formatCurrency(metrics.unrealizedPL)}
+                      {metrics.costBasis > 0 && (
+                        <span className="ml-0.5 text-xs">
+                          ({formatPercent(metrics.unrealizedPLPercent)})
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex justify-end gap-1.5">
+                      <button
+                        onClick={() => onEdit(account)}
+                        className="px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => onDelete(account._id)}
+                        disabled={isDeleting === account._id}
+                        className="px-2.5 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+                      >
+                        {isDeleting === account._id ? "…" : "Delete"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -4,7 +4,10 @@ import { useState, useEffect } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { AccountList } from "@/components/AccountList";
 import { AccountForm } from "@/components/AccountForm";
+import { MyHoldingsTable } from "@/components/MyHoldingsTable";
 import type { Account, RiskLevel, Strategy } from "@/types/portfolio";
+
+type AccountsTab = "portfolios" | "holdings";
 
 type FormData = {
   name: string;
@@ -21,7 +24,7 @@ export default function AccountsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | undefined>();
   const [error, setError] = useState<string | null>(null);
-  const [analyzingAccountId, setAnalyzingAccountId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<AccountsTab>("portfolios");
 
   // Fetch accounts
   const fetchAccounts = async () => {
@@ -40,30 +43,6 @@ export default function AccountsPage() {
   useEffect(() => {
     fetchAccounts();
   }, []);
-
-  const handleRunAnalysis = async (accountId: string) => {
-    setAnalyzingAccountId(accountId);
-    setError(null);
-    try {
-      const res = await fetch("/api/reports/smartxai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        window.location.href = `/reports/${data.report._id}`;
-      } else {
-        const err = await res.json();
-        setError(err.error || "Failed to generate report");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate SmartXAI report");
-    } finally {
-      setAnalyzingAccountId(null);
-    }
-  };
 
   // Create or update account
   const handleSubmit = async (data: FormData) => {
@@ -138,7 +117,7 @@ export default function AccountsPage() {
               Manage your investment accounts and strategies.
             </p>
           </div>
-          {!showForm && (
+          {!showForm && activeTab === "portfolios" && (
             <button
               onClick={() => setShowForm(true)}
               className="px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2"
@@ -173,20 +152,48 @@ export default function AccountsPage() {
           </div>
         )}
 
+        {/* Tabs */}
+        {!isLoading && accounts.length > 0 && (
+          <div className="flex border-b border-gray-200 mb-6">
+            <button
+              type="button"
+              onClick={() => setActiveTab("portfolios")}
+              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+                activeTab === "portfolios"
+                  ? "bg-white border border-b-0 border-gray-200 text-gray-900 -mb-px"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              My Portfolios
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("holdings")}
+              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+                activeTab === "holdings"
+                  ? "bg-white border border-b-0 border-gray-200 text-gray-900 -mb-px"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              My Holdings
+            </button>
+          </div>
+        )}
+
         {/* Loading State */}
         {isLoading ? (
           <div className="text-center py-12">
             <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
             <p className="mt-4 text-gray-500">Loading accounts...</p>
           </div>
+        ) : activeTab === "holdings" ? (
+          <MyHoldingsTable accounts={accounts} />
         ) : (
           <AccountList
             accounts={accounts}
             onEdit={handleEdit}
             onDelete={handleDelete}
-            onRunAnalysis={handleRunAnalysis}
             isDeleting={isDeleting}
-            analyzingAccountId={analyzingAccountId}
           />
         )}
       </main>
