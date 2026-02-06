@@ -250,6 +250,38 @@ With load balancer (for HTTPS/custom domain): ~$25/month
 
 ## Troubleshooting
 
+### CI / GitHub Actions deploy fails — where to start
+
+1. **See which step failed**
+   - Repo → **Actions** → open the failed run → open the **Build & Deploy to AWS (EB)** job.
+   - The first red step is the failure. Common steps and fixes:
+
+   | Step | Likely cause | What to do |
+   |------|----------------|------------|
+   | Configure AWS credentials | Bad or missing secrets | GitHub **Settings → Secrets**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` set. Variable **Variables**: `ENABLE_AWS_DEPLOY` = `true`. |
+   | Login to Amazon ECR / Create ECR repository | IAM can’t access ECR | IAM user needs `AmazonEC2ContainerRegistryFullAccess` (or ECR read/write). |
+   | Build and push Docker image | Dockerfile or build error | Check job log; fix Dockerfile or build-args. |
+   | Deploy to Elastic Beanstalk | EB app/env missing or wrong name | See “Pre-flight checklist” below. |
+   | Get deployment URL | Can’t get CNAME | Set **Variables** → `APP_URL` to your EB URL (e.g. `http://myinvestments-prod.us-east-1.elasticbeanstalk.com`), or fix `EB_ENV_NAME` / region. |
+   | Verify AWS deployment (health check) | App not healthy or wrong URL | App must be up and `/api/health` returns 200. Check EB env health and app logs. |
+   | Validate health before Slack | Health was skipped or not ok | Fix health check (URL, app env vars, MongoDB). |
+
+2. **Pre-flight checklist (before pushing again)**
+   - **GitHub:** Variables → `ENABLE_AWS_DEPLOY` = `true`; Secrets → `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
+   - **GitHub (optional):** Variables → `APP_URL` (EB URL), `AWS_REGION`, `EB_ENV_NAME` if not using defaults.
+   - **AWS:** EB application and environment exist. Names must match: app `myinvestments`, env e.g. `myinvestments-prod` (or your `EB_ENV_NAME`).
+   - **IAM:** User has ECR (push image) + Elastic Beanstalk (deploy) permissions. Quick test locally:
+     ```bash
+     aws sts get-caller-identity
+     aws elasticbeanstalk describe-environments --environment-names myinvestments-prod --region us-east-1
+     aws ecr describe-repositories --repository-names myinvestments --region us-east-1
+     ```
+
+3. **After a failed deploy: EB and logs**
+   - **EB events:** AWS Console → Elastic Beanstalk → your app → environment → **Events** (or `eb events`).
+   - **EB logs:** **Logs → Request Logs → Last 100 Lines** (or `eb logs --all`). Look for Docker or app startup errors.
+   - **Health:** Once the instance is up, `curl http://<your-eb-cname>/api/health` should return 200 and `{"status":"ok",...}`.
+
 ### "Access Denied" errors
 - Check IAM policies are attached correctly
 - Run `aws sts get-caller-identity` to verify credentials

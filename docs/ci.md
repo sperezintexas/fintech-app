@@ -37,7 +37,8 @@
 - **When it runs:** Push to `main` and repository variable `ENABLE_AWS_DEPLOY` is set to `true` (and secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` are configured). Otherwise the job is skipped. *Note: `secrets` cannot be used in workflow `if` conditions; use the variable to enable the job.*
 - **What it does:** Builds the app Docker image, pushes it to Amazon ECR (tagged with `github.sha` and `latest`), updates `Dockerrun.aws.json` with the ECR image, creates `deploy.zip`, deploys to Elastic Beanstalk via `einaregilsson/beanstalk-deploy`, then:
   - **Health check:** Resolves deployment URL from `vars.APP_URL` or EB environment CNAME, then calls `/api/health` up to 6 times (10s apart). Job fails if health never returns 200 with status `ok`/`healthy`/`degraded`/`success`.
-  - **Slack:** If `SLACK_WEBHOOK_URL` is set, posts to the webhook with deploy result (success/failure), health status, app version, commit, and workflow link. Runs even on failure (`if: always()`).
+  - **Validate health before Slack:** Fails the job if health check was skipped (no URL) or did not pass. Ensures Slack is only used after a definitive health result (success or failure).
+  - **Slack:** If `SLACK_WEBHOOK_URL` is set, posts to the webhook with deploy result (success/failure), health status, app version, commit, and workflow link. Runs after health check (`if: always()` so failure is also reported).
 - **Variables:** `ENABLE_AWS_DEPLOY` = `true` (required to run the job; set in Settings → Actions → Variables).
 - **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. Optional: `SLACK_WEBHOOK_URL` (for AWS deploy notification).
 - **Variables (optional):** `AWS_REGION` (default `us-east-1`), `EB_ENV_NAME` (default `myinvestments-prod`), `APP_URL` (EB URL for health check; if unset, URL is derived from EB CNAME).

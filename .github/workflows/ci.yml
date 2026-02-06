@@ -279,6 +279,19 @@ jobs:
           echo "Health check failed after 6 attempts (10s apart)"
           exit 1
 
+      - name: Validate health before Slack
+        run: |
+          STATUS="${{ steps.health.outputs.status }}"
+          if [ -z "$STATUS" ] || [ "$STATUS" = "skipped" ]; then
+            echo "Health check did not run or was skipped; cannot report success. Set APP_URL or ensure EB env is reachable."
+            exit 1
+          fi
+          if [ "$STATUS" != "ok" ]; then
+            echo "Health check did not pass (status=$STATUS); deployment is not healthy."
+            exit 1
+          fi
+          echo "Health check passed; posting to Slack."
+
       - name: Notify Slack (AWS deploy)
         if: always()
         env:
