@@ -1,0 +1,58 @@
+# AWS Elastic Beanstalk ignore file
+# Similar to .gitignore but for eb deploy
+
+# Dependencies
+node_modules/
+
+# Build outputs (Docker builds fresh)
+.next/
+out/
+
+# Development files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in production)
+docs/
+
+# Tests (not needed in production)
+tests/
+*.test.ts
+*.spec.ts
+__tests__/
+
+# Development configs
+vitest.config.ts
+playwright.config.ts
+.pre-commit-config.yaml
+
+# CI/CD (handled separately)
+.github/
+
+# Cursor
+.cursor/
