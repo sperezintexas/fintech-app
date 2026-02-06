@@ -90,12 +90,22 @@ jobs:
           MONGODB_URI: mongodb://localhost:27017
           MONGODB_DB: myinvestments
 
+      - name: List build output
+        run: |
+          if [ -d .next ]; then
+            echo "Build output: .next exists"
+            ls -la .next
+          else
+            echo "::warning::.next not found after build (build may have failed or output is elsewhere)"
+          fi
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build
           path: .next
           retention-days: 7
+          if-no-files-found: warn
 
   docker:
     name: Docker Build
