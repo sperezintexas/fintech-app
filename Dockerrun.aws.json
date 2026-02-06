@@ -1,7 +1,7 @@
 {
   "AWSEBDockerrunVersion": "1",
   "Image": {
-    "Name": "myinvestments:latest",
+    "Name": "205562145226.dkr.ecr.us-east-1.amazonaws.com/myinvestments:latest",
     "Update": "true"
   },
   "Ports": [
