@@ -151,8 +151,8 @@ jobs:
             MONGODB_URI=mongodb://localhost:27017
             MONGODB_DB=myinvestments
 
-  # Post build: get Vercel deployment status and app health (push to main/develop only),
-  # then notify Slack with commit message, commit id, deployment status, and health result.
+  # Post build: get Vercel deployment status, verify deployment via app health check (push to main/develop only),
+  # then notify Slack with commit message, commit id, deployment status, health result, and app version.
   # Secrets: SLACK_WEBHOOK_URL; VERCEL_TOKEN (for deployment status); vars: APP_URL (production URL for health check).
   notify-slack:
     name: Notify Slack
@@ -182,7 +182,7 @@ jobs:
           echo "state=$STATE" >> $GITHUB_OUTPUT
           echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
 
-      - name: App health check
+      - name: Verify Vercel deployment (health check)
         id: health
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
         env:
@@ -190,6 +190,7 @@ jobs:
         run: |
           if [ -z "$APP_URL" ]; then
             echo "status=skipped" >> $GITHUB_OUTPUT
+            echo "version=" >> $GITHUB_OUTPUT
             echo "APP_URL not set and no Vercel deployment url; skipping health check."
             exit 0
           fi
@@ -205,17 +206,20 @@ jobs:
               ok|degraded|healthy|success) STATUS="ok" ;;
               *) STATUS="$RAW" ;;
             esac
+            VERSION=$(echo "$BODY" | jq -r '.version // ""')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
           else
             STATUS="error"
+            echo "version=" >> $GITHUB_OUTPUT
           fi
           echo "status=$STATUS" >> $GITHUB_OUTPUT
 
-      - name: Validate health
+      - name: Validate health (fail if deployment unhealthy)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && steps.health.outputs.status != '' && steps.health.outputs.status != 'skipped'
         run: |
           case "$(echo "${{ steps.health.outputs.status }}" | tr '[:upper:]' '[:lower:]')" in
             ok) exit 0 ;;
-            *) echo "Health check failed: ${{ steps.health.outputs.status }}"; exit 1 ;;
+            *) echo "Vercel deployment health check failed: ${{ steps.health.outputs.status }}"; exit 1 ;;
           esac
 
       - name: Send Slack build notification
@@ -230,6 +234,7 @@ jobs:
           VERCEL_STATE: ${{ steps.vercel.outputs.state }}
           VERCEL_URL: ${{ steps.vercel.outputs.url }}
           HEALTH_STATUS: ${{ steps.health.outputs.status }}
+          HEALTH_VERSION: ${{ steps.health.outputs.version }}
         run: |
           if [ -z "$SLACK_WEBHOOK_URL" ]; then
             echo "::warning::SLACK_WEBHOOK_URL secret not found. To enable Slack notifications:"
@@ -265,6 +270,7 @@ jobs:
             --arg vercel_state "${VERCEL_STATE:-}" \
             --arg vercel_url "${VERCEL_URL:-}" \
             --arg health_status "${HEALTH_STATUS:-}" \
+            --arg health_version "${HEALTH_VERSION:-}" \
             '{
               attachments: [{
                 color: $color,
@@ -280,6 +286,7 @@ jobs:
                   ]
                   + (if $vercel_state != "" and $vercel_state != "skipped" then [{ title: "Vercel", value: $vercel_state, short: true }, (if $vercel_url != "" then { title: "Deploy URL", value: $vercel_url, short: true } else null end)] | map(select(. != null)) else [] end)
                   + (if $health_status != "" and $health_status != "skipped" then [{ title: "Health", value: $health_status, short: true }] else [] end)
+                  + (if $health_version != "" then [{ title: "Version", value: $health_version, short: true }] else [] end)
                 )
               }]
             }')

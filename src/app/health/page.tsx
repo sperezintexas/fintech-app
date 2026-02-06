@@ -15,6 +15,7 @@ type HealthCheck = {
 
 type HealthResponse = {
   status: CheckStatus;
+  version?: string;
   timestamp: string;
   checks: Record<string, HealthCheck>;
 };
@@ -91,9 +92,12 @@ export default function HealthPage() {
                 <h2 className="text-lg font-semibold text-gray-900">Overall</h2>
                 <StatusBadge status={health.status} />
               </div>
-              <p className="text-sm text-gray-500">
-                Last checked: {new Date(health.timestamp).toLocaleString()}
-              </p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
+                {health.version && (
+                  <span>Version: {health.version}</span>
+                )}
+                <span>Last checked: {new Date(health.timestamp).toLocaleString()}</span>
+              </div>
             </div>
 
             {Object.entries(health.checks).map(([name, check]) => (

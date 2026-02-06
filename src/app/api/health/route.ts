@@ -83,6 +83,7 @@ export async function GET() {
 
   return NextResponse.json({
     status: overallStatus,
+    version: process.env.NEXT_PUBLIC_APP_VERSION ?? undefined,
     timestamp: new Date().toISOString(),
     checks,
   });

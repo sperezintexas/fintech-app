@@ -159,15 +159,16 @@ type UnifiedOptionsScannerResult = {
 
 - **Job type:** `unifiedOptionsScanner`
 - **Handler:** `runUnifiedOptionsScanner(accountId?, config?)`
-- **Schedule (default):** `15 14-20 * * 1-5` — every weekday at :15 during market hours (9:15–3:15 ET), to avoid :00 (e.g. 9am) clashes with other jobs. Used by `createRecommendedJobs` and Vercel cron.
+- **Schedule (default):** `15 15 * * 1-5` in `vercel.json` (once per weekday at 15:15 UTC) to comply with **Vercel Hobby** “once per day” cron limit. For more frequent runs, use Pro or external cron (see Vercel section below).
 - **Run portfolio:** `POST /api/scheduler` with `{ action: "runPortfolio" }` runs unifiedOptionsScanner + watchlistreport + deliverAlerts
 
-### Vercel / serverless: hourly at :15 during market hours (cron route)
+### Vercel / serverless: cron route
 
 On **Vercel** (and any serverless deploy), **Agenda does not run** — there is no long-running Node process, so jobs scheduled in the Automation UI (Agenda) will **not** fire automatically. Use **Vercel Cron** to hit the cron API route:
 
 - **Route:** `GET /api/cron/unified-options-scanner`
-- **Vercel cron (UTC):** In `vercel.json`, the scanner is scheduled at `15 14-20 * * 1-5` (Mon–Fri, at :15 for hours 14–20 UTC ≈ 9:15–3:15 ET).
+- **Vercel cron (vercel.json):** `15 15 * * 1-5` — Mon–Fri at 15:15 UTC (once per day). **Hobby plan** allows only one run per day per cron; expressions that run more often (e.g. `15 14-20 * * 1-5`) will **fail deployment** with “Hobby accounts are limited to daily cron jobs.”
+- **More frequent runs:** Upgrade to **Vercel Pro** (per-minute crons allowed) and restore e.g. `15 14-20 * * 1-5`, or use an **external cron** (e.g. [cron-job.org](https://cron-job.org) or GitHub Actions scheduled workflow) to call `GET https://your-app.vercel.app/api/cron/unified-options-scanner` with `Authorization: Bearer <CRON_SECRET>` at the desired times.
 - **Auth:** Set `CRON_SECRET` in env; call with `Authorization: Bearer <CRON_SECRET>` or `?secret=<CRON_SECRET>`.
 - **Behavior:** Runs portfolio-level scan (first account or null), merges strategy settings (e.g. `excludeWatchlist`), runs `runUnifiedOptionsScanner`, then `processAlertDelivery`. Returns JSON summary (scanner + delivery stats).
 
@@ -243,7 +244,7 @@ const result = await runUnifiedOptionsScanner("accountId123", {
 
 | File | Role |
 |------|------|
-| `src/app/api/cron/unified-options-scanner/route.ts` | Vercel Cron route: runs scanner + alert delivery every weekday at :15 during market hours (vercel.json: `15 14-20 * * 1-5`) |
+| `src/app/api/cron/unified-options-scanner/route.ts` | Vercel Cron route: runs scanner + alert delivery weekdays at 15:15 UTC once per day (vercel.json: `15 15 * * 1-5`; Hobby limit) |
 | `src/lib/unified-options-scanner.ts` | Orchestrator; runs all four scanners |
 | `src/lib/slack-templates.ts` | Slack Block Kit (buildUnifiedOptionsScannerBlocks): header, recommendations, errors, View Dashboard; no delivery/context in Slack |
 | `src/lib/option-scanner.ts` | Option Scanner (calls & puts) |
