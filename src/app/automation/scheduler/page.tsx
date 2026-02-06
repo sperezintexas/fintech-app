@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import type { Account, Job, AlertDeliveryChannel, ReportTemplateId } from "@/types/portfolio";
-import { REPORT_TEMPLATES, getReportTemplate } from "@/types/portfolio";
+import { REPORT_TEMPLATES } from "@/types/portfolio";
 import { cronToHuman } from "@/lib/cron-utils";
 
 const DEFAULT_SCHEDULE_JOB_NAMES = [
@@ -38,6 +38,7 @@ type JobTypeItem = {
   _id: string;
   id: string;
   name: string;
+  description?: string;
   handlerKey: string;
   enabled: boolean;
   supportsPortfolio: boolean;
@@ -549,33 +550,77 @@ export default function SchedulerPage() {
           ) : jobs.length === 0 ? (
             <div className="text-center py-10 text-gray-500">No jobs yet. Create one above.</div>
           ) : (
-            <div className="space-y-3">
-              {jobs.map((j) => {
-                const typeInfo = jobTypes.find((t) => t.id === j.jobType);
-                const typeName = typeInfo?.name ?? j.jobType;
-                const template = getReportTemplate(j.templateId ?? "concise");
-                const scheduleFriendly = cronToHuman(j.scheduleCron ?? "0 16 * * 1-5");
-                const nextRunFriendly = j.nextRunAt ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(j.nextRunAt)) : null;
-                return (
-                  <div key={j._id} className="p-4 rounded-xl border border-gray-200 bg-gray-50">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-gray-900 truncate">{j.name}</p>
-                        <p className="text-sm text-gray-600 mt-1">Job type: {typeName}</p>
-                        {["watchlistreport", "smartxai", "portfoliosummary"].includes(typeInfo?.handlerKey ?? "") && <p className="text-sm text-gray-600 mt-0.5">Template: {template.name}</p>}
-                        <p className="text-sm text-gray-600 mt-0.5">Schedule: {scheduleFriendly}{nextRunFriendly && <span className="text-gray-500"> · Next: {nextRunFriendly}</span>}</p>
-                        <p className="text-xs text-gray-500 mt-2">Channels: {(j.channels ?? []).join(", ") || "—"} · Status: {j.status ?? "active"}</p>
-                        {j.lastRunAt && <p className="text-xs text-gray-500 mt-1">Last run: {new Date(j.lastRunAt).toLocaleString()}</p>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => runJobNow(j._id, j.name)} className="px-3 py-1.5 text-sm bg-white border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50">Run now</button>
-                        <button onClick={() => openEditJob(j)} className="px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-100">Edit</button>
-                        <button onClick={() => deleteJob(j._id)} className="px-3 py-1.5 text-sm bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50">Delete</button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Description</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Schedule</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Next run</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Last run</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Status</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-28">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {jobs.map((j) => {
+                    const typeInfo = jobTypes.find((t) => t.id === j.jobType);
+                    const typeName = typeInfo?.name ?? j.jobType;
+                    const scheduleFriendly = cronToHuman(j.scheduleCron ?? "0 16 * * 1-5");
+                    const nextRunFriendly = j.nextRunAt ? new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "short" }).format(new Date(j.nextRunAt)) : "—";
+                    const lastRunFriendly = j.lastRunAt ? new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "short" }).format(new Date(j.lastRunAt)) : "—";
+                    return (
+                      <tr key={j._id} className="hover:bg-gray-50/50">
+                        <td className="px-4 py-3 font-medium text-gray-900">{j.name}</td>
+                        <td className="px-4 py-3 text-gray-700">{typeName}</td>
+                        <td className="px-4 py-3 text-gray-600 max-w-xs truncate hidden lg:table-cell" title={typeInfo?.description ?? ""}>{typeInfo?.description ?? "—"}</td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{scheduleFriendly}</td>
+                        <td className="px-4 py-3 text-gray-600 text-xs hidden md:table-cell">{nextRunFriendly}</td>
+                        <td className="px-4 py-3 text-gray-600 text-xs hidden md:table-cell">{lastRunFriendly}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${(j.status ?? "active") === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>
+                            {j.status ?? "active"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-0.5">
+                            <button
+                              onClick={() => runJobNow(j._id, j.name)}
+                              className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              title="Run now"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => openEditJob(j)}
+                              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Edit"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => deleteJob(j._id)}
+                              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
 

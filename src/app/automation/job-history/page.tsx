@@ -65,7 +65,7 @@ export default function JobHistoryPage() {
           <div>
             <h2 className="text-3xl font-bold text-gray-900">Job run history</h2>
             <p className="text-gray-600 mt-1">
-              View jobs that ran and their status or error by date
+              View jobs that ran (Run now or scheduled) and their status or error. Date filter uses UTC.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -102,11 +102,20 @@ export default function JobHistoryPage() {
               <span className="ml-3 text-gray-600">Loading...</span>
             </div>
           ) : runs.length === 0 ? (
-            <div className="py-16 text-center text-gray-500">
-              <p>No job runs found for the selected {showAll ? "history" : "date"}.</p>
+            <div className="py-16 px-6 text-center text-gray-600 max-w-md mx-auto">
+              <p className="font-medium text-gray-700">No job runs found for the selected {showAll ? "history" : "date"}.</p>
+              <p className="mt-2 text-sm">
+                Job run history shows jobs that have already run (via &quot;Run now&quot; on the Scheduler or from a schedule).
+              </p>
               {!showAll && (
                 <p className="mt-2 text-sm">Try another date or check &quot;All dates&quot;.</p>
               )}
+              <Link
+                href="/automation/scheduler"
+                className="mt-4 inline-block text-sm font-medium text-blue-600 hover:text-blue-800"
+              >
+                Go to Scheduler →
+              </Link>
             </div>
           ) : (
             <div className="overflow-x-auto">

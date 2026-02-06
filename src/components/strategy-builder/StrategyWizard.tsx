@@ -54,6 +54,8 @@ export function StrategyWizard({ onSymbolSelected, onOutlookChange, onStrategyCh
   const [selectedSymbol, setSelectedSymbol] = useState<TickerQuote | null>(null);
   const [symbolLoading, setSymbolLoading] = useState(false);
   const [symbolSearchLoading, setSymbolSearchLoading] = useState(false);
+  const [topWatchlistSymbols, setTopWatchlistSymbols] = useState<Array<{ symbol: string; ivRank: number }>>([]);
+  const [topWatchlistLoading, setTopWatchlistLoading] = useState(false);
 
   // Step 2: Outlook
   const [outlook, setOutlook] = useState<Outlook | null>(null);
@@ -103,6 +105,16 @@ export function StrategyWizard({ onSymbolSelected, onOutlookChange, onStrategyCh
     const t = setTimeout(() => searchSymbols(symbolQuery), 300);
     return () => clearTimeout(t);
   }, [symbolQuery, searchSymbols]);
+
+  useEffect(() => {
+    if (step !== 1) return;
+    setTopWatchlistLoading(true);
+    fetch('/api/watchlist/top-for-options?limit=10')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setTopWatchlistSymbols(Array.isArray(data) ? data : []))
+      .catch(() => setTopWatchlistSymbols([]))
+      .finally(() => setTopWatchlistLoading(false));
+  }, [step]);
 
   const fetchQuote = async (sym: string) => {
     setSymbolLoading(true);
@@ -297,6 +309,38 @@ export function StrategyWizard({ onSymbolSelected, onOutlookChange, onStrategyCh
             <Button onClick={() => canProceedStep1 && setStep(2)} disabled={!canProceedStep1}>
               Next
             </Button>
+          </div>
+
+          {/* Top 10 from watchlist by volatility (CSP/CC) */}
+          <div className="border-t border-gray-200 pt-6 mt-6">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Top from watchlist (CSP/CC volatility)</h3>
+            {topWatchlistLoading ? (
+              <p className="text-sm text-gray-500">Loading…</p>
+            ) : topWatchlistSymbols.length === 0 ? (
+              <p className="text-sm text-gray-500">No watchlist symbols with volatility data. Add symbols to your watchlist.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {topWatchlistSymbols.map(({ symbol, ivRank }) => (
+                  <button
+                    key={symbol}
+                    type="button"
+                    onClick={() => fetchQuote(symbol)}
+                    disabled={symbolLoading}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-800 transition-colors disabled:opacity-50"
+                  >
+                    {symbol}
+                    <span className="ml-1.5 text-xs text-gray-500">IV {ivRank}%</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Risk disclosure */}
+          <div className="border-t border-gray-200 pt-6 mt-6">
+            <p className="text-sm text-gray-600 italic">
+              Options involve substantial risk and are not suitable for all investors. Review the OCC booklet &quot;Characteristics and Risks of Standardized Options&quot; before trading. Potential for full capital loss; no guarantees. Past performance is not indicative of future results.
+            </p>
           </div>
         </div>
       )}
