@@ -151,6 +151,92 @@ jobs:
             MONGODB_URI=mongodb://localhost:27017
             MONGODB_DB=myinvestments
 
+  # AWS: build Docker image, push to ECR, deploy to Elastic Beanstalk (main only, when AWS secrets set).
+  # Secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY. Vars: AWS_REGION, EB_ENV_NAME (optional).
+  aws-deploy:
+    name: Build & Deploy to AWS (EB)
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, build, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.AWS_ACCESS_KEY_ID != ''
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      APP_NAME: myinvestments
+      EB_ENV_NAME: ${{ vars.EB_ENV_NAME || 'myinvestments-prod' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Create ECR repository (if not exists)
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.APP_NAME }} --region ${{ env.AWS_REGION }} 2>/dev/null || \
+          aws ecr create-repository --repository-name ${{ env.APP_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            --build-arg MONGODB_URI=placeholder \
+            --build-arg MONGODB_DB=myinvestments \
+            -t $ECR_REGISTRY/${{ env.APP_NAME }}:$IMAGE_TAG \
+            -t $ECR_REGISTRY/${{ env.APP_NAME }}:latest \
+            .
+          docker push $ECR_REGISTRY/${{ env.APP_NAME }}:$IMAGE_TAG
+          docker push $ECR_REGISTRY/${{ env.APP_NAME }}:latest
+
+      - name: Update Dockerrun.aws.json
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          cat > Dockerrun.aws.json << EOF
+          {
+            "AWSEBDockerrunVersion": "1",
+            "Image": {
+              "Name": "$ECR_REGISTRY/${{ env.APP_NAME }}:latest",
+              "Update": "true"
+            },
+            "Ports": [
+              { "ContainerPort": 3000, "HostPort": 3000 }
+            ],
+            "Logging": "/var/log/nodejs"
+          }
+          EOF
+          cat Dockerrun.aws.json
+
+      - name: Create deployment package
+        run: |
+          zip -r deploy.zip . \
+            -x "*.git*" \
+            -x "node_modules/*" \
+            -x ".next/*" \
+            -x "tests/*" \
+            -x "docs/*" \
+            -x "docker-compose.yml"
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: ${{ env.APP_NAME }}
+          environment_name: ${{ env.EB_ENV_NAME }}
+          version_label: ${{ github.sha }}
+          region: ${{ env.AWS_REGION }}
+          deployment_package: deploy.zip
+          wait_for_environment_recovery: 120
+
   # Post build: get Vercel deployment status, verify deployment via app health check (push to main/develop only),
   # then notify Slack with commit message, commit id, deployment status, health result, and app version.
   # Secrets: SLACK_WEBHOOK_URL; VERCEL_TOKEN (for deployment status); vars: APP_URL (production URL for health check).

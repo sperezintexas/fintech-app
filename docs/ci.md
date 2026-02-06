@@ -4,7 +4,7 @@
 
 - **Workflow:** `.github/workflows/ci.yml` runs on push/PR to `main` and `develop`.
 - **Node:** 22 (required for yahoo-finance2).
-- **Jobs (order):** Lint → Type Check → Test → Build → Docker Build → Notify Slack.
+- **Jobs (order):** Lint → Type Check → Test → Build → Docker Build → [AWS Build & Deploy to EB, on main when AWS secrets set] → Notify Slack.
 
 ## Job Summary
 
@@ -15,6 +15,7 @@
 | **Test** | `npm test` (vitest) | Failing tests — fix test or app code. |
 | **Build** | `npm run build` (Next.js) | OOM, Next.js error, or missing `.next` — see below. |
 | **Docker Build** | Build image from Dockerfile | Dockerfile or build-args (MONGODB_URI, MONGODB_DB). |
+| **Build & Deploy to AWS (EB)** | Build Docker image, push to ECR, deploy to Elastic Beanstalk | Only on push to `main` when AWS secrets are set. ECR/EB permissions, wrong region or env name. |
 | **Notify Slack** | Post result + optional Vercel/health | Missing SLACK_WEBHOOK_URL; health check fails if APP_URL wrong or app down. |
 
 ## Build Job Details
@@ -30,6 +31,14 @@
 2. **OOM:** We set `NODE_OPTIONS=--max-old-space-size=4096`. If it still OOMs, consider increasing or splitting the build.
 3. **Next.js error:** Fix the reported error (e.g. missing env, bad import, incompatible dependency).
 4. **"No files were found with the provided path: .next":** Either the build step failed earlier (see step 1) or the workflow is an old version. Update `.github/workflows/ci.yml` to the current version (List build output with `id: list`, "Fail if build did not produce .next", conditional upload with `if: steps.list.outputs.has_next == 'true'`).
+
+## AWS Build & Deploy (Elastic Beanstalk)
+
+- **When it runs:** Push to `main` and repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are set (non-empty). Otherwise the job is skipped.
+- **What it does:** Builds the app Docker image, pushes it to Amazon ECR (tagged with `github.sha` and `latest`), updates `Dockerrun.aws.json` with the ECR image, creates `deploy.zip`, and deploys to Elastic Beanstalk via `einaregilsson/beanstalk-deploy`.
+- **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
+- **Variables (optional):** `AWS_REGION` (default `us-east-1`), `EB_ENV_NAME` (default `myinvestments-prod`).
+- **Requirements:** EB application and environment must already exist; IAM user must have ECR and Elastic Beanstalk deploy permissions.
 
 ## Secrets & Variables (Notify Slack / Vercel)
 
