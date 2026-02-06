@@ -45,6 +45,8 @@ export const coveredCallScannerConfigSchema = z
     grokSystemPromptOverride: z.string().max(4000).optional(),
     symbol: z.string().min(1).max(10).optional(),
     includeWatchlist: z.boolean().optional(),
+    /** BTC when current contract price (buy-back cost) is below this % of premium received (default 70). Take profits early, then roll. */
+    earlyProfitBtcThresholdPercent: z.number().min(0).max(100).optional(),
   })
   .strict()
   .optional();

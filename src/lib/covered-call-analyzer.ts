@@ -70,6 +70,8 @@ export type StandaloneCallPosition = {
   callPremiumReceived: number;
 };
 
+const DEFAULT_EARLY_PROFIT_BTC_THRESHOLD_PERCENT = 70;
+
 /** Pure function: apply covered call rules. Unit-testable. */
 export function applyCoveredCallRules(
   metrics: {
@@ -85,7 +87,8 @@ export function applyCoveredCallRules(
     ivRank: number | null;
     symbolChangePercent: number;
     riskLevel: RiskLevel;
-  }
+  },
+  config?: { earlyProfitBtcThresholdPercent?: number }
 ): { recommendation: CoveredCallRecommendationAction; confidence: CoveredCallConfidence; reason: string } {
   const {
     stockPrice,
@@ -102,7 +105,9 @@ export function applyCoveredCallRules(
   } = metrics;
 
   const stockAboveStrikePercent = ((stockPrice - strike) / strike) * 100;
-  const _callMid = (metrics.callBid + metrics.callAsk) / 2;
+  const callMid = (metrics.callBid + metrics.callAsk) / 2;
+  const earlyProfitThreshold =
+    config?.earlyProfitBtcThresholdPercent ?? DEFAULT_EARLY_PROFIT_BTC_THRESHOLD_PERCENT;
 
   // Stock ≥ strike + 5% & DTE ≤ 7 → BTC + consider new call
   if (stockAboveStrikePercent >= 5 && dte <= 7) {
@@ -128,6 +133,16 @@ export function applyCoveredCallRules(
       recommendation: "BUY_TO_CLOSE",
       confidence: "HIGH",
       reason: `Time decay mostly gone (${extrinsicPercentOfPremium.toFixed(0)}% extrinsic). Free up capital or roll.`,
+    };
+  }
+
+  // Early profit: contract price (buy-back cost) below threshold% of premium received → BTC, then roll
+  if (premiumReceived > 0 && callMid < (earlyProfitThreshold / 100) * premiumReceived) {
+    const contractPercent = (callMid / premiumReceived) * 100;
+    return {
+      recommendation: "BUY_TO_CLOSE",
+      confidence: "HIGH",
+      reason: `Contract price ${contractPercent.toFixed(0)}% of premium (below ${earlyProfitThreshold}% threshold). BTC to take profits early, then roll.`,
     };
   }
 
@@ -229,6 +244,8 @@ export type CoveredCallScannerConfig = {
   symbol?: string;
   /** Include watchlist call items. Default true. */
   includeWatchlist?: boolean;
+  /** BTC when current contract price (buy-back cost) is below this % of premium received (default 70). Take profits early, then roll. */
+  earlyProfitBtcThresholdPercent?: number;
 };
 
 /** Fetch covered call pairs (stock + short call), opportunities (stock without call), and standalone call positions. */
@@ -445,20 +462,23 @@ export async function analyzeCoveredCalls(
       const delta = (metrics as { delta?: number }).delta;
       if (cfg?.maxDelta != null && delta != null && delta > cfg.maxDelta) continue;
 
-      const { recommendation, confidence, reason } = applyCoveredCallRules({
-        stockPrice,
-        strike: pair.callStrike,
-        dte,
-        callBid: metrics.bid,
-        callAsk: metrics.ask,
-        premiumReceived: pair.callPremiumReceived,
-        extrinsicPercentOfPremium,
-        unrealizedStockGainPercent,
-        moneyness: getMoneyness(stockPrice, pair.callStrike),
-        ivRank,
-        symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
-        riskLevel,
-      });
+      const { recommendation, confidence, reason } = applyCoveredCallRules(
+        {
+          stockPrice,
+          strike: pair.callStrike,
+          dte,
+          callBid: metrics.bid,
+          callAsk: metrics.ask,
+          premiumReceived: pair.callPremiumReceived,
+          extrinsicPercentOfPremium,
+          unrealizedStockGainPercent,
+          moneyness: getMoneyness(stockPrice, pair.callStrike),
+          ivRank,
+          symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
+          riskLevel,
+        },
+        cfg
+      );
 
       const daysHeld = 1;
       const annualizedReturn =
@@ -582,20 +602,23 @@ export async function analyzeCoveredCalls(
       );
       const riskLevel = account?.riskLevel ?? "medium";
 
-      const { recommendation, confidence, reason } = applyCoveredCallRules({
-        stockPrice,
-        strike: call.callStrike,
-        dte,
-        callBid: metrics.bid,
-        callAsk: metrics.ask,
-        premiumReceived: call.callPremiumReceived,
-        extrinsicPercentOfPremium,
-        unrealizedStockGainPercent: 0,
-        moneyness: getMoneyness(stockPrice, call.callStrike),
-        ivRank,
-        symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
-        riskLevel,
-      });
+      const { recommendation, confidence, reason } = applyCoveredCallRules(
+        {
+          stockPrice,
+          strike: call.callStrike,
+          dte,
+          callBid: metrics.bid,
+          callAsk: metrics.ask,
+          premiumReceived: call.callPremiumReceived,
+          extrinsicPercentOfPremium,
+          unrealizedStockGainPercent: 0,
+          moneyness: getMoneyness(stockPrice, call.callStrike),
+          ivRank,
+          symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
+          riskLevel,
+        },
+        cfg
+      );
 
       recommendations.push({
         accountId: call.accountId,
@@ -682,20 +705,23 @@ export async function analyzeCoveredCalls(
           : null;
       const riskLevel = account?.riskLevel ?? "medium";
 
-      const { recommendation, confidence, reason } = applyCoveredCallRules({
-        stockPrice,
-        strike,
-        dte,
-        callBid: metrics.bid,
-        callAsk: metrics.ask,
-        premiumReceived,
-        extrinsicPercentOfPremium,
-        unrealizedStockGainPercent,
-        moneyness: getMoneyness(stockPrice, strike),
-        ivRank,
-        symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
-        riskLevel,
-      });
+      const { recommendation, confidence, reason } = applyCoveredCallRules(
+        {
+          stockPrice,
+          strike,
+          dte,
+          callBid: metrics.bid,
+          callAsk: metrics.ask,
+          premiumReceived,
+          extrinsicPercentOfPremium,
+          unrealizedStockGainPercent,
+          moneyness: getMoneyness(stockPrice, strike),
+          ivRank,
+          symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
+          riskLevel,
+        },
+        cfg
+      );
 
       recommendations.push({
         accountId: accId || "portfolio",
@@ -858,20 +884,23 @@ export async function analyzeCoveredCallForOption(
       : null;
   const riskLevel = account?.riskLevel ?? "medium";
 
-  const { recommendation, confidence, reason } = applyCoveredCallRules({
-    stockPrice,
-    strike,
-    dte,
-    callBid: metrics.bid,
-    callAsk: metrics.ask,
-    premiumReceived,
-    extrinsicPercentOfPremium,
-    unrealizedStockGainPercent,
-    moneyness: getMoneyness(stockPrice, strike),
-    ivRank,
-    symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
-    riskLevel,
-  });
+  const { recommendation, confidence, reason } = applyCoveredCallRules(
+    {
+      stockPrice,
+      strike,
+      dte,
+      callBid: metrics.bid,
+      callAsk: metrics.ask,
+      premiumReceived,
+      extrinsicPercentOfPremium,
+      unrealizedStockGainPercent,
+      moneyness: getMoneyness(stockPrice, strike),
+      ivRank,
+      symbolChangePercent: marketConditions.symbolChangePercent ?? 0,
+      riskLevel,
+    },
+    cfg
+  );
 
   const baseRec: CoveredCallRecommendation = {
     accountId: accId || "portfolio",

@@ -83,6 +83,7 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `callBid`, 
 | Stock ≥ strike + 5% & DTE ≤ 7 | BUY_TO_CLOSE | HIGH | Deep ITM, little time value; protect gains |
 | DTE ≤ 3 & call OTM | BUY_TO_CLOSE | HIGH | Avoid assignment on near-worthless expiration |
 | Extrinsic < 5% of premium received | BUY_TO_CLOSE | HIGH | Time decay mostly gone; free capital or roll |
+| Contract price (buy-back) &lt; early-profit threshold % of premium (default 70%) | BUY_TO_CLOSE | HIGH | Take profits early, then roll (config: `earlyProfitBtcThresholdPercent`) |
 | Account risk = low & DTE < 14 | BUY_TO_CLOSE | MEDIUM | Conservative account; reduce exposure sooner |
 | Unrealized stock gain > 15% & call near ATM/ITM | BUY_TO_CLOSE | HIGH | Lock gains; avoid capping upside |
 | IV rank > 50 & stock near/below strike | HOLD | HIGH | High premium; keep collecting or roll out |
@@ -105,6 +106,7 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `callBid`, 
 | `symbols` | string[] | Filter to these symbols only |
 | `expirationRange` | `{ minDays?, maxDays? }` | DTE filter |
 | `minStockShares` | number | Min shares for stock leg (default 100) |
+| `earlyProfitBtcThresholdPercent` | number (0–100) | BTC when current contract price (buy-back cost) is below this % of premium received (default 70). Take profits early, then roll. |
 
 **Strategy settings** (account-level, `strategy-settings` API):
 

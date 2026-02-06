@@ -119,21 +119,75 @@ describe("Covered Call Analyzer", () => {
       expect(result.reason).toContain("Time decay");
     });
 
-    it("returns BUY_TO_CLOSE for conservative account with DTE < 14", () => {
-      const result = applyCoveredCallRules({
-        stockPrice: 248,
-        strike: 250,
-        dte: 10,
-        callBid: 2,
-        callAsk: 2.2,
-        premiumReceived: 4,
-        extrinsicPercentOfPremium: 50,
-        unrealizedStockGainPercent: 0,
-        moneyness: "OTM",
-        ivRank: 30,
-        symbolChangePercent: 0,
-        riskLevel: "low",
-      });
+    it("returns BUY_TO_CLOSE when contract price below early-profit threshold (default 70%)", () => {
+      const result = applyCoveredCallRules(
+        {
+          stockPrice: 248,
+          strike: 250,
+          dte: 15,
+          callBid: 3.8,
+          callAsk: 4.2,
+          premiumReceived: 10,
+          extrinsicPercentOfPremium: 45,
+          unrealizedStockGainPercent: 0,
+          moneyness: "OTM",
+          ivRank: 30,
+          symbolChangePercent: 0,
+          riskLevel: "medium",
+        },
+        {}
+      );
+      expect(result.recommendation).toBe("BUY_TO_CLOSE");
+      expect(result.confidence).toBe("HIGH");
+      expect(result.reason).toContain("40%");
+      expect(result.reason).toContain("70%");
+      expect(result.reason).toContain("threshold");
+      expect(result.reason).toContain("take profits early");
+      expect(result.reason).toContain("roll");
+    });
+
+    it("uses custom earlyProfitBtcThresholdPercent in reason when provided", () => {
+      const result = applyCoveredCallRules(
+        {
+          stockPrice: 248,
+          strike: 250,
+          dte: 15,
+          callBid: 2.4,
+          callAsk: 2.6,
+          premiumReceived: 10,
+          extrinsicPercentOfPremium: 30,
+          unrealizedStockGainPercent: 0,
+          moneyness: "OTM",
+          ivRank: 30,
+          symbolChangePercent: 0,
+          riskLevel: "medium",
+        },
+        { earlyProfitBtcThresholdPercent: 30 }
+      );
+      expect(result.recommendation).toBe("BUY_TO_CLOSE");
+      expect(result.reason).toContain("25%");
+      expect(result.reason).toContain("30%");
+      expect(result.reason).toContain("threshold");
+    });
+
+    it("returns BUY_TO_CLOSE for conservative account with DTE < 14 (callMid above early-profit threshold)", () => {
+      const result = applyCoveredCallRules(
+        {
+          stockPrice: 248,
+          strike: 250,
+          dte: 10,
+          callBid: 2.9,
+          callAsk: 3.0,
+          premiumReceived: 4,
+          extrinsicPercentOfPremium: 50,
+          unrealizedStockGainPercent: 0,
+          moneyness: "OTM",
+          ivRank: 30,
+          symbolChangePercent: 0,
+          riskLevel: "low",
+        },
+        {}
+      );
       expect(result.recommendation).toBe("BUY_TO_CLOSE");
       expect(result.reason).toContain("Conservative");
     });

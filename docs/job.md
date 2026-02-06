@@ -127,6 +127,7 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 | grokIvRankMin | number | — | Min IV rank for Grok |
 | grokMaxParallel | number | — | Max parallel Grok calls |
 | grokSystemPromptOverride | string | — | Override Grok prompt for HOLD/BTC/SELL_NEW_CALL/ROLL |
+| earlyProfitBtcThresholdPercent | number (0–100) | 70 | BTC when current contract price (buy-back cost) is below this % of premium received; take profits early, then roll |
 
 **Output:** Analyzed count, stored recommendations, alerts created. Per-symbol recommendations (HOLD, BTC, SELL_NEW_CALL, ROLL, NONE).
 
