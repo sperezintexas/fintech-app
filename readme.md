@@ -13,7 +13,7 @@ Manages investment portfolios, accounts, and positions (stocks, options, cash). 
 - **Accounts** — My Portfolios (account list) and My Holdings (aggregate positions) tabs; risk level, strategy, positions
 - **Holdings / Positions** — Stocks, options, cash; columns: Symbol·Desc, Symbols (qty), Cost basis, Market value, Day change, Unrealized P/L; real-time values via Yahoo
 - **xStrategyBuilder** — Options strategy wizard (Covered Call, CSP, etc.)
-- **Setup (Automation)** — Watchlist, alerts, scheduled jobs, report definitions, push notifications
+- **Setup (Automation)** — Watchlist (sort by column, remove duplicates), alerts, scheduled jobs, report definitions, push notifications
 - **Reports** — Portfolio summary, SmartX AI
 - **Health** — Service status check
 

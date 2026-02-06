@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import type {
   Watchlist,
@@ -49,6 +49,15 @@ function getStrategyLabel(strategy: WatchlistStrategy): string {
   return STRATEGIES.find((s) => s.value === strategy)?.label ?? strategy;
 }
 
+function duplicateKey(item: WatchlistItem): string {
+  const s = item.symbol?.toUpperCase() ?? "";
+  const u = (item.underlyingSymbol ?? "").toUpperCase();
+  const t = item.type ?? "";
+  const strike = item.strikePrice ?? "";
+  const exp = item.expirationDate ?? "";
+  return `${s}|${u}|${t}|${strike}|${exp}`;
+}
+
 export default function WatchlistPage() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [selectedWatchlistId, setSelectedWatchlistId] = useState<string | null>(null);
@@ -65,6 +74,10 @@ export default function WatchlistPage() {
   const [editingWatchlist, setEditingWatchlist] = useState<Watchlist | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
+  type SortKey = "symbol" | "typeStrategy" | "entry" | "current" | "pl" | "exp";
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [removingDuplicates, setRemovingDuplicates] = useState(false);
 
   const [watchlistForm, setWatchlistForm] = useState({ name: "", purpose: "" });
   const [itemForm, setItemForm] = useState({
@@ -274,6 +287,95 @@ export default function WatchlistPage() {
   };
 
   const selectedWatchlist = watchlists.find((w) => w._id === selectedWatchlistId);
+
+  const sortedItems = useMemo(() => {
+    if (!sortKey) return items;
+    const copy = [...items];
+    copy.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "symbol": {
+          const sa = (a.type !== "stock" ? a.underlyingSymbol : a.symbol) ?? "";
+          const sb = (b.type !== "stock" ? b.underlyingSymbol : b.symbol) ?? "";
+          cmp = sa.localeCompare(sb, undefined, { sensitivity: "base" });
+          break;
+        }
+        case "typeStrategy":
+          cmp =
+            (getTypeLabel(a.type) + getStrategyLabel(a.strategy)).localeCompare(
+              getTypeLabel(b.type) + getStrategyLabel(b.strategy)
+            );
+          break;
+        case "entry": {
+          const va = a.type === "stock" ? a.quantity * a.entryPrice : a.quantity * 100 * (a.entryPrice ?? 0);
+          const vb = b.type === "stock" ? b.quantity * b.entryPrice : b.quantity * 100 * (b.entryPrice ?? 0);
+          cmp = va - vb;
+          break;
+        }
+        case "current":
+          cmp = (a.currentPrice ?? 0) - (b.currentPrice ?? 0);
+          break;
+        case "pl":
+          cmp = (a.profitLossPercent ?? 0) - (b.profitLossPercent ?? 0);
+          break;
+        case "exp": {
+          const da = a.expirationDate ? new Date(a.expirationDate).getTime() : 0;
+          const db = b.expirationDate ? new Date(b.expirationDate).getTime() : 0;
+          cmp = da - db;
+          break;
+        }
+        default:
+          return 0;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return copy;
+  }, [items, sortKey, sortDir]);
+
+  const duplicateIdsToRemove = useMemo(() => {
+    const byKey = new Map<string, WatchlistItem[]>();
+    for (const item of items) {
+      const key = duplicateKey(item);
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key)!.push(item);
+    }
+    const ids: string[] = [];
+    for (const group of byKey.values()) {
+      if (group.length <= 1) continue;
+      const sorted = [...group].sort(
+        (x, y) => new Date(x.addedAt).getTime() - new Date(y.addedAt).getTime()
+      );
+      for (let i = 1; i < sorted.length; i++) ids.push(sorted[i]!._id);
+    }
+    return ids;
+  }, [items]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const handleRemoveDuplicates = async () => {
+    if (duplicateIdsToRemove.length === 0) return;
+    if (!confirm(`Remove ${duplicateIdsToRemove.length} duplicate item(s)? The oldest entry for each symbol/type will be kept.`))
+      return;
+    setRemovingDuplicates(true);
+    setError(null);
+    try {
+      for (const id of duplicateIdsToRemove) {
+        const res = await fetch(`/api/watchlist/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Failed to remove duplicate");
+      }
+      await fetchItems();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove duplicates");
+    } finally {
+      setRemovingDuplicates(false);
+    }
+  };
 
   const handleExportWatchlist = useCallback(() => {
     if (!selectedWatchlist || items.length === 0) return;
@@ -529,6 +631,24 @@ export default function WatchlistPage() {
                           </svg>
                           Export
                         </button>
+                        {duplicateIdsToRemove.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleRemoveDuplicates}
+                            disabled={removingDuplicates}
+                            className="px-3 py-1.5 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                            title={`Remove ${duplicateIdsToRemove.length} duplicate(s); keeps oldest per symbol/type`}
+                          >
+                            {removingDuplicates ? (
+                              <span className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                              </svg>
+                            )}
+                            Remove duplicates ({duplicateIdsToRemove.length})
+                          </button>
+                        )}
                         <button
                           data-testid="watchlist-delete-btn"
                           onClick={() => handleWatchlistDelete(selectedWatchlist._id)}
@@ -715,17 +835,53 @@ export default function WatchlistPage() {
                         <table className="w-full text-xs sm:text-sm">
                           <thead>
                             <tr className="border-b border-gray-200">
-                              <th className="text-left py-2 px-1.5 font-medium text-gray-600 w-[1%]">Symbol</th>
-                              <th className="text-left py-2 px-1.5 font-medium text-gray-600">Type · Strategy</th>
-                              <th className="text-right py-2 px-1.5 font-medium text-gray-600">Entry target</th>
-                              <th className="text-right py-2 px-1.5 font-medium text-gray-600">Current</th>
-                              <th className="text-right py-2 px-1.5 font-medium text-gray-600">P/L</th>
-                              <th className="text-center py-2 px-1.5 font-medium text-gray-600">Exp</th>
+                              <th
+                                className="text-left py-2 px-1.5 font-medium text-gray-600 w-[1%] cursor-pointer select-none hover:bg-gray-100 rounded-tl"
+                                onClick={() => handleSort("symbol")}
+                                title="Sort by symbol"
+                              >
+                                Symbol {sortKey === "symbol" && (sortDir === "asc" ? "↑" : "↓")}
+                              </th>
+                              <th
+                                className="text-left py-2 px-1.5 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
+                                onClick={() => handleSort("typeStrategy")}
+                                title="Sort by type · strategy"
+                              >
+                                Type · Strategy {sortKey === "typeStrategy" && (sortDir === "asc" ? "↑" : "↓")}
+                              </th>
+                              <th
+                                className="text-right py-2 px-1.5 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
+                                onClick={() => handleSort("entry")}
+                                title="Sort by entry target"
+                              >
+                                Entry target {sortKey === "entry" && (sortDir === "asc" ? "↑" : "↓")}
+                              </th>
+                              <th
+                                className="text-right py-2 px-1.5 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
+                                onClick={() => handleSort("current")}
+                                title="Sort by current"
+                              >
+                                Current {sortKey === "current" && (sortDir === "asc" ? "↑" : "↓")}
+                              </th>
+                              <th
+                                className="text-right py-2 px-1.5 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
+                                onClick={() => handleSort("pl")}
+                                title="Sort by P/L"
+                              >
+                                P/L {sortKey === "pl" && (sortDir === "asc" ? "↑" : "↓")}
+                              </th>
+                              <th
+                                className="text-center py-2 px-1.5 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
+                                onClick={() => handleSort("exp")}
+                                title="Sort by expiration"
+                              >
+                                Exp {sortKey === "exp" && (sortDir === "asc" ? "↑" : "↓")}
+                              </th>
                               <th className="text-center py-2 px-1.5 font-medium text-gray-600 w-10"></th>
                             </tr>
                           </thead>
                           <tbody>
-                            {items.map((item) => {
+                            {sortedItems.map((item) => {
                               const themeSymbol = item.type !== "stock" ? item.underlyingSymbol : item.symbol;
                               const theme = getThemeDescription(themeSymbol);
                               return (
