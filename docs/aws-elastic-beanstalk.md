@@ -59,17 +59,17 @@ eb init myinvestments --region us-east-1 --platform "Docker running on 64bit Ama
 # 2. Create environment (single instance, cheapest)
 eb create myinvestments-prod --single --instance-type t3.micro
 
-# 3. Set environment variables
+# 3. Set environment variables (use your real values from Vercel or .env; do not commit)
 eb setenv \
-  MONGODB_URI='mongodb+srv://user:pass@cluster.mongodb.net/myinvestments' \
+  MONGODB_URI='<your-mongodb-uri>' \
   MONGODB_DB='myinvestments' \
-  AUTH_SECRET='your-auth-secret-here' \
-  XAI_API_KEY='your-xai-api-key' \
+  AUTH_SECRET='<your-auth-secret>' \
+  XAI_API_KEY='<your-xai-api-key>' \
   NEXTAUTH_URL='http://myinvestments-prod.us-east-1.elasticbeanstalk.com' \
-  X_CLIENT_ID='your-x-client-id' \
-  X_CLIENT_SECRET='your-x-client-secret' \
-  WEB_SEARCH_API_KEY='your-serpapi-key' \
-  CRON_SECRET='your-cron-secret'
+  X_CLIENT_ID='<your-x-client-id>' \
+  X_CLIENT_SECRET='<your-x-client-secret>' \
+  WEB_SEARCH_API_KEY='<your-web-search-api-key>' \
+  CRON_SECRET='<your-cron-secret>'
 
 # 4. Deploy
 eb deploy

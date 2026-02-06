@@ -38,8 +38,8 @@ If you don't have an AWS account:
    - Select "Command Line Interface (CLI)"
    - Check "I understand..." → "Next" → "Create access key"
    - **SAVE BOTH KEYS** (you won't see the secret again!):
-     - Access key ID: `AKIA...`
-     - Secret access key: `...`
+     - Access key ID: (copy from console)
+     - Secret access key: (copy from console)
 
 ### Option B: Via AWS CLI (if you have admin access)
 
@@ -99,12 +99,10 @@ aws configure
 ```
 
 Enter when prompted:
-```
-AWS Access Key ID: AKIA... (from Step 2)
-AWS Secret Access Key: ... (from Step 2)
-Default region name: us-east-1
-Default output format: json
-```
+- **AWS Access Key ID:** (from Step 2)
+- **AWS Secret Access Key:** (from Step 2)
+- **Default region name:** `us-east-1`
+- **Default output format:** `json`
 
 Verify it works:
 ```bash
@@ -132,20 +130,20 @@ This takes 5-10 minutes. You'll see progress in the terminal.
 
 ### Set Environment Variables
 
-**IMPORTANT**: Use your SAME MongoDB connection string from Vercel!
+**IMPORTANT**: Use your SAME values from Vercel (Settings → Environment Variables). Do not commit real values.
 
 ```bash
 eb setenv \
-  MONGODB_URI='mongodb+srv://YOUR_USER:YOUR_PASS@YOUR_CLUSTER.mongodb.net/myinvestments?retryWrites=true&w=majority' \
+  MONGODB_URI='<your-mongodb-uri>' \
   MONGODB_DB='myinvestments' \
-  AUTH_SECRET='YOUR_AUTH_SECRET_FROM_VERCEL' \
+  AUTH_SECRET='<your-auth-secret>' \
   NEXTAUTH_URL='http://myinvestments-prod.us-east-1.elasticbeanstalk.com' \
-  X_CLIENT_ID='YOUR_X_CLIENT_ID' \
-  X_CLIENT_SECRET='YOUR_X_CLIENT_SECRET' \
-  XAI_API_KEY='YOUR_XAI_API_KEY' \
-  WEB_SEARCH_API_KEY='YOUR_SERPAPI_KEY' \
-  CRON_SECRET='YOUR_CRON_SECRET' \
-  SLACK_WEBHOOK_URL='YOUR_SLACK_WEBHOOK'
+  X_CLIENT_ID='<your-x-client-id>' \
+  X_CLIENT_SECRET='<your-x-client-secret>' \
+  XAI_API_KEY='<your-xai-api-key>' \
+  WEB_SEARCH_API_KEY='<your-web-search-api-key>' \
+  CRON_SECRET='<your-cron-secret>' \
+  SLACK_WEBHOOK_URL='<your-slack-webhook-url>'
 ```
 
 **To get your current Vercel env vars:**
