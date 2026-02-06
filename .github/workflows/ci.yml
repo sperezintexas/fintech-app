@@ -123,7 +123,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build
-          path: ${{ github.workspace }}/.next
+          path: .next
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
