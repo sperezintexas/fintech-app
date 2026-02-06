@@ -12,6 +12,7 @@ type JobRun = {
   failCount: number;
   status: "success" | "failed";
   error: string | null;
+  notes: string | null;
 };
 
 function formatDateLocal(iso: string | null): string {
@@ -134,6 +135,9 @@ export default function JobHistoryPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Error
                     </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Notes
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
@@ -159,6 +163,13 @@ export default function JobHistoryPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600 max-w-md truncate" title={run.error ?? undefined}>
                         {run.error ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600 max-w-sm" title={run.notes ?? undefined}>
+                        {run.notes ? (
+                          <pre className="whitespace-pre-wrap font-sans text-xs max-h-24 overflow-y-auto">{run.notes}</pre>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                     </tr>
                   ))}

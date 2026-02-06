@@ -47,7 +47,7 @@ type JobTypeItem = {
 
 export default function SchedulerPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("__portfolio__");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [allJobs, setAllJobs] = useState<Job[]>([]);
   const [jobTypes, setJobTypes] = useState<JobTypeItem[]>([]);
@@ -143,7 +143,6 @@ export default function SchedulerPage() {
       if (res.ok) {
         const data = await res.json();
         setAccounts(Array.isArray(data) ? data : []);
-        if (data.length > 0 && !selectedAccountId) setSelectedAccountId("__portfolio__");
       }
     })();
   }, []);

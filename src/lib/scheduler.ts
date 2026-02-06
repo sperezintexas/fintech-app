@@ -9,7 +9,7 @@ import { getMultipleTickerOHLC, getBatchPriceAndRSI } from "./yahoo";
 import { postToXThread } from "./x";
 import { runUnifiedOptionsScanner } from "./unified-options-scanner";
 import { processAlertDelivery } from "./alert-delivery";
-import { formatUnifiedOptionsScannerReport } from "./slack-templates";
+import { formatUnifiedOptionsScannerReport, formatUnifiedOptionsScannerRunNotes, type SlackBlock } from "./slack-templates";
 import { shouldRunPurge, runPurge } from "./cleanup-storage";
 import { runRiskScanner } from "./risk-scanner";
 
@@ -331,8 +331,12 @@ export async function executeJob(jobId: string): Promise<{
     const xBodyText: string | null = null;
     /** One post per watchlist when portfolio-level watchlistreport */
     let watchlistPosts: Array<{ title: string; bodyText: string; xBodyText?: string }> | null = null;
-    /** Optional Slack attachments (e.g. red error block for unified scanner). */
+    /** Optional Slack attachments (legacy format). */
     let slackAttachmentsForPost: Array<{ color: string; text: string }> | undefined;
+    /** Optional Slack Block Kit blocks (preferred for unified scanner). */
+    let slackBlocksForPost: SlackBlock[] | undefined;
+    /** Notes for job run history (e.g. unified scanner stats + breakdown). */
+    let lastRunNotesForJob: string | undefined;
 
     if (handlerKey === "smartxai") {
       try {
@@ -700,11 +704,21 @@ export async function executeJob(jobId: string): Promise<{
           }
         }
         const durationSeconds = (Date.now() - startTime) / 1000;
-        const report = formatUnifiedOptionsScannerReport(result, deliverySummary, durationSeconds);
+        const appBaseUrl =
+          (typeof process !== "undefined" && (process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL)) || "";
+        const report = formatUnifiedOptionsScannerReport(
+          result,
+          deliverySummary,
+          durationSeconds,
+          appBaseUrl
+        );
         bodyText = report.bodyText;
-        if (report.errorAttachment) {
+        if (report.slackBlocks?.length) {
+          slackBlocksForPost = report.slackBlocks;
+        } else if (report.errorAttachment) {
           slackAttachmentsForPost = [{ color: "danger", text: report.errorAttachment }];
         }
+        lastRunNotesForJob = formatUnifiedOptionsScannerRunNotes(result, durationSeconds);
       } catch (e) {
         console.error("Failed to run Unified Options Scanner:", e);
         title = job.name;
@@ -759,11 +773,25 @@ export async function executeJob(jobId: string): Promise<{
     const slackConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "slack");
     const twitterConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "twitter");
 
-    type PostItem = { title: string; bodyText: string; xBodyText?: string; slackAttachments?: Array<{ color: string; text: string }> };
+    type PostItem = {
+      title: string;
+      bodyText: string;
+      xBodyText?: string;
+      slackAttachments?: Array<{ color: string; text: string }>;
+      slackBlocks?: SlackBlock[];
+    };
     const postsToSend: PostItem[] =
       watchlistPosts && watchlistPosts.length > 0
         ? watchlistPosts
-        : [{ title, bodyText, xBodyText: xBodyText ?? undefined, ...(slackAttachmentsForPost && { slackAttachments: slackAttachmentsForPost }) }];
+        : [
+            {
+              title,
+              bodyText,
+              xBodyText: xBodyText ?? undefined,
+              ...(slackAttachmentsForPost && { slackAttachments: slackAttachmentsForPost }),
+              ...(slackBlocksForPost && { slackBlocks: slackBlocksForPost }),
+            },
+          ];
 
     if (job.channels.includes("slack")) {
       if (!slackConfig?.target) {
@@ -776,8 +804,9 @@ export async function executeJob(jobId: string): Promise<{
             handlerKey === "watchlistreport"
               ? p.bodyText
               : `*${p.title}*\n${p.bodyText}${reportLink ? `\n\nView: ${reportLink}` : ""}`;
-          const slackPayload =
-            p.slackAttachments?.length
+          const slackPayload = p.slackBlocks?.length
+            ? { text: slackText, blocks: p.slackBlocks }
+            : p.slackAttachments?.length
               ? {
                   text: slackText,
                   attachments: p.slackAttachments.map((a) => ({
@@ -841,15 +870,15 @@ export async function executeJob(jobId: string): Promise<{
       failedChannels.length > 0
         ? failedChannels.map((f) => `${f.channel}: ${f.error}`).join("; ")
         : null;
+    const updatePayload: Record<string, unknown> = {
+      lastRunAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      lastRunError: lastRunErrorToSet,
+    };
+    if (lastRunNotesForJob != null) updatePayload.lastRunNotes = lastRunNotesForJob;
     await db.collection("reportJobs").updateOne(
       { _id: new ObjectId(jobId) },
-      {
-        $set: {
-          lastRunAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          lastRunError: lastRunErrorToSet,
-        },
-      }
+      { $set: updatePayload }
     );
     const hasOutput = Boolean(bodyText && bodyText.trim().length > 0);
     return {

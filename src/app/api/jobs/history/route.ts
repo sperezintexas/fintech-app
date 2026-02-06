@@ -9,6 +9,7 @@ type ReportJobDoc = {
   jobType?: string;
   lastRunAt?: string;
   lastRunError?: string;
+  lastRunNotes?: string;
 };
 
 /**
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
         failCount: error ? 1 : 0,
         status,
         error,
+        notes: doc.lastRunNotes ?? null,
       };
     });
 

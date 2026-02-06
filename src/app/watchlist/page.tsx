@@ -8,6 +8,7 @@ import type {
   WatchlistStrategy,
   WatchlistItemType,
 } from "@/types/portfolio";
+import { getThemeDescription } from "@/lib/watchlist-theme-descriptions";
 
 const STRATEGIES: { value: WatchlistStrategy; label: string }[] = [
   { value: "covered-call", label: "Covered Call" },
@@ -724,7 +725,10 @@ export default function WatchlistPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {items.map((item) => (
+                            {items.map((item) => {
+                              const themeSymbol = item.type !== "stock" ? item.underlyingSymbol : item.symbol;
+                              const theme = getThemeDescription(themeSymbol);
+                              return (
                               <Fragment key={item._id}>
                                 <tr
                                   key={item._id}
@@ -734,11 +738,16 @@ export default function WatchlistPage() {
                                   }`}
                                 >
                                   <td className="py-2 px-1.5 align-top w-[1%]">
-                                    <div className="flex flex-col gap-0.5 min-w-0 max-w-[100px] sm:max-w-[140px]">
+                                    <div className="flex flex-col gap-0.5 min-w-0 max-w-[100px] sm:max-w-[160px]">
                                       <span className="font-medium truncate" title={item.symbol}>{item.symbol}</span>
                                       {item.companyDescription && (
                                         <span className="text-xs text-gray-500 leading-tight truncate" title={item.companyDescription}>
                                           {item.companyDescription}
+                                        </span>
+                                      )}
+                                      {theme && (
+                                        <span className="text-xs text-blue-600 leading-tight truncate" title={theme}>
+                                          {theme}
                                         </span>
                                       )}
                                     </div>
@@ -782,7 +791,8 @@ export default function WatchlistPage() {
                                   </tr>
                                 )}
                               </Fragment>
-                            ))}
+                            );
+                            })}
                           </tbody>
                         </table>
                       </div>

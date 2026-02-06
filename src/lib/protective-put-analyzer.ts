@@ -419,6 +419,10 @@ export async function analyzeProtectivePuts(
             chain.puts.filter((p) => p.impliedVolatility != null).length
           : 0;
       const volPercent = avgIV > 0 ? Math.min(100, avgIV * 100) : 0;
+      const volNote =
+        Number.isFinite(volPercent) && volPercent > 0
+          ? ` Volatility ~${volPercent.toFixed(0)}% — consider downside protection.`
+          : " Consider downside protection.";
 
       if (volPercent >= 35) {
         const block100Cost = Math.round(stockPrice * 100);
@@ -432,7 +436,7 @@ export async function analyzeProtectivePuts(
           stockPositionId: opp.stockPositionId,
           recommendation: "BUY_NEW_PUT",
           confidence: "MEDIUM",
-          reason: `${opp.stockShares} shares, no protective put.${cashNote} Volatility ~${volPercent.toFixed(0)}% — consider downside protection.`,
+          reason: `${opp.stockShares} shares, no protective put.${cashNote}${volNote}`,
           metrics: {
             stockPrice,
             putBid: 0,
@@ -487,13 +491,17 @@ export async function analyzeProtectivePuts(
             : 0;
         const volPercent = avgIV > 0 ? Math.min(100, avgIV * 100) : 0;
         if (volPercent < 35) continue;
+        const volNote =
+          Number.isFinite(volPercent) && volPercent > 0
+            ? ` Volatility ~${volPercent.toFixed(0)}% — consider downside protection.`
+            : " Consider downside protection.";
 
         recommendations.push({
           accountId: accountId ?? "portfolio",
           symbol,
           recommendation: "BUY_NEW_PUT",
           confidence: "MEDIUM",
-          reason: `Watchlist: 100-share block ~$${Math.round(block100Cost).toLocaleString()}; fits your cash $${Math.round(totalCash).toLocaleString()}. Volatility ~${volPercent.toFixed(0)}% — consider downside protection.`,
+          reason: `Watchlist: 100-share block ~$${Math.round(block100Cost).toLocaleString()}; fits your cash $${Math.round(totalCash).toLocaleString()}.${volNote}`,
           metrics: {
             stockPrice,
             putBid: 0,

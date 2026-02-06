@@ -228,14 +228,14 @@ const result = await runUnifiedOptionsScanner("accountId123", {
 - **Persistence util:** `storeRecommendationsAndCreateAlerts(recommendations, storeFn)` centralizes persist + createAlerts logic.
 - **Performance metrics:** `console.time`/`console.timeEnd` per scanner for debugging slow runs.
 - **Run Now output:** When running from Automation → Scheduler, the job summary is always returned to the UI when the scanner produced output, even if Slack/X delivery fails or is not configured. The summary includes counts plus `recommendationSummary` (concise per-holding recommendations).
-- **Slack report format:** `formatUnifiedOptionsScannerReport()` in `src/lib/slack-templates.ts` builds the Daily Options Scanner Alert: header, totals, breakdown by strategy, key recommendations, **run duration (seconds)**, scanner errors (bold in main body; when errors exist, also sent as a Slack attachment with `color: "danger"` for red highlight), and alerts delivery stats. Run duration is measured from start of `runUnifiedOptionsScanner` through `processAlertDelivery` when enabled.
+- **Slack report format:** Uses **Slack Block Kit** (per `.cursor/rules/slack-template.mdc`). `formatUnifiedOptionsScannerReport()` and `buildUnifiedOptionsScannerBlocks()` in `src/lib/slack-templates.ts` build: (1) **Header** — "Daily Options Scanner Alert"; (2) **Recommendations** — section with 🔥 Key Recommendations (mrkdwn); (3) **Errors** — section with 🔴 Scanner errors when present; (4) **Actions** — "View Dashboard" button (when `NEXT_PUBLIC_APP_URL` or `VERCEL_URL` is set). Delivery stats (Sent/Failed/Skipped) and the closing context line are not sent to Slack; stats and breakdown are stored in job run history notes only. Plain-text fallback (`bodyText`) is used for notifications and X/UI.
 
 ## File Reference
 
 | File | Role |
 |------|------|
 | `src/lib/unified-options-scanner.ts` | Orchestrator; runs all four scanners |
-| `src/lib/slack-templates.ts` | Slack report format (formatUnifiedOptionsScannerReport: duration, bold/red errors) |
+| `src/lib/slack-templates.ts` | Slack Block Kit (buildUnifiedOptionsScannerBlocks): header, recommendations, errors, View Dashboard; no delivery/context in Slack |
 | `src/lib/option-scanner.ts` | Option Scanner (calls & puts) |
 | `src/lib/covered-call-analyzer.ts` | Covered Call Scanner |
 | `src/lib/protective-put-analyzer.ts` | Protective Put Scanner |

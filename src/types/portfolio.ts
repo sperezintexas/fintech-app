@@ -517,6 +517,8 @@ export type Job = {
   lastRunAt?: string;
   /** Set when last run failed (e.g. handler or delivery error). */
   lastRunError?: string;
+  /** Run summary/notes for job run history (e.g. unified scanner stats + breakdown). */
+  lastRunNotes?: string;
   nextRunAt?: string;
   createdAt: string;
   updatedAt: string;

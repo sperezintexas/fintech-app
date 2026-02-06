@@ -166,7 +166,7 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 | protectivePut | object | ProtectivePutScanner config |
 | deliverAlertsAfter | boolean | When true (default), run processAlertDelivery after the scan |
 
-**Output:** Slack message via `formatUnifiedOptionsScannerReport()` (see `src/lib/slack-templates.ts`): Daily Options Scanner Alert with totals, breakdown by strategy, key recommendations, **run duration (seconds)**, and alerts delivery stats. Scanner errors are shown **bold** in the main body and in a **red** Slack attachment (color `danger`) when present.
+**Output:** Slack message uses **Block Kit** (per `.cursor/rules/slack-template.mdc`). `formatUnifiedOptionsScannerReport()` and `buildUnifiedOptionsScannerBlocks()` in `src/lib/slack-templates.ts` build: header, stats (scanned/stored/alerts/duration), breakdown by strategy, 🔥 Key Recommendations, delivery (Sent/Failed/Skipped), 🔴 Scanner errors when present, View Dashboard button (when `NEXT_PUBLIC_APP_URL` or `VERCEL_URL` set), and context. Plain-text fallback is used for notifications and X/UI.
 
 ---
 

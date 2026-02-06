@@ -1,0 +1,69 @@
+---
+description: Guidelines for formatting Slack messages & Block Kit in myInvestments
+globs:
+alwaysApply: true
+---
+
+# Slack Message & Block Kit Formatting Rules
+
+## Core Goals
+- Use **Block Kit JSON** for all user-facing alerts, reports, scanner results
+- Maximize scannability, hierarchy, and actionable buttons
+- Use minimal, strategic emojis
+- Include risk indicators on recommendations when relevant
+
+## Block Structure (preferred order)
+
+1. **Header** — `header` block + emoji + short title (≤40 chars)
+2. **Stats** — `section` + `fields` (3-col layout) for key numbers
+3. **Breakdown** — `fields` with bold strategy names + counts
+4. **Recommendations** — `*🔥 Key Recommendations*` → one `section` per item
+   - Format: `• *SYMBOL EXPIRY STRIKE TYPE* — *ACTION*` + brief reason
+   - Add `accessory` button (`primary` or `danger`) with deep-link `url`
+5. **Delivery** — `fields` for Sent / Failed / Skipped
+6. **Actions** — `actions` block with 2–4 buttons (View Dashboard, Acknowledge, Snooze)
+7. **Context** — subtle closing note
+
+## Risk Indicators
+Append one badge to recommendation text when meaningful:
+
+- `🔴 High Risk` — urgent (deep loss, assignment imminent, high vol exposure)
+- `🟠 Medium Risk` — monitor (near breakeven, elevated IV, short DTE)
+- `🟢 Low Risk` — optional (stable, favorable position)
+
+## Button Rules
+- Use `url` for deep links (dashboard, position, action pages)
+- `style: "danger"` for urgent/high-risk actions
+- Descriptive text: "View TSLA", "Add Protection", "Close Position"
+- Always set `action_id`
+
+## Emoji Usage
+Strategic & minimal:
+- 🚨 urgent alert
+- 🔥 recommendations
+- 📊 stats
+- 📤❌⏩ delivery status
+- 📈 closing note
+
+## Slack Block Kit Validation Checklist
+Before finalizing Block Kit output, verify:
+
+- Valid JSON structure (blocks array, correct types)
+- No missing required fields (e.g. `text` in section/header, `elements` in actions)
+- All `action_id` values are unique & descriptive
+- URLs are real deep links (no placeholders)
+- Button styles match urgency (`danger` for high-risk only)
+- Total blocks ≤ 50 (Slack limit)
+- Text lengths reasonable (avoid truncation on mobile)
+- Risk badges used only when justified by metrics
+- Emojis enhance (not clutter)
+
+## Implementation (Unified Options Scanner)
+- **File:** `src/lib/slack-templates.ts`
+- **Blocks:** `buildUnifiedOptionsScannerBlocks()` — header → 🔥 Key Recommendations (section) → 🔴 Scanner errors (section when present) → actions (View Dashboard button when `NEXT_PUBLIC_APP_URL` or `VERCEL_URL` set). No delivery stats or context line in Slack.
+- **Fallback:** `formatUnifiedOptionsScannerReport()` returns `bodyText` (plain mrkdwn for notifications/X/UI) and `slackBlocks`; scheduler sends `{ text, blocks }` to Slack when blocks present.
+
+## Exceptions
+- Plain mrkdwn acceptable only for internal/debug messages
+
+Apply consistently. Generate clean, valid Block Kit JSON with deep links and risk indicators where appropriate.
