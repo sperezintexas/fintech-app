@@ -46,6 +46,15 @@ Generate conservative, capital-preservation-focused recommendations:
 - No put exists + high recent volatility (>30–35%) → BUY_NEW_PUT opportunity
 - Put delta too low (≤ -0.25) and stock stable → SELL_TO_CLOSE (ineffective hedge)
 
+## Cash & 100-Share Blocks
+- **BUY_NEW_PUT** suggestions must consider **total cash** across the scanned account(s) and target **blocks of 100 shares**.
+- Compute total cash: sum of `account.balance` plus any `positions` with `type === "cash"` (use `position.amount`).
+- In the recommendation **reason** text, include when relevant:
+  - **100-share block** cost: e.g. "100-share block ~$25,000" (100 × current stock price).
+  - **Total cash**: e.g. "cash $50,000" so the user sees affordability.
+- When suggesting from **watchlist** (if `includeWatchlist`): choose symbols where **100 × stock price ≤ total cash** so suggested puts target affordable 100-share blocks; include "fits your cash $X" in the reason.
+- For existing holdings (stock without put): still include "100-share block ~$X; cash $Y" in the reason so the user can decide how many blocks to protect.
+
 ## Important Metrics to Calculate & Include
 - Current stock price
 - Put bid/ask/mid price

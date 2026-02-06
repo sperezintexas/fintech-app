@@ -149,6 +149,7 @@ type UnifiedOptionsScannerResult = {
 - **scanned/analyzed:** Number of positions or pairs evaluated.
 - **stored:** Number of recommendations persisted.
 - **alertsCreated:** Number of alerts created (for delivery via deliverAlerts job).
+- **recommendationSummary:** Optional concise text: per-holding recommendations (options: hold/close; covered calls: hold/BTC/sell new/roll; protective puts: hold/STC/roll/buy new; straddle/strangle: hold/STC/roll/add). Included in scheduler Run Now output and in job bodyText for Slack/X.
 
 ---
 
@@ -165,7 +166,7 @@ type UnifiedOptionsScannerResult = {
 
 - **id:** `unifiedOptionsScanner`
 - **handlerKey:** `unifiedOptionsScanner`
-- **supportsPortfolio:** false
+- **supportsPortfolio:** true (run for all accounts when accountId is null)
 - **supportsAccount:** true
 
 ### API
@@ -221,16 +222,20 @@ const result = await runUnifiedOptionsScanner("accountId123", {
 
 - **Parallel execution:** Scanners run in parallel with `Promise.all`; only symbol collection and option-chain prefetch run first. Persist step runs in parallel after all scans complete.
 - **Shared option-chain cache:** Orchestrator collects unique symbols from covered-call and protective-put positions, fetches `getOptionChainDetailed` once per symbol in parallel, and passes a `Map<symbol, chain>` to covered-call and protective-put analyzers to avoid redundant Yahoo API calls.
+- **Option-chain resilience:** Each symbol’s chain fetch is wrapped in try/catch; one symbol failure does not abort others; failed symbols are logged and omitted from the cache.
 - **Config merging & validation:** Zod schema (`unifiedOptionsScannerConfigSchema`) and `parseUnifiedOptionsScannerConfig()` validate and merge config early to prevent invalid runs.
 - **Error resilience:** Each scanner is wrapped in try/catch; errors are collected in `result.errors` and logged per scanner (`[unified-options-scanner] <scanner>: <error>`). Partial results are returned.
 - **Persistence util:** `storeRecommendationsAndCreateAlerts(recommendations, storeFn)` centralizes persist + createAlerts logic.
 - **Performance metrics:** `console.time`/`console.timeEnd` per scanner for debugging slow runs.
+- **Run Now output:** When running from Automation → Scheduler, the job summary is always returned to the UI when the scanner produced output, even if Slack/X delivery fails or is not configured. The summary includes counts plus `recommendationSummary` (concise per-holding recommendations).
+- **Slack report format:** `formatUnifiedOptionsScannerReport()` in `src/lib/slack-templates.ts` builds the Daily Options Scanner Alert: header, totals, breakdown by strategy, key recommendations, **run duration (seconds)**, scanner errors (bold in main body; when errors exist, also sent as a Slack attachment with `color: "danger"` for red highlight), and alerts delivery stats. Run duration is measured from start of `runUnifiedOptionsScanner` through `processAlertDelivery` when enabled.
 
 ## File Reference
 
 | File | Role |
 |------|------|
 | `src/lib/unified-options-scanner.ts` | Orchestrator; runs all four scanners |
+| `src/lib/slack-templates.ts` | Slack report format (formatUnifiedOptionsScannerReport: duration, bold/red errors) |
 | `src/lib/option-scanner.ts` | Option Scanner (calls & puts) |
 | `src/lib/covered-call-analyzer.ts` | Covered Call Scanner |
 | `src/lib/protective-put-analyzer.ts` | Protective Put Scanner |

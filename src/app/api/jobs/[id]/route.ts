@@ -19,6 +19,13 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     const result = await executeJob(id);
     if (!result.success) {
+      if (result.summary) {
+        return NextResponse.json({
+          success: true,
+          message: result.error ?? "Job completed; delivery had issues",
+          summary: result.summary,
+        });
+      }
       return NextResponse.json(
         { success: false, error: result.error ?? "Job failed" },
         { status: 400 }

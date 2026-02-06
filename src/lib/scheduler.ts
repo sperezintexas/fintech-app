@@ -9,6 +9,7 @@ import { getMultipleTickerOHLC, getBatchPriceAndRSI } from "./yahoo";
 import { postToXThread } from "./x";
 import { runUnifiedOptionsScanner } from "./unified-options-scanner";
 import { processAlertDelivery } from "./alert-delivery";
+import { formatUnifiedOptionsScannerReport } from "./slack-templates";
 import { shouldRunPurge, runPurge } from "./cleanup-storage";
 import { runRiskScanner } from "./risk-scanner";
 
@@ -330,6 +331,8 @@ export async function executeJob(jobId: string): Promise<{
     const xBodyText: string | null = null;
     /** One post per watchlist when portfolio-level watchlistreport */
     let watchlistPosts: Array<{ title: string; bodyText: string; xBodyText?: string }> | null = null;
+    /** Optional Slack attachments (e.g. red error block for unified scanner). */
+    let slackAttachmentsForPost: Array<{ color: string; text: string }> | undefined;
 
     if (handlerKey === "smartxai") {
       try {
@@ -669,6 +672,7 @@ export async function executeJob(jobId: string): Promise<{
       }
     } else if (handlerKey === "unifiedOptionsScanner") {
       try {
+        const startTime = Date.now();
         const accountId = job.accountId ?? undefined;
         let config = job.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
         if (accountId) {
@@ -685,34 +689,21 @@ export async function executeJob(jobId: string): Promise<{
         }
         const result = await runUnifiedOptionsScanner(accountId, config);
         title = job.name;
-        const lines = [
-          `Unified Options Scanner complete`,
-          `• Total scanned: ${result.totalScanned}`,
-          `• Stored: ${result.totalStored}`,
-          `• Alerts created: ${result.totalAlertsCreated}`,
-          "",
-          `Option: ${result.optionScanner.scanned} scanned, ${result.optionScanner.stored} stored`,
-          `Covered Call: ${result.coveredCallScanner.analyzed} analyzed, ${result.coveredCallScanner.stored} stored`,
-          `Protective Put: ${result.protectivePutScanner.analyzed} analyzed, ${result.protectivePutScanner.stored} stored`,
-          `Straddle/Strangle: ${result.straddleStrangleScanner.analyzed} analyzed, ${result.straddleStrangleScanner.stored} stored`,
-        ];
-        if (result.errors.length > 0) {
-          lines.push("", "⚠️ Scanner errors:");
-          result.errors.forEach((e) => lines.push(`• ${e.scanner}: ${e.message}`));
-        }
-        bodyText = lines.join("\n");
 
-        // Inline delivery: send scanner alerts to Slack/X right after scan (so a separate deliverAlerts job is optional)
+        let deliverySummary: { delivered: number; failed: number; skipped: number } | undefined;
         const configObj = job.config as { deliverAlertsAfter?: boolean } | undefined;
         if (configObj?.deliverAlertsAfter !== false) {
           try {
-            const deliveryResult = await processAlertDelivery(accountId);
-            bodyText += `\n\nAlerts delivered: ${deliveryResult.delivered} sent, ${deliveryResult.failed} failed, ${deliveryResult.skipped} skipped`;
+            deliverySummary = await processAlertDelivery(accountId);
           } catch (deliveryErr) {
-            const msg = deliveryErr instanceof Error ? deliveryErr.message : String(deliveryErr);
             console.error("Inline alert delivery after unified scanner failed:", deliveryErr);
-            bodyText += `\n\nAlert delivery failed: ${msg}`;
           }
+        }
+        const durationSeconds = (Date.now() - startTime) / 1000;
+        const report = formatUnifiedOptionsScannerReport(result, deliverySummary, durationSeconds);
+        bodyText = report.bodyText;
+        if (report.errorAttachment) {
+          slackAttachmentsForPost = [{ color: "danger", text: report.errorAttachment }];
         }
       } catch (e) {
         console.error("Failed to run Unified Options Scanner:", e);
@@ -768,26 +759,38 @@ export async function executeJob(jobId: string): Promise<{
     const slackConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "slack");
     const twitterConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "twitter");
 
-    const postsToSend = watchlistPosts && watchlistPosts.length > 0
-      ? watchlistPosts
-      : [{ title, bodyText, xBodyText: xBodyText ?? undefined }];
+    type PostItem = { title: string; bodyText: string; xBodyText?: string; slackAttachments?: Array<{ color: string; text: string }> };
+    const postsToSend: PostItem[] =
+      watchlistPosts && watchlistPosts.length > 0
+        ? watchlistPosts
+        : [{ title, bodyText, xBodyText: xBodyText ?? undefined, ...(slackAttachmentsForPost && { slackAttachments: slackAttachmentsForPost }) }];
 
     if (job.channels.includes("slack")) {
       if (!slackConfig?.target) {
         const err = "Slack not configured. Go to Automation → Settings → Alert Settings and add a Slack webhook URL.";
-        await setJobLastRunError(db, jobId, err);
-        return { success: false, error: err };
-      }
+        failedChannels.push({ channel: "Slack", error: err });
+      } else {
       try {
         for (const p of postsToSend) {
           const slackText =
             handlerKey === "watchlistreport"
               ? p.bodyText
               : `*${p.title}*\n${p.bodyText}${reportLink ? `\n\nView: ${reportLink}` : ""}`;
+          const slackPayload =
+            p.slackAttachments?.length
+              ? {
+                  text: slackText,
+                  attachments: p.slackAttachments.map((a) => ({
+                    color: a.color,
+                    text: a.text,
+                    mrkdwn_in: ["text"] as const,
+                  })),
+                }
+              : { text: slackText };
           const slackRes = await fetch(slackConfig.target, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: slackText }),
+            body: JSON.stringify(slackPayload),
           });
           if (!slackRes.ok) {
             const errBody = await slackRes.text();
@@ -800,8 +803,8 @@ export async function executeJob(jobId: string): Promise<{
       } catch (e) {
         const msg = toErrorMessage(e);
         console.error("Failed to post report to Slack:", e);
-        await setJobLastRunError(db, jobId, `Slack delivery failed: ${msg}`);
-        return { success: false, error: `Slack delivery failed: ${msg}` };
+        failedChannels.push({ channel: "Slack", error: msg });
+      }
       }
     }
 
@@ -848,8 +851,9 @@ export async function executeJob(jobId: string): Promise<{
         },
       }
     );
+    const hasOutput = Boolean(bodyText && bodyText.trim().length > 0);
     return {
-      success: deliveredChannels.length > 0,
+      success: deliveredChannels.length > 0 || hasOutput,
       deliveredChannels,
       failedChannels: failedChannels.length ? failedChannels : undefined,
       summary: bodyText || undefined,

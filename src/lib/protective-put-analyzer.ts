@@ -279,6 +279,27 @@ export async function getProtectivePutPositions(
   return { pairs, opportunities };
 }
 
+type AccountWithPositions = { _id: ObjectId; balance?: number; positions?: Position[] };
+
+/** Total cash across scanned account(s): balance + cash positions. */
+export async function getTotalCash(accountId?: string): Promise<number> {
+  const db = await getDb();
+  const query = accountId ? { _id: new ObjectId(accountId) } : {};
+  const accounts = await db
+    .collection<AccountWithPositions>("accounts")
+    .find(query)
+    .toArray();
+  let total = 0;
+  for (const acc of accounts) {
+    total += acc.balance ?? 0;
+    const positions = (acc.positions ?? []) as Position[];
+    for (const p of positions) {
+      if (p.type === "cash" && p.amount != null) total += p.amount;
+    }
+  }
+  return total;
+}
+
 /** Main analysis: evaluate pairs and opportunities, return recommendations. */
 export async function analyzeProtectivePuts(
   accountId?: string,
@@ -286,6 +307,7 @@ export async function analyzeProtectivePuts(
   optionChainCache?: Map<string, OptionChainDetailedData>
 ): Promise<ProtectivePutRecommendation[]> {
   const { pairs, opportunities } = await getProtectivePutPositions(accountId, config);
+  const totalCash = await getTotalCash(accountId);
   const recommendations: ProtectivePutRecommendation[] = [];
 
   for (const pair of pairs) {
@@ -399,13 +421,18 @@ export async function analyzeProtectivePuts(
       const volPercent = avgIV > 0 ? Math.min(100, avgIV * 100) : 0;
 
       if (volPercent >= 35) {
+        const block100Cost = Math.round(stockPrice * 100);
+        const cashNote =
+          totalCash > 0
+            ? ` 100-share block ~$${block100Cost.toLocaleString()}; cash $${Math.round(totalCash).toLocaleString()}.`
+            : ` 100-share block ~$${block100Cost.toLocaleString()}.`;
         recommendations.push({
           accountId: opp.accountId,
           symbol: opp.symbol,
           stockPositionId: opp.stockPositionId,
           recommendation: "BUY_NEW_PUT",
           confidence: "MEDIUM",
-          reason: `${opp.stockShares} shares, no protective put. Volatility ~${volPercent.toFixed(0)}% — consider downside protection.`,
+          reason: `${opp.stockShares} shares, no protective put.${cashNote} Volatility ~${volPercent.toFixed(0)}% — consider downside protection.`,
           metrics: {
             stockPrice,
             putBid: 0,
@@ -422,6 +449,67 @@ export async function analyzeProtectivePuts(
       }
     } catch (err) {
       console.error(`ProtectivePutAnalyzer: error for opportunity ${opp.symbol}:`, err);
+    }
+  }
+
+  const opportunitySymbols = new Set(opportunities.map((o) => o.symbol.toUpperCase()));
+  const cfg = config as CspAnalysisConfig | undefined;
+  if (cfg?.includeWatchlist !== false && totalCash > 0) {
+    const db = await getDb();
+    const watchlistItems = (await db
+      .collection("watchlist")
+      .find({ $or: [{ type: "stock" }, { type: "long-stock" }] })
+      .toArray()) as Array<{ symbol?: string; underlyingSymbol?: string }>;
+    const watchlistSymbols = [
+      ...new Set(
+        watchlistItems
+          .map((item) => (item.symbol ?? item.underlyingSymbol ?? "").toUpperCase())
+          .filter(Boolean)
+      ),
+    ].filter((s) => !opportunitySymbols.has(s));
+
+    for (const symbol of watchlistSymbols) {
+      try {
+        const chain =
+          optionChainCache?.get(symbol) ?? (await getOptionChainDetailed(symbol));
+        if (!chain) continue;
+
+        const stockPrice = chain.stock.price;
+        const block100Cost = stockPrice * 100;
+        if (block100Cost > totalCash) continue;
+
+        const avgIV =
+          chain.puts.filter((p) => p.impliedVolatility != null).length > 0
+            ? chain.puts
+                .filter((p) => p.impliedVolatility != null)
+                .reduce((s, p) => s + (p.impliedVolatility ?? 0), 0) /
+              chain.puts.filter((p) => p.impliedVolatility != null).length
+            : 0;
+        const volPercent = avgIV > 0 ? Math.min(100, avgIV * 100) : 0;
+        if (volPercent < 35) continue;
+
+        recommendations.push({
+          accountId: accountId ?? "portfolio",
+          symbol,
+          recommendation: "BUY_NEW_PUT",
+          confidence: "MEDIUM",
+          reason: `Watchlist: 100-share block ~$${Math.round(block100Cost).toLocaleString()}; fits your cash $${Math.round(totalCash).toLocaleString()}. Volatility ~${volPercent.toFixed(0)}% — consider downside protection.`,
+          metrics: {
+            stockPrice,
+            putBid: 0,
+            putAsk: 0,
+            dte: 0,
+            netProtectionCost: 0,
+            effectiveFloor: 0,
+            stockUnrealizedPl: 0,
+            stockUnrealizedPlPercent: 0,
+            protectionCostPercent: 0,
+          },
+          createdAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error(`ProtectivePutAnalyzer: error for watchlist ${symbol}:`, err);
+      }
     }
   }
 

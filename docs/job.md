@@ -16,7 +16,7 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 | OptionScanner | Option Scanner | ✓ | ✗ | Yes |
 | coveredCallScanner | Covered Call Scanner | ✓ | ✗ | Yes |
 | protectivePutScanner | Protective Put Scanner | ✓ | ✗ | Yes |
-| unifiedOptionsScanner | Unified Options Scanner | ✓ | ✗ | Yes |
+| unifiedOptionsScanner | Unified Options Scanner | ✓ | ✓ | Yes |
 | deliverAlerts | Deliver Alerts | ✓ | ✓ | No |
 
 ---
@@ -155,7 +155,7 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 
 **Purpose:** Runs OptionScanner, CoveredCallScanner, ProtectivePutScanner, and straddle/strangle analysis in one job. One daily job instead of four.
 
-**Scope:** Account-level only.
+**Scope:** Account or portfolio (supports portfolio when accountId is null).
 
 **Configuration (optional nested overrides):**
 
@@ -164,8 +164,9 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 | optionScanner | object | OptionScanner config (holdDteMin, btcDteMax, etc.) |
 | coveredCall | object | CoveredCallScanner config |
 | protectivePut | object | ProtectivePutScanner config |
+| deliverAlertsAfter | boolean | When true (default), run processAlertDelivery after the scan |
 
-**Output:** Combined summary: total scanned, stored, alerts created; per-scanner breakdown.
+**Output:** Slack message via `formatUnifiedOptionsScannerReport()` (see `src/lib/slack-templates.ts`): Daily Options Scanner Alert with totals, breakdown by strategy, key recommendations, **run duration (seconds)**, and alerts delivery stats. Scanner errors are shown **bold** in the main body and in a **red** Slack attachment (color `danger`) when present.
 
 ---
 

@@ -38,10 +38,54 @@ export type UnifiedOptionsScannerResult = {
   totalAlertsCreated: number;
   /** Per-scanner errors; run can still be partially successful. */
   errors: ScannerError[];
+  /** Concise per-holding recommendations for UI/report (options: hold/close, stocks: CC, cash: CSP). */
+  recommendationSummary?: string;
 };
 
 function toMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+function truncate(s: string | undefined, maxLen: number): string {
+  const t = s ?? "";
+  if (t.length <= maxLen) return t;
+  return t.slice(0, maxLen - 1).trim() + "…";
+}
+
+/** Build a concise recommendation summary from scanner results (for UI/report). */
+function buildRecommendationSummary(
+  optResult: { recs: unknown[]; error?: unknown },
+  ccResult: { recs: unknown[]; error?: unknown },
+  ppResult: { recs: unknown[]; error?: unknown },
+  ssResult: { recs: unknown[]; error?: unknown }
+): string {
+  const lines: string[] = [];
+
+  if (!optResult.error && Array.isArray(optResult.recs) && optResult.recs.length > 0) {
+    lines.push("Options (hold / close):");
+    for (const r of optResult.recs as Array<{ symbol: string; strike: number; optionType: string; recommendation: string; reason: string }>) {
+      lines.push(`  ${r.symbol} $${r.strike} ${r.optionType?.toUpperCase() ?? "?"} — ${r.recommendation} — ${truncate(r.reason, 70)}`);
+    }
+  }
+  if (!ccResult.error && Array.isArray(ccResult.recs) && ccResult.recs.length > 0) {
+    lines.push("Covered calls (hold / BTC / sell new / roll):");
+    for (const r of ccResult.recs as Array<{ symbol: string; recommendation: string; reason: string }>) {
+      lines.push(`  ${r.symbol} — ${r.recommendation} — ${truncate(r.reason, 70)}`);
+    }
+  }
+  if (!ppResult.error && Array.isArray(ppResult.recs) && ppResult.recs.length > 0) {
+    lines.push("Protective puts (hold / STC / roll / buy new):");
+    for (const r of ppResult.recs as Array<{ symbol: string; recommendation: string; reason: string }>) {
+      lines.push(`  ${r.symbol} — ${r.recommendation} — ${truncate(r.reason, 70)}`);
+    }
+  }
+  if (!ssResult.error && Array.isArray(ssResult.recs) && ssResult.recs.length > 0) {
+    lines.push("Straddle/Strangle (hold / STC / roll / add):");
+    for (const r of ssResult.recs as Array<{ symbol: string; recommendation: string; reason: string }>) {
+      lines.push(`  ${r.symbol} — ${r.recommendation} — ${truncate(r.reason, 70)}`);
+    }
+  }
+  return lines.length === 0 ? "" : lines.join("\n");
 }
 
 /** Collect unique symbols that need option-chain data (covered-call + protective-put opportunities). */
@@ -62,7 +106,7 @@ async function getSymbolsForOptionChainCache(
   return [...symbols];
 }
 
-/** Pre-fetch option chains for symbols in parallel; return Map<symbol, chain>. */
+/** Pre-fetch option chains for symbols in parallel; return Map<symbol, chain>. One symbol failure does not abort others. */
 async function fetchOptionChainCache(
   symbols: string[]
 ): Promise<Map<string, OptionChainDetailedData>> {
@@ -70,8 +114,13 @@ async function fetchOptionChainCache(
   if (symbols.length === 0) return map;
   const results = await Promise.all(
     symbols.map(async (s) => {
-      const chain = await getOptionChainDetailed(s);
-      return { symbol: s, chain };
+      try {
+        const chain = await getOptionChainDetailed(s);
+        return { symbol: s, chain, error: null };
+      } catch (e) {
+        console.warn(`[unified-options-scanner] option chain for ${s}:`, e instanceof Error ? e.message : e);
+        return { symbol: s, chain: null, error: e };
+      }
     })
   );
   for (const { symbol, chain } of results) {
@@ -247,6 +296,8 @@ export async function runUnifiedOptionsScanner(
     res.coveredCallScanner.alertsCreated +
     res.protectivePutScanner.alertsCreated +
     res.straddleStrangleScanner.alertsCreated;
+
+  res.recommendationSummary = buildRecommendationSummary(optResult, ccResult, ppResult, ssResult);
 
   return res;
 }

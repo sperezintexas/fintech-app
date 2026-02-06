@@ -34,12 +34,13 @@ export function AppHeader() {
                 className="p-2 -ml-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                 aria-label="Open menu"
                 aria-expanded={sidebarOpen}
+                title="Menu"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
-              <Link href="/" className="flex items-center gap-2 sm:gap-3">
+              <Link href="/" className="flex items-center gap-2 sm:gap-3" title="Home">
                 <img
                   src="/icon.svg"
                   alt="myInvestments"
@@ -56,9 +57,10 @@ export function AppHeader() {
             <div className="flex items-center gap-1">
               <Link
                 href="/alerts"
-              className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              aria-label="Alerts"
-            >
+                className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Alerts"
+                title="Alerts"
+              >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
@@ -74,9 +76,18 @@ export function AppHeader() {
               )}
               </Link>
               <Link
+                href="/watchlist"
+                className={`p-2 rounded-lg transition-colors ${(pathname ?? "").startsWith("/watchlist") ? "bg-blue-50 ring-2 ring-blue-500/30" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
+                aria-label="Watchlist"
+                title="Watchlist"
+              >
+                <img src="/watchlist.jpeg" alt="" width={20} height={20} className="w-5 h-5 rounded-full object-cover" />
+              </Link>
+              <Link
                 href="/chat"
                 className={`p-2 rounded-lg transition-colors ${(pathname ?? "").startsWith("/chat") ? "bg-blue-50 ring-2 ring-blue-500/30" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
                 aria-label="Smart Grok"
+                title="Smart Grok"
               >
                 <img src="/apple-icon.svg" alt="" width={20} height={20} className="w-5 h-5" />
               </Link>
@@ -84,14 +95,16 @@ export function AppHeader() {
                 href="/xstrategybuilder"
                 className={`p-2 rounded-lg transition-colors ${(pathname ?? "").startsWith("/xstrategybuilder") ? "bg-blue-50 ring-2 ring-blue-500/30" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
                 aria-label="xStrategyBuilder"
+                title="xStrategyBuilder"
               >
                 <img src="/xstrategybuilder-icon.svg" alt="" width={20} height={20} className="w-5 h-5" />
               </Link>
               <Link
                 href="/automation"
-              className={`p-2 rounded-lg transition-colors ${(pathname ?? "").startsWith("/automation") ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
-              aria-label="Setup"
-            >
+                className={`p-2 rounded-lg transition-colors ${(pathname ?? "").startsWith("/automation") ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
+                aria-label="Setup"
+                title="Setup"
+              >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
@@ -128,6 +141,7 @@ function UserMenu() {
         className="w-9 h-9 rounded-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-gray-700 to-gray-900 text-white text-sm font-medium hover:ring-2 hover:ring-blue-500/50 transition-colors shrink-0"
         aria-label="User menu"
         aria-expanded={open}
+        title="User menu"
       >
         {image ? (
           <img

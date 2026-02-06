@@ -47,7 +47,7 @@ The **Protective Put Analyzer** is a rule-based service that identifies protecti
 
 **Position matching:** Stock + put are linked by same `accountId` and underlying symbol. Option ticker format: OCC (e.g. `TSLA250117P250`) or underlying symbol; `getUnderlyingFromTicker()` extracts the symbol.
 
-**Note:** Watchlist is not yet used for protective puts; config has `watchlistId` and `includeWatchlist` for future use. Current scope is account holdings only (pairs + opportunities).
+**Cash & 100-share blocks:** Total cash is computed across scanned account(s) (`account.balance` + `positions` with `type === "cash"`). BUY_NEW_PUT recommendations include in the reason: **100-share block** cost (~100 × stock price) and **total cash** so the user can see affordability. When `includeWatchlist` is true, watchlist stock symbols are evaluated; only symbols where 100 × price ≤ total cash are suggested (targeting affordable 100-share blocks).
 
 ---
 
@@ -62,7 +62,7 @@ Long stock (≥100 shares by default) + long put on the same symbol in the same 
 
 ### 2. Stock Without Put (`StockWithoutPut`)
 
-Long stock (≥100 shares) with **no** matching long put. If average put IV is high enough (e.g. ≥35%), recommendation: `BUY_NEW_PUT` (opportunity to add downside protection).
+Long stock (≥100 shares) with **no** matching long put. If average put IV is high enough (e.g. ≥35%), recommendation: `BUY_NEW_PUT` (opportunity to add downside protection). The reason text includes 100-share block cost and total cash. When `includeWatchlist` is true, watchlist stocks (type `stock` or `long-stock`) are also considered; only symbols where 100 × price ≤ total cash are suggested.
 
 ---
 

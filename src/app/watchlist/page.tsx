@@ -56,6 +56,7 @@ export default function WatchlistPage() {
   const [itemsLoading, setItemsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | undefined>();
+  const [removeHeldLoading, setRemoveHeldLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showWatchlistForm, setShowWatchlistForm] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -231,6 +232,28 @@ export default function WatchlistPage() {
       setError(err instanceof Error ? err.message : "Failed to add item");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleRemoveHeld = async () => {
+    if (!confirm("Remove all watchlist items that are already in your account holdings?")) return;
+    setRemoveHeldLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/watchlist/remove-held", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to remove items");
+      await fetchItems();
+      if (data.removed > 0) {
+        setError(null);
+        alert(data.message ?? `Removed ${data.removed} item(s) already in your holdings.`);
+      } else {
+        alert(data.message ?? "No watchlist items match your holdings.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove items");
+    } finally {
+      setRemoveHeldLoading(false);
     }
   };
 
@@ -477,6 +500,22 @@ export default function WatchlistPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
+                        <button
+                          data-testid="watchlist-remove-held-btn"
+                          onClick={handleRemoveHeld}
+                          disabled={removeHeldLoading}
+                          className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                          title="Remove watchlist items that are already in your account holdings"
+                        >
+                          {removeHeldLoading ? "…" : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              Remove in holdings
+                            </>
+                          )}
+                        </button>
                         <button
                           data-testid="watchlist-export-btn"
                           onClick={handleExportWatchlist}
