@@ -151,13 +151,13 @@ jobs:
             MONGODB_URI=mongodb://localhost:27017
             MONGODB_DB=myinvestments
 
-  # AWS: build Docker image, push to ECR, deploy to Elastic Beanstalk (main only, when AWS secrets set).
-  # Secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY. Vars: AWS_REGION, EB_ENV_NAME (optional).
+  # AWS: build Docker image, push to ECR, deploy to Elastic Beanstalk (main only, when enabled).
+  # Set variable ENABLE_AWS_DEPLOY=true and secrets AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY to run.
   aws-deploy:
     name: Build & Deploy to AWS (EB)
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test, build, docker]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.AWS_ACCESS_KEY_ID != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_AWS_DEPLOY == 'true'
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
       APP_NAME: myinvestments
