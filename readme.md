@@ -48,7 +48,7 @@ src/
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+
+- Node.js 22+ (yahoo-finance2 requires Node 22)
 - MongoDB (local or Atlas)
 
 ### Installation
@@ -57,11 +57,17 @@ npm install
 ```
 
 ### Environment Variables
-Create `.env.local`:
+Create `.env.local` (see `.env.example` for full list). Minimum for local dev:
 ```
 MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB=myinvestments
 ```
+
+**Vercel: callback and health check**
+- **Callback (Sign in with X):** Set `NEXTAUTH_URL` to your production URL (e.g. `https://your-app.vercel.app`). In X Developer Portal, set callback URL to `https://your-app.vercel.app/api/auth/callback/twitter`. Also set `AUTH_SECRET`, `X_CLIENT_ID`, `X_CLIENT_SECRET`.
+- **Health check:** `/api/health` and `/health` are public. For the health endpoint to return 200, set `MONGODB_URI` (the route pings MongoDB). No separate “health” env var is required.
+
+**Slack build status (CI):** Build pass/fail is posted to **Slack**, not X. Use GitHub Actions secret `SLACK_WEBHOOK_URL` (see “CI build notifications (Slack)” below). X_CLIENT_* are only for app login (Sign in with X), not for CI notifications.
 
 ### Development
 ```bash
