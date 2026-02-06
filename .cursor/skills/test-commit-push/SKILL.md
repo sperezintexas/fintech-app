@@ -27,18 +27,17 @@ If any test, typecheck, or lint would fail:
 
 ## 3. Commit & Push (Only After Validation Passes)
 
-### Conventional Commit Message
+### Conventional Commit Message (One Line)
 
 - Angular-style: `feat:`, `fix:`, `refactor:`, `chore:`, `test:`, `docs:`, etc.
-- First line: max 72 characters
-- Body: explain what & why (especially for refactor or fix)
-- If change touches multiple areas, use a more generic type or suggest multiple commits
+- **One line only**, max 72 characters: `type(scope): short description`
+- No body; if change touches multiple areas, use a more generic type or suggest multiple commits
 
 ### Git Commands (Exact Order)
 
 ```bash
 git add .
-git commit -m "type(scope): description"
+git commit -m "type(scope): short description"
 git push origin HEAD
 ```
 
@@ -47,7 +46,7 @@ For a new branch: `git push --set-upstream origin <branch>` instead of `git push
 ## 4. Output Format
 
 1. **Code fixes** (as diffs) — if any
-2. **Proposed commit message** — full message with body if needed
+2. **Proposed commit message** — one line (max 72 chars)
 3. **Exact terminal commands** — in the order above
 4. **(Optional)** One-sentence explanation for the commit message
 

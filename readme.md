@@ -37,8 +37,9 @@ src/
 ```
 
 ## Documentation
-- **docs/** — Job types (`job.md`), Smart Grok Chat (`chat.md`), scanners (covered call, protective put, unified options), Cursor rules (`cursorrules.md`)
-- **.cursor/rules/** — Page structure, API routes, alerts, strategy builders, Grok config
+- **docs/** — Job types (`job.md`), Smart Grok Chat (`chat.md`), scanners (covered call, protective put, unified options), CI pipeline (`ci.md`), Cursor rules (`cursorrules.md`)
+- **.cursor/rules/** — Page structure, API routes, alerts, strategy builders, Grok config, GitHub CI (`github-ci.mdc` for debugging Actions failures)
+- **.cursor/skills/** — `ci-failure` (diagnose GitHub Actions failures using workflow + docs/ci.md), test-lint, test-commit-push, docker-setup, fix-current-file
 
 ## Architecture
 - **Frontend**: Next.js App Router, React Server + Client Components

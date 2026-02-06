@@ -89,23 +89,33 @@ jobs:
         env:
           MONGODB_URI: mongodb://localhost:27017
           MONGODB_DB: myinvestments
+          NODE_OPTIONS: --max-old-space-size=4096
 
       - name: List build output
+        id: list
         run: |
           if [ -d .next ]; then
             echo "Build output: .next exists"
             ls -la .next
+            echo "has_next=true" >> $GITHUB_OUTPUT
           else
-            echo "::warning::.next not found after build (build may have failed or output is elsewhere)"
+            echo "::error::.next not found after build. Check the Build application step for errors (e.g. OOM, Next.js failure)."
+            echo "has_next=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Fail if build did not produce .next
+        if: steps.list.outputs.has_next != 'true'
+        run: |
+          echo "Build did not produce .next. Deployment requires a successful Next.js build."
+          exit 1
+
       - name: Upload build artifacts
+        if: steps.list.outputs.has_next == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: build
           path: .next
           retention-days: 7
-          if-no-files-found: warn
 
   docker:
     name: Docker Build

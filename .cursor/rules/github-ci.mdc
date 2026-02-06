@@ -1,0 +1,47 @@
+---
+description: Interpret GitHub Actions CI failures and suggest fixes for this repo
+globs: .github/workflows/*.yml
+alwaysApply: false
+---
+
+# GitHub Actions CI — Debugging Remote Job Failures
+
+When the user reports a **GitHub Actions / CI / remote job failure** (e.g. paste from Actions tab, "build failed", "upload artifact failed"):
+
+## 1. Use This Repo’s CI Context
+
+- **Workflows:** `.github/workflows/ci.yml`, `.github/workflows/security.yml`
+- **CI workflow jobs (order):** `lint` → `typecheck` → `test` → `build` → `docker` → `notify-slack`
+- **Node:** `NODE_VERSION: "22"` (env in ci.yml)
+- **Build:** `npm run build` (Next.js with `output: "standalone"`); produces `.next`. Build step uses `NODE_OPTIONS: --max-old-space-size=4096`.
+- **Artifacts:** Upload step runs only when `.next` exists (`steps.list.outputs.has_next == 'true'`). If "No files were found with the provided path: .next", the **Build** job either didn’t produce `.next` (check "Build application" step logs) or the workflow is an older version without the conditional upload.
+
+## 2. Map Failure to Job and Step
+
+| User says / Log shows | Likely job/step | What to check |
+|-----------------------|-----------------|----------------|
+| Lint / ESLint error   | `lint` → "Run ESLint" | File/line in log; fix lint in that file |
+| Type error / tsc      | `typecheck` → "Run TypeScript compiler" | Type error message; fix types |
+| Test failure / vitest | `test` → "Run tests" | Failing test name and stack; fix test or code |
+| Build / next build    | `build` → "Build application" | OOM, Next.js error, or missing deps; see docs/ci.md |
+| .next not found / upload artifact | `build` → "List build output" or "Upload build artifacts" | Build didn’t create `.next`; check "Build application" step for real error |
+| Docker build failed  | `docker` → "Build Docker image" | Dockerfile, build-args, or base image |
+| Notify Slack / health | `notify-slack` | SLACK_WEBHOOK_URL secret; APP_URL/health; Vercel vars |
+
+## 3. Suggest Fixes
+
+- **Lint/typecheck/test:** Point to the failing file and line; suggest code or config fix.
+- **Build (no .next):** Suggest checking "Build application" step logs for OOM or Next.js errors; confirm `NODE_OPTIONS=--max-old-space-size=4096` is set; confirm `next.config` has `output: "standalone"` and no custom `distDir` that would change path.
+- **Upload artifact "No files were found":** Explain that the build step didn’t create `.next` (or workflow is old). Suggest updating workflow to match current ci.yml (conditional upload + "Fail if build did not produce .next" + List build output).
+- **Docker:** Check Dockerfile and build-args (MONGODB_URI, MONGODB_DB).
+- **Slack/health:** Check repo Secrets (SLACK_WEBHOOK_URL, VERCEL_TOKEN) and Variables (APP_URL, VERCEL_PROJECT_ID); see readme "CI build notifications (Slack)" and "Vercel: callback and health check".
+
+## 4. When User Pastes Logs
+
+- Parse the **job name** and **step name** from the failure (e.g. "Build", "Build application", "Upload build artifacts").
+- Cross-reference with `.github/workflows/ci.yml` to identify the exact step and suggest edits to the workflow or app code as above.
+- If the error is in a **dependency or Node version**, consider `NODE_VERSION`, `npm ci --legacy-peer-deps`, and Node 22 compatibility (e.g. yahoo-finance2).
+
+## 5. Optional Doc
+
+- **docs/ci.md** — Pipeline summary and common failure modes; user can @-mention it for context.
