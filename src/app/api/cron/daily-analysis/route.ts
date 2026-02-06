@@ -6,6 +6,7 @@ import { analyzeWatchlistItem, MarketData } from "@/lib/watchlist-rules";
 import { getMultipleTickerOHLC, getMultipleTickerPrices } from "@/lib/yahoo";
 import { computeRiskMetricsWithPositions } from "@/lib/risk-management";
 import { analyzeRiskWithGrok } from "@/lib/xai-grok";
+import { computeAndStoreGoalProgress } from "@/lib/goal-progress";
 
 // Removed - using Yahoo Finance
 // Removed - using Yahoo Finance
@@ -286,6 +287,11 @@ export async function GET(request: NextRequest) {
             await db.collection("alerts").insertOne(riskAlert);
             riskAlertsCreated++;
           }
+        }
+        try {
+          await computeAndStoreGoalProgress(db, metrics.totalValue, analysis?.goalProbabilityPercent);
+        } catch (goalErr) {
+          console.warn("Goal progress store failed:", goalErr);
         }
       }
     } catch (riskErr) {

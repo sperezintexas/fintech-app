@@ -9,7 +9,7 @@ Manages investment portfolios, accounts, and positions (stocks, options, cash). 
 - **Market Data**: Yahoo Finance API
 
 ## Features
-- **Dashboard** — Market snapshot, portfolio summary
+- **Dashboard** — Market snapshot, portfolio summary; **$1M by 2030** probability (updated when risk scanner runs, see `docs/goal-progress.md`)
 - **Accounts** — My Portfolios (account list) and My Holdings (aggregate positions) tabs; risk level, strategy, positions
 - **Holdings / Positions** — Stocks, options, cash; columns: Symbol·Desc, Symbols (qty), Cost basis, Market value, Day change, Unrealized P/L; real-time values via Yahoo
 - **xStrategyBuilder** — Options strategy wizard (Covered Call, CSP, etc.)
@@ -37,7 +37,7 @@ src/
 ```
 
 ## Documentation
-- **docs/** — Job types (`job.md`), Smart Grok Chat (`chat.md`), scanners (covered call, protective put, unified options), CI pipeline (`ci.md`), Cursor rules (`cursorrules.md`)
+- **docs/** — Job types (`job.md`), Smart Grok Chat (`chat.md`), scanners (covered call, protective put, unified options), goal progress (`goal-progress.md`), CI pipeline (`ci.md`), Cursor rules (`cursorrules.md`)
 - **.cursor/rules/** — Page structure, API routes, alerts, strategy builders, Grok config, GitHub CI (`github-ci.mdc` for debugging Actions failures)
 - **.cursor/skills/** — `ci-failure` (diagnose GitHub Actions failures using workflow + docs/ci.md), test-lint, test-commit-push, docker-setup, fix-current-file
 

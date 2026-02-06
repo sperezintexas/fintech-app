@@ -81,6 +81,9 @@ describe("Risk Scanner", () => {
             insertOne: vi.fn().mockResolvedValue({ insertedId: new ObjectId() }),
           };
         }
+        if (name === "goalProgress") {
+          return { updateOne: vi.fn().mockResolvedValue({ modifiedCount: 1 }) };
+        }
         return {};
       }),
     };
@@ -155,6 +158,9 @@ describe("Risk Scanner", () => {
             findOne: vi.fn().mockResolvedValue(null),
             insertOne: vi.fn().mockResolvedValue({ insertedId: new ObjectId() }),
           };
+        }
+        if (name === "goalProgress") {
+          return { updateOne: vi.fn().mockResolvedValue({ modifiedCount: 1 }) };
         }
         return {};
       }),

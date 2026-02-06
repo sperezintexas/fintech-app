@@ -1,0 +1,45 @@
+# Scheduled workflow: calls your Vercel app's unified-options-scanner cron endpoint
+# at :15 past the hour during market hours (14:15–20:15 UTC ≈ 9:15–3:15 ET) on weekdays.
+#
+# Setup required:
+#   1. GitHub repo → Settings → Secrets and variables → Actions
+#   2. Add secret: CRON_SECRET (same value as CRON_SECRET in Vercel env)
+#   3. Add variable: APP_URL = https://your-app.vercel.app (no trailing slash; same as health check)
+name: Cron – Unified Options Scanner
+
+on:
+  schedule:
+    # Mon–Fri at 14:15, 15:15, 16:15, 17:15, 18:15, 19:15, 20:15 UTC (~9:15–3:15 ET)
+    - cron: "15 14 * * 1-5"
+    - cron: "15 15 * * 1-5"
+    - cron: "15 16 * * 1-5"
+    - cron: "15 17 * * 1-5"
+    - cron: "15 18 * * 1-5"
+    - cron: "15 19 * * 1-5"
+    - cron: "15 20 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  trigger-scanner:
+    name: Trigger unified options scanner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call unified-options-scanner cron
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Set vars.APP_URL and secrets.CRON_SECRET in repo Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          BASE="${APP_URL%/}"
+          URL="${BASE}/api/cron/unified-options-scanner"
+          echo "Calling $URL ..."
+          HTTP=$(curl -sSf -w "%{http_code}" -o /tmp/out -H "Authorization: Bearer $CRON_SECRET" "$URL")
+          echo "HTTP $HTTP"
+          cat /tmp/out
+          if [ "$HTTP" -lt 200 ] || [ "$HTTP" -ge 300 ]; then
+            echo "::error::Cron returned HTTP $HTTP"
+            exit 1
+          fi

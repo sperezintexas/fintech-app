@@ -21,6 +21,8 @@ export type RiskAnalysis = {
   recommendations: string[];
   confidence: number;
   explanation: string;
+  /** Optional: estimated probability (0–100) of reaching $1M by 2030. */
+  goalProbabilityPercent?: number;
 };
 
 export type Strategy = "growth" | "income" | "balanced" | "aggressive";

@@ -10,6 +10,7 @@ import { getDb } from "./mongodb";
 import { getMultipleTickerPrices } from "./yahoo";
 import { computeRiskMetricsWithPositions } from "./risk-management";
 import { analyzeRiskWithGrok } from "./xai-grok";
+import { computeAndStoreGoalProgress } from "./goal-progress";
 import type { Account } from "@/types/portfolio";
 
 export type RiskScannerResult = {
@@ -96,6 +97,12 @@ export async function runRiskScanner(accountId?: string): Promise<RiskScannerRes
       await db.collection("alerts").insertOne(riskAlert);
       alertsCreated = 1;
     }
+  }
+
+  try {
+    await computeAndStoreGoalProgress(db, metrics.totalValue, analysis?.goalProbabilityPercent);
+  } catch (e) {
+    console.warn("[risk-scanner] Failed to store goal progress:", e);
   }
 
   return {

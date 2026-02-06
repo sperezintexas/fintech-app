@@ -536,7 +536,9 @@ Metrics: Total $${m.totalValue.toLocaleString()}, VaR(95%) $${m.vaR95.toLocaleSt
 Top positions:
 ${posSummary || "No positions"}
 
-Output JSON only, no markdown: {"riskLevel":"low"|"medium"|"high","recommendations":["...","..."],"confidence":0.0-1.0,"explanation":"..."}`;
+Also estimate the probability (0-100) of this portfolio reaching $1M by 2030 given current value and risk; output as goalProbabilityPercent.
+
+Output JSON only, no markdown: {"riskLevel":"low"|"medium"|"high","recommendations":["...","..."],"confidence":0.0-1.0,"explanation":"...","goalProbabilityPercent":0-100}`;
 
   const result = await withRetry(async () => {
     const completion = await client!.chat.completions.create({
@@ -554,6 +556,7 @@ Output JSON only, no markdown: {"riskLevel":"low"|"medium"|"high","recommendatio
       recommendations?: string[];
       confidence?: number;
       explanation?: string;
+      goalProbabilityPercent?: number;
     };
 
     const level = parsed.riskLevel?.toLowerCase();
@@ -570,12 +573,17 @@ Output JSON only, no markdown: {"riskLevel":"low"|"medium"|"high","recommendatio
         : 0.5;
     const explanation =
       typeof parsed.explanation === "string" ? parsed.explanation : "";
+    const goalProbabilityPercent =
+      typeof parsed.goalProbabilityPercent === "number"
+        ? Math.max(0, Math.min(100, Math.round(parsed.goalProbabilityPercent)))
+        : undefined;
 
     return {
       riskLevel,
       recommendations,
       confidence,
       explanation,
+      goalProbabilityPercent,
     };
   }, "analyzeRiskWithGrok");
 

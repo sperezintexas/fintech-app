@@ -6,6 +6,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { Footer } from "@/components/Footer";
 import { AppHeader } from "@/components/AppHeader";
 import { DashboardGreeting } from "@/components/DashboardGreeting";
+import { GoalProbabilityCard } from "@/components/GoalProbabilityCard";
 import { MarketConditionsBlock } from "@/components/MarketConditionsBlock";
 
 type Props = { session: Session | null; skipAuth?: boolean };
@@ -53,6 +54,8 @@ export function HomePage({ session, skipAuth }: Props) {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         <DashboardGreeting displayName={displayName} />
+
+        <GoalProbabilityCard />
 
         <div className="mb-4 sm:mb-6 w-full">
           <MarketConditionsBlock />
