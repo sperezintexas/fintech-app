@@ -1,10 +1,10 @@
-# Scheduled workflow: calls your Vercel app's unified-options-scanner cron endpoint
-# at :15 past the hour during market hours (14:15–20:15 UTC ≈ 9:15–3:15 ET) on weekdays.
+# Scheduled workflow: calls your production app's unified-options-scanner cron endpoint
+# (AWS EB or Vercel) at :15 past the hour during market hours (14:15–20:15 UTC ≈ 9:15–3:15 ET) on weekdays.
 #
 # Setup required:
 #   1. GitHub repo → Settings → Secrets and variables → Actions
-#   2. Add secret: CRON_SECRET (same value as CRON_SECRET in Vercel env)
-#   3. Add variable: APP_URL = https://your-app.vercel.app (no trailing slash; same as health check)
+#   2. Add secret: CRON_SECRET (same value as CRON_SECRET in your app env: EB or Vercel)
+#   3. Add variable: APP_URL = your production URL (EB or Vercel, no trailing slash; same as health check)
 name: Cron – Unified Options Scanner
 
 on:

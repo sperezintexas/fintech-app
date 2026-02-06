@@ -237,16 +237,110 @@ jobs:
           deployment_package: deploy.zip
           wait_for_environment_recovery: 120
 
-  # Post build: get Vercel deployment status, verify deployment via app health check (push to main/develop only),
-  # then notify Slack with commit message, commit id, deployment status, health result, and app version.
-  # Secrets: SLACK_WEBHOOK_URL; VERCEL_TOKEN (for deployment status); vars: APP_URL (production URL for health check).
+      - name: Get deployment URL
+        id: url
+        env:
+          APP_URL_VAR: ${{ vars.APP_URL }}
+        run: |
+          if [ -n "$APP_URL_VAR" ]; then
+            echo "url=$APP_URL_VAR" >> $GITHUB_OUTPUT
+          else
+            CNAME=$(aws elasticbeanstalk describe-environments --environment-names ${{ env.EB_ENV_NAME }} --region ${{ env.AWS_REGION }} --query 'Environments[0].CNAME' --output text)
+            echo "url=http://$CNAME" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify AWS deployment (health check)
+        id: health
+        env:
+          APP_URL: ${{ steps.url.outputs.url }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "status=skipped" >> $GITHUB_OUTPUT
+            echo "version=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          case "$APP_URL" in http://*|https://*) ;; *) APP_URL="https://$APP_URL";; esac
+          BASE="${APP_URL%/}"
+          HEALTH_URL="${BASE}/api/health"
+          for i in 1 2 3 4 5 6; do
+            RES=$(curl -sSf -w "\n%{http_code}" --connect-timeout 10 --max-time 15 "$HEALTH_URL" 2>/dev/null || true)
+            CODE=$(echo "$RES" | tail -n 1)
+            BODY=$(echo "$RES" | head -n -1)
+            if [ "$CODE" = "200" ]; then
+              RAW=$(echo "$BODY" | jq -r '.status // "unknown"')
+              case "$(echo "$RAW" | tr '[:upper:]' '[:lower:]')" in
+                ok|degraded|healthy|success) echo "status=ok" >> $GITHUB_OUTPUT; echo "version=$(echo "$BODY" | jq -r '.version // ""')" >> $GITHUB_OUTPUT; exit 0 ;;
+              esac
+            fi
+            [ $i -lt 6 ] && sleep 10
+          done
+          echo "status=error" >> $GITHUB_OUTPUT
+          echo "version=" >> $GITHUB_OUTPUT
+          echo "Health check failed after 6 attempts (10s apart)"
+          exit 1
+
+      - name: Notify Slack (AWS deploy)
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DEPLOY_RESULT: ${{ job.status }}
+          HEALTH_STATUS: ${{ steps.health.outputs.status }}
+          HEALTH_VERSION: ${{ steps.health.outputs.version }}
+          APP_URL: ${{ steps.url.outputs.url }}
+          RUN_URL: ${{ format('https://github.com/{0}/actions/runs/{1}', github.repository, github.run_id) }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set; skipping AWS deploy Slack notification."
+            exit 0
+          fi
+          if [ "$DEPLOY_RESULT" = "success" ]; then
+            EMOJI=":white_check_mark:"
+            COLOR="good"
+            TITLE="AWS EB Deploy: Success"
+          else
+            EMOJI=":x:"
+            COLOR="danger"
+            TITLE="AWS EB Deploy: Failed"
+          fi
+          COMMIT_ONE=$(echo "$COMMIT_MSG" | head -n 1 | tr -d '\n' | sed 's/"/\\"/g')
+          PAYLOAD=$(jq -n \
+            --arg color "$COLOR" \
+            --arg title "$EMOJI $TITLE" \
+            --arg fallback "AWS EB Deploy $DEPLOY_RESULT" \
+            --arg commit "${{ github.sha }}" \
+            --arg msg "${COMMIT_ONE:-n/a}" \
+            --arg health "${HEALTH_STATUS:-n/a}" \
+            --arg version "${HEALTH_VERSION:-n/a}" \
+            --arg url "${APP_URL:-n/a}" \
+            --arg run_url "$RUN_URL" \
+            '{
+              attachments: [{
+                color: $color,
+                title: $title,
+                fallback: $fallback,
+                fields: [
+                  { title: "Commit", value: $commit, short: true },
+                  { title: "Message", value: $msg, short: false },
+                  { title: "Health", value: $health, short: true },
+                  { title: "Version", value: $version, short: true },
+                  { title: "URL", value: $url, short: false },
+                  { title: "Workflow", value: ("<" + $run_url + "|View run>"), short: false }
+                ]
+              }]
+            }')
+          curl -sSf -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$SLACK_WEBHOOK_URL" || true
+
+  # Post build: optional Vercel deployment status; verify deployment via app health check (APP_URL = AWS EB or Vercel).
+  # Notify Slack with commit, deployment status, health result, app version.
+  # Secrets: SLACK_WEBHOOK_URL; optional VERCEL_TOKEN. Vars: APP_URL (health check URL, e.g. EB or Vercel).
   notify-slack:
     name: Notify Slack
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test, build, docker]
     if: always() && !cancelled()
     steps:
-      - name: Get Vercel deployment status
+      - name: Get deployment status (optional Vercel)
         id: vercel
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
         env:
@@ -257,7 +351,7 @@ jobs:
           if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
             echo "state=skipped" >> $GITHUB_OUTPUT
             echo "url=" >> $GITHUB_OUTPUT
-            echo "Vercel token or project id not set; skipping deployment status."
+            echo "Vercel token or project id not set; skipping optional deployment status."
             exit 0
           fi
           QUERY="projectId=$VERCEL_PROJECT_ID"
@@ -268,7 +362,7 @@ jobs:
           echo "state=$STATE" >> $GITHUB_OUTPUT
           echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
 
-      - name: Verify Vercel deployment (health check)
+      - name: Verify deployment (health check)
         id: health
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
         env:
@@ -277,7 +371,7 @@ jobs:
           if [ -z "$APP_URL" ]; then
             echo "status=skipped" >> $GITHUB_OUTPUT
             echo "version=" >> $GITHUB_OUTPUT
-            echo "APP_URL not set and no Vercel deployment url; skipping health check."
+            echo "APP_URL not set; skipping health check (set APP_URL to your EB or Vercel URL)."
             exit 0
           fi
           case "$APP_URL" in http://*|https://*) ;; *) APP_URL="https://$APP_URL";; esac
@@ -305,7 +399,7 @@ jobs:
         run: |
           case "$(echo "${{ steps.health.outputs.status }}" | tr '[:upper:]' '[:lower:]')" in
             ok) exit 0 ;;
-            *) echo "Vercel deployment health check failed: ${{ steps.health.outputs.status }}"; exit 1 ;;
+            *) echo "Deployment health check failed: ${{ steps.health.outputs.status }}"; exit 1 ;;
           esac
 
       - name: Send Slack build notification

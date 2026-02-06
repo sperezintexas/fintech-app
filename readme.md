@@ -64,9 +64,9 @@ MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB=myinvestments
 ```
 
-**Vercel: callback and health check**
-- **Callback (Sign in with X):** Set `NEXTAUTH_URL` to your production URL (e.g. `https://your-app.vercel.app`). In X Developer Portal, set callback URL to `https://your-app.vercel.app/api/auth/callback/twitter`. Also set `AUTH_SECRET`, `X_CLIENT_ID`, `X_CLIENT_SECRET`.
-- **Health check:** `/api/health` and `/health` are public. For the health endpoint to return 200, set `MONGODB_URI` (the route pings MongoDB). No separate “health” env var is required.
+**Production URL (callback and health check)**
+- **Callback (Sign in with X):** Set `NEXTAUTH_URL` to your production URL (e.g. AWS EB: `http://myinvestments-prod.us-east-1.elasticbeanstalk.com` or Vercel: `https://your-app.vercel.app`). In X Developer Portal, set callback URL to `{NEXTAUTH_URL}/api/auth/callback/twitter`. Also set `AUTH_SECRET`, `X_CLIENT_ID`, `X_CLIENT_SECRET`.
+- **Health check:** `/api/health` and `/health` are public. Set `MONGODB_URI` so the route can ping MongoDB. For CI health check, set GitHub variable `APP_URL` to your production URL (EB or Vercel).
 
 **Slack build status (CI):** Build pass/fail is posted to **Slack**, not X. Use GitHub Actions secret `SLACK_WEBHOOK_URL` (see “CI build notifications (Slack)” below). X_CLIENT_* are only for app login (Sign in with X), not for CI notifications.
 
@@ -96,7 +96,7 @@ The watchlist alert system and **Unified Options Scanner** (Option, Covered Call
 
 **Setup:** Go to **Setup → Automation → Scheduler** → "Create recommended jobs" to create Daily Options Scanner, Watchlist Snapshot, Deliver Alerts, etc.
 
-**Deployment:** Agenda requires a persistent process. On **Vercel** (serverless), Agenda does not run—use **Vercel Cron** with `GET /api/cron/unified-options-scanner` (schedule in `vercel.json`: `15 14-20 * * 1-5`). On Docker, Railway, Render, Fly.io, or a VPS use `npm run start` for Agenda.
+**Deployment:** Primary production is **AWS Elastic Beanstalk** (see `docs/aws-setup-guide.md`). Agenda runs natively on EB. Optional **Vercel** (serverless): Agenda does not run—use Vercel Cron or GitHub Actions to call `GET /api/cron/unified-options-scanner`. On Docker, Railway, Render, Fly.io, or a VPS use `npm run start` for Agenda.
 
 **Docker:**
 ```bash

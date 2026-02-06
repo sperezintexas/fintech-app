@@ -1,6 +1,8 @@
-# Vercel deployment debugging
+# Vercel deployment debugging (optional / legacy)
 
-Use this when a deployment fails or the app "still not deploying".
+**Primary production deployment is AWS Elastic Beanstalk** (see `docs/aws-setup-guide.md`). This doc is for optional or legacy Vercel deployments.
+
+Use this when a Vercel deployment fails or the app "still not deploying".
 
 ## 1. Get the actual error
 
