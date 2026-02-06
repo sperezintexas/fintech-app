@@ -56,26 +56,26 @@ Build and maintain a personal investment tracking & automation app focused on ma
    - TSLA bias: Robotaxi, FSD, energy, Optimus growth drivers
    - Always factor IV, DTE, delta, theta decay
    - Include risk disclaimer referencing OCC "Characteristics and Risks of Standardized Options"
-   - provide anlysis using grok xAi api's using keys from env.local
-8x Automation
- - xStrategyBuilder from accounts or watchlist item or position, provide user ability to choose strategy
+   - provide analysis using Grok xAI APIs (keys from env.local)
+- **8. Automation**
+  - xStrategyBuilder: from accounts, watchlist item, or position; user chooses strategy (Covered Call, CSP, etc.)
 
-7. Scheduled Jobs (Agenda.js)
+- **9. Scheduled Jobs (Agenda.js)**
    - daily-analysis: 4:00 PM Mon–Fri → evaluate positions, generate HOLD/CLOSE/BTC
    - cleanup-alerts: Sunday 2:00 AM → prune old alerts
    - earnings-check: pre/post earnings for TSLA/NVDA proxies
 
-8. UI/UX Rules
+- **10. UI/UX Rules**
    - Dashboard: market snapshot + portfolio summary + charts (Recharts)
    - No images in tables/lists; use sparingly for charts/position visuals
    - Forms validated; secure API routes for all DB/market actions
 
-9. Risk & Disclaimer
+- **11. Risk & Disclaimer**
    - Every recommendation UI must include:
      "Options involve substantial risk and are not suitable for all investors. Review the OCC booklet 'Characteristics and Risks of Standardized Options' before trading."
    - Never suggest undefined-risk strategies without clear warnings
 
-10. Development Style
+- **12. Development Style**
     - Prefer composition over inheritance
     - Use Server Components where possible, Client Components only for interactivity
     - Keep API routes lean and protected

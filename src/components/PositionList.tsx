@@ -206,7 +206,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      {/* Desktop Table View - Symbol, Description, Qty, Price, Value, Unit Cost, Cost Basis */}
+      {/* Desktop Table View - Symbol · Desc, Symbols (qty), Cost basis, Market value, Day change, Unrealized P/L */}
       <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-100">
@@ -214,28 +214,17 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
                 Symbol
               </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
-                Description
+              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
+                Symbols
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Qty
+                Cost basis
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Price
-              </th>
-              {positions.some((p) => p.type === "option") && (
-                <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                  Exp
-                </th>
-              )}
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Value
+                Market value
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Unit Cost
-              </th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Cost Basis
+                Day change
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
                 Unrealized P/L
@@ -253,7 +242,6 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
               const isCall = isOption && position.optionType === "call";
               const isPut = isOption && position.optionType === "put";
               const dte = isOption ? calculateDTE(position.expiration) : null;
-              const hasChange = position.dailyChangePercent != null;
               const isPositive = (position.dailyChangePercent ?? 0) >= 0;
               const plPositive = (values.unrealizedPL ?? 0) >= 0;
               const typeBadgeClass = isStock
@@ -264,71 +252,74 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                 ? "bg-amber-100 text-amber-800"
                 : "bg-green-100 text-green-800";
 
+              const dayChangeDollar =
+                position.dailyChange != null
+                  ? position.dailyChange
+                  : position.dailyChangePercent != null && values.marketValue
+                    ? (values.marketValue * position.dailyChangePercent) / 100
+                    : 0;
+              const hasDayChange = dayChangeDollar !== 0 || (position.dailyChangePercent != null && position.dailyChangePercent !== 0);
+
               return (
                 <tr key={position._id} className="hover:bg-gray-50">
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span
-                        className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${typeBadgeClass}`}
-                      >
-                        {values.type}
-                      </span>
-                      {"isExpired" in values && values.isExpired && (
-                        <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700 shrink-0">
-                          Exp
+                  <td className="px-3 py-2 min-w-0">
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${typeBadgeClass}`}
+                        >
+                          {values.type}
                         </span>
-                      )}
-                      <span className="font-semibold text-gray-900 truncate">
-                        {values.symbol}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-gray-600 truncate max-w-[12rem]" title={getDescription(position)}>
-                    {getDescription(position)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
-                    {formatQty(position, values)}
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
-                    {hasChange ? (
-                      <span className="text-gray-900">
-                        {formatCurrency(values.lastPrice)}{" "}
-                        <span className={isPositive ? "text-green-600" : "text-red-600"}>
-                          ({isPositive ? "+" : ""}{formatNumber(position.dailyChangePercent ?? 0, 2)}%)
+                        {"isExpired" in values && values.isExpired && (
+                          <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700 shrink-0">
+                            Exp
+                          </span>
+                        )}
+                        <span className="font-semibold text-gray-900 truncate">
+                          {values.symbol}
                         </span>
+                      </div>
+                      <span className="text-gray-600 text-xs truncate max-w-[14rem]" title={getDescription(position)}>
+                        {getDescription(position)}
                       </span>
-                    ) : (
-                      <span className="text-gray-900">{formatCurrency(values.lastPrice)}</span>
-                    )}
-                  </td>
-                  {positions.some((p) => p.type === "option") && (
-                    <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">
-                      {isOption && position.expiration ? (
-                        <span>
+                      {isOption && position.expiration && (
+                        <span className="text-gray-500 text-xs">
                           {formatExpiration(position.expiration)}
                           {dte !== null && (
                             <span
                               className={`ml-1 ${
-                                dte <= 7 ? "text-red-600 font-medium" : dte <= 30 ? "text-orange-600" : "text-gray-500"
+                                dte <= 7 ? "text-red-600 font-medium" : dte <= 30 ? "text-orange-600" : ""
                               }`}
                             >
                               ({dte}d)
                             </span>
                           )}
                         </span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
                       )}
-                    </td>
-                  )}
-                  <td className="px-3 py-2 text-right font-medium text-gray-900 whitespace-nowrap tabular-nums">
-                    {formatCurrency(values.marketValue)}
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
-                    {formatCurrency(values.avgCost)}
+                    {formatQty(position, values)}
                   </td>
                   <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
                     {formatCurrency(values.totalCost)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium text-gray-900 whitespace-nowrap tabular-nums">
+                    {formatCurrency(values.marketValue)}
+                  </td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
+                    {hasDayChange ? (
+                      <span className={isPositive ? "text-green-600" : "text-red-600"}>
+                        {dayChangeDollar >= 0 ? "+" : ""}{formatCurrency(dayChangeDollar)}
+                        {position.dailyChangePercent != null && (
+                          <span className="ml-0.5 text-xs">
+                            ({isPositive ? "+" : ""}{formatNumber(position.dailyChangePercent, 2)}%)
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex flex-col items-end gap-0.5">

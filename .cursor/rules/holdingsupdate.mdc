@@ -28,15 +28,8 @@ You are improving the **Holdings** view (`/app/holdings/page.tsx` or `/app/posit
   - Handle expired options: mark as expired, use intrinsic value or 0 if out-of-money
 
 - **Display Requirements**
-  - Table columns (minimum):
-    - Account name / ID
-    - Symbol / Description
-    - Type (Stock / Call / Put / Cash)
-    - Quantity / Contracts
-    - Avg Cost
-    - Current Price
-    - Market Value
-    - Unrealized P/L ($ and %)
+  - Table columns (holdings page): Symbol (combined symbol + description; for options include expiration/DTE), Symbols (qty: shares/contracts), Cost basis, Market value, Day change ($ and %), Unrealized P/L ($ and %). Account shown via account selector (holdings) or in My Holdings tab (accounts).
+  - Type (Stock / Call / Put / Cash) shown as badge in Symbol column.
   - Group by account (accordion or tabs) or show flat list with account column
   - Show total portfolio value at top
   - Loading state + error state (Suspense + error.tsx recommended)

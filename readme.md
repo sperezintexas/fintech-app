@@ -10,8 +10,8 @@ Manages investment portfolios, accounts, and positions (stocks, options, cash). 
 
 ## Features
 - **Dashboard** — Market snapshot, portfolio summary
-- **Accounts** — Manage accounts with risk level, strategy, positions
-- **Holdings / Positions** — Stocks, options, cash; real-time values via Yahoo
+- **Accounts** — My Portfolios (account list) and My Holdings (aggregate positions) tabs; risk level, strategy, positions
+- **Holdings / Positions** — Stocks, options, cash; columns: Symbol·Desc, Symbols (qty), Cost basis, Market value, Day change, Unrealized P/L; real-time values via Yahoo
 - **xStrategyBuilder** — Options strategy wizard (Covered Call, CSP, etc.)
 - **Setup (Automation)** — Watchlist, alerts, scheduled jobs, report definitions, push notifications
 - **Reports** — Portfolio summary, SmartX AI
@@ -35,6 +35,10 @@ src/
 └── types/
     └── portfolio.ts
 ```
+
+## Documentation
+- **docs/** — Job types (`job.md`), Smart Grok Chat (`chat.md`), scanners (covered call, protective put, unified options), Cursor rules (`cursorrules.md`)
+- **.cursor/rules/** — Page structure, API routes, alerts, strategy builders, Grok config
 
 ## Architecture
 - **Frontend**: Next.js App Router, React Server + Client Components
@@ -104,4 +108,4 @@ docker compose up -d
 **Alert config:** Delivery (Slack, Push, Twitter), templates, thresholds, quiet hours — in Setup → Alert Settings.
 
 ## Version
-1.0.7
+See `package.json` for current version (e.g. 1.0.22).
