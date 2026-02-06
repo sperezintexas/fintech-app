@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # ---- Base ----
-FROM node:20-alpine AS base
+# Using Node 22 to match package.json engines requirement
+FROM node:22-alpine AS base
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
