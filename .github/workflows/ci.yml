@@ -84,6 +84,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx') }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}-
+
       - name: Build application
         run: npm run build
         env:
@@ -94,6 +102,7 @@ jobs:
       - name: List build output
         id: list
         run: |
+          cd "$GITHUB_WORKSPACE"
           if [ -d .next ]; then
             echo "Build output: .next exists"
             ls -la .next
@@ -114,7 +123,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build
-          path: .next
+          path: ${{ github.workspace }}/.next
+          if-no-files-found: error
           retention-days: 7
 
   docker:
