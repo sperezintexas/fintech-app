@@ -1,8 +1,6 @@
 {
   "crons": [
-    {
-      "path": "/api/cron/daily-analysis",
-      "schedule": "0 21 * * 1-5"
-    }
+    { "path": "/api/cron/unified-options-scanner", "schedule": "15 14-20 * * 1-5" },
+    { "path": "/api/cron/daily-analysis", "schedule": "0 21 * * 1-5" }
   ]
 }

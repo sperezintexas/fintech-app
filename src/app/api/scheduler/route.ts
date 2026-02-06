@@ -36,7 +36,7 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
   const now = new Date().toISOString();
   const recommended: Array<{ name: string; jobType: string; accountId: string | null; scheduleCron: string; config?: Record<string, unknown> }> = [
     { name: "Weekly Portfolio", jobType: "portfoliosummary", accountId: null, scheduleCron: "0 18 * * 0", config: { includeAiInsights: true } },
-    { name: "Daily Options Scanner", jobType: "unifiedOptionsScanner", accountId, scheduleCron: "0 16 * * 1-5" },
+    { name: "Daily Options Scanner", jobType: "unifiedOptionsScanner", accountId, scheduleCron: "15 14-20 * * 1-5" },
     { name: "Watchlist Snapshot", jobType: "watchlistreport", accountId, scheduleCron: "0 9,16 * * 1-5" },
     { name: "Risk Scanner", jobType: "riskScanner", accountId: null, scheduleCron: "0 17 * * 1-5" },
     { name: "Deliver Alerts", jobType: "deliverAlerts", accountId: null, scheduleCron: "30 16 * * 1-5" },

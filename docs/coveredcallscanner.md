@@ -123,7 +123,7 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `callBid`, 
 
 - **Job type:** `coveredCallScanner`
 - **Handler:** `analyzeCoveredCalls(accountId?, config)` → `storeCoveredCallRecommendations(recs, { createAlerts: true })`
-- **Schedule:** `0 16 * * 1-5` (4 PM Mon–Fri)
+- **Schedule:** Same as unified scanner: default `15 14-20 * * 1-5` (weekdays at :15 during market hrs, 9:15–3:15 ET)
 - **Report-types run:** Same logic; results formatted for Slack/X delivery
 
 ### API

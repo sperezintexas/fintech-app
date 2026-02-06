@@ -82,12 +82,14 @@ GitHub Actions CI (lint, typecheck, test, build, Docker) can post pass/fail to S
 2. In GitHub: repo **Settings** → **Secrets and variables** → **Actions** → **New repository secret** → name `SLACK_WEBHOOK_URL`, value = webhook URL.
 3. Push to `main` or `develop` (or open a PR); the **Notify Slack** job runs after the pipeline and posts an attachment with branch, author, commit link, and status (green/red/cancelled). If the secret is not set, the job skips posting.
 
-## Scheduled Alerts
-The watchlist alert system analyzes positions daily and generates HOLD/CLOSE/BTC recommendations. Uses **Agenda.js** (MongoDB-backed) for persistent job scheduling.
+## Scheduled Alerts & Options Scanner
+The watchlist alert system and **Unified Options Scanner** (Option, Covered Call, Protective Put, Straddle/Strangle) generate HOLD/CLOSE/BTC recommendations. Uses **Agenda.js** (MongoDB-backed) for persistent job scheduling on long-running hosts.
 
-**Setup:** Go to **Setup → Scheduled Jobs** → "Setup Default Schedule" to create `daily-analysis` (4 PM Mon–Fri) and `cleanup-alerts` (2 AM Sun).
+**Default schedule (Unified Options Scanner):** Weekdays at :15 during market hours (9:15–3:15 ET), cron `15 14-20 * * 1-5` (UTC), to avoid :00 clashes with other jobs.
 
-**Deployment:** Agenda requires a persistent process. Scheduler will not run on Vercel/serverless—use Docker, Railway, Render, Fly.io, or a VPS with `npm run start`.
+**Setup:** Go to **Setup → Automation → Scheduler** → "Create recommended jobs" to create Daily Options Scanner, Watchlist Snapshot, Deliver Alerts, etc.
+
+**Deployment:** Agenda requires a persistent process. On **Vercel** (serverless), Agenda does not run—use **Vercel Cron** with `GET /api/cron/unified-options-scanner` (schedule in `vercel.json`: `15 14-20 * * 1-5`). On Docker, Railway, Render, Fly.io, or a VPS use `npm run start` for Agenda.
 
 **Docker:**
 ```bash
@@ -102,10 +104,10 @@ docker compose up -d
 | GET | `/api/scheduler` | — |
 | POST | `/api/scheduler` | `{ "action": "setup-defaults" }` |
 | POST | `/api/scheduler` | `{ "action": "run", "jobName": "daily-analysis" }` |
-| POST | `/api/scheduler` | `{ "action": "schedule", "jobName": "daily-analysis", "schedule": "0 16 * * 1-5" }` |
+| POST | `/api/scheduler` | `{ "action": "schedule", "jobName": "daily-analysis", "schedule": "0 16 * * 1-5" }` or `{ "action": "createRecommendedJobs" }` for Unified Options Scanner (`15 14-20 * * 1-5`) |
 | POST | `/api/scheduler` | `{ "action": "cancel", "jobName": "daily-analysis" }` |
 
 **Alert config:** Delivery (Slack, Push, Twitter), templates, thresholds, quiet hours — in Setup → Alert Settings.
 
 ## Version
-See `package.json` for current version (e.g. 1.0.26).
+See `package.json` for current version.

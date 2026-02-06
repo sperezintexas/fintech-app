@@ -237,7 +237,7 @@ Example: Create `coveredCallScanner-aggressive` with `handlerKey: coveredCallSca
 | Job | Type | Schedule (cron) | Purpose |
 |-----|------|-----------------|---------|
 | Weekly Portfolio | portfoliosummary | `0 18 * * 0` (Sun 6 PM) | Multi-account overview; enable "Include AI insights" for SmartXAI sentiment |
-| Daily Options | unifiedOptionsScanner | `0 16 * * 1-5` (Mon–Fri 4 PM) | All option recommendations (Option, Covered Call, Protective Put, straddle/strangle) in one run |
+| Daily Options | unifiedOptionsScanner | `15 14-20 * * 1-5` (weekdays at :15, 9:15–3:15 ET) | All option recommendations in one run; :15 avoids :00 (e.g. 9am) clashes. **On Vercel:** cron route `GET /api/cron/unified-options-scanner` uses this schedule in vercel.json. |
 | Watchlist Snapshot | watchlistreport | `0 9,16 * * 1-5` (9 AM & 4 PM) | Market snapshot + rationale per item; also runs daily analysis and creates alerts |
 | Deliver Alerts | deliverAlerts | `30 16 * * 1-5` (4:30 PM) | **Optional** if using inline delivery (see below). Sends pending alerts to Slack/X. |
 | Purge | cleanup | (existing) | Storage cleanup when nearing limit or on schedule |

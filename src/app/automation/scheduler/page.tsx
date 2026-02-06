@@ -17,7 +17,7 @@ const DEFAULT_SCHEDULE_JOB_NAMES = [
 
 const SCHEDULE_PRESETS: Array<{ label: string; cron: string }> = [
   { label: "Weekly Portfolio (Sun 6 PM)", cron: "0 18 * * 0" },
-  { label: "Daily Options Scanner (Mon–Fri 4 PM)", cron: "0 16 * * 1-5" },
+  { label: "Daily Options Scanner (weekdays :15 market hrs)", cron: "15 14-20 * * 1-5" },
   { label: "Watchlist Snapshot (Mon–Fri 9 AM & 4 PM)", cron: "0 9,16 * * 1-5" },
   { label: "Deliver Alerts (Mon–Fri 4:30 PM)", cron: "30 16 * * 1-5" },
   { label: "Data Cleanup (Daily 3 AM)", cron: "0 3 * * *" },

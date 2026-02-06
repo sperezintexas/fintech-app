@@ -159,8 +159,17 @@ type UnifiedOptionsScannerResult = {
 
 - **Job type:** `unifiedOptionsScanner`
 - **Handler:** `runUnifiedOptionsScanner(accountId?, config?)`
-- **Schedule:** `0 16 * * 1-5` (Mon–Fri 4 PM) — default from `createRecommendedJobs`
+- **Schedule (default):** `15 14-20 * * 1-5` — every weekday at :15 during market hours (9:15–3:15 ET), to avoid :00 (e.g. 9am) clashes with other jobs. Used by `createRecommendedJobs` and Vercel cron.
 - **Run portfolio:** `POST /api/scheduler` with `{ action: "runPortfolio" }` runs unifiedOptionsScanner + watchlistreport + deliverAlerts
+
+### Vercel / serverless: hourly at :15 during market hours (cron route)
+
+On **Vercel** (and any serverless deploy), **Agenda does not run** — there is no long-running Node process, so jobs scheduled in the Automation UI (Agenda) will **not** fire automatically. Use **Vercel Cron** to hit the cron API route:
+
+- **Route:** `GET /api/cron/unified-options-scanner`
+- **Vercel cron (UTC):** In `vercel.json`, the scanner is scheduled at `15 14-20 * * 1-5` (Mon–Fri, at :15 for hours 14–20 UTC ≈ 9:15–3:15 ET).
+- **Auth:** Set `CRON_SECRET` in env; call with `Authorization: Bearer <CRON_SECRET>` or `?secret=<CRON_SECRET>`.
+- **Behavior:** Runs portfolio-level scan (first account or null), merges strategy settings (e.g. `excludeWatchlist`), runs `runUnifiedOptionsScanner`, then `processAlertDelivery`. Returns JSON summary (scanner + delivery stats).
 
 ### Report Types
 
@@ -234,6 +243,7 @@ const result = await runUnifiedOptionsScanner("accountId123", {
 
 | File | Role |
 |------|------|
+| `src/app/api/cron/unified-options-scanner/route.ts` | Vercel Cron route: runs scanner + alert delivery every weekday at :15 during market hours (vercel.json: `15 14-20 * * 1-5`) |
 | `src/lib/unified-options-scanner.ts` | Orchestrator; runs all four scanners |
 | `src/lib/slack-templates.ts` | Slack Block Kit (buildUnifiedOptionsScannerBlocks): header, recommendations, errors, View Dashboard; no delivery/context in Slack |
 | `src/lib/option-scanner.ts` | Option Scanner (calls & puts) |

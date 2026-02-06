@@ -43,4 +43,4 @@ When done:
 - `npm run lint -- --fix` passes `--fix` to ESLint (auto-fixes where possible)
 - `tsc --noEmit` checks types without emitting output
 - Run commands yourself; do not ask the user to run them
-- For covered-call or option-scanner changes, run the relevant test file to validate rules: `npm test -- src/lib/__tests__/covered-call-analyzer.test.ts` or `npm test -- src/lib/__tests__/option-scanner.test.ts`
+- For scanner changes, run the relevant test file: `npm test -- src/lib/__tests__/covered-call-analyzer.test.ts`, `npm test -- src/lib/__tests__/option-scanner.test.ts`, or `npm test -- src/lib/__tests__/unified-options-scanner.test.ts`

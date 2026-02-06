@@ -110,7 +110,7 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `putBid`, `
 
 - **Job type:** `unifiedOptionsScanner` (runs all four scanners including protective put); no standalone `protectivePutScanner` job type in scheduler (protective put runs as part of unified).
 - **Handler:** `analyzeProtectivePuts(accountId?, config?, optionChainCache?)` → `storeProtectivePutRecommendations(recs, { createAlerts: true })`
-- **Schedule:** Same as unified scanner (e.g. `0 16 * * 1-5` Mon–Fri 4 PM)
+- **Schedule:** Same as unified scanner (default `15 14-20 * * 1-5` — weekdays at :15 during market hrs)
 
 ### API
 
