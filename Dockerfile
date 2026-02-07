@@ -1,4 +1,5 @@
-FROM node:22-alpine AS builder
+# App Runner runs linux/amd64 only. Pinning platform avoids exec format error.
+FROM --platform=linux/amd64 node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --legacy-peer-deps
@@ -9,7 +10,7 @@ ENV MONGODB_URI=$MONGODB_URI MONGODB_DB=$MONGODB_DB
 ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npm run build
 
-FROM node:22-alpine
+FROM --platform=linux/amd64 node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/.next/standalone ./

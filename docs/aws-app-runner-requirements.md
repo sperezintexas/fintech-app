@@ -133,7 +133,11 @@ You can create the service with `aws apprunner create-service` (see [AWS docs](h
 - (Optional) `APP_URL` = the **Service URL** from step 3 (e.g. `https://xxxxx.us-east-1.awsapprunner.com`). If unset, CI gets it from `describe-service`.
 - (Optional) `AWS_REGION` (e.g. `us-east-1`; default in workflow is `us-east-1`).
 
-**If you see `exec format error` in App Runner logs:** the image was built for the wrong CPU (e.g. arm64 on a Mac). App Runner runs **linux/amd64**. CI builds with `--platform linux/amd64`. If you build and push from your laptop, use: `docker build --platform linux/amd64 ...`.
+**If you see `exec format error` in App Runner logs:** App Runner only runs **linux/amd64**. That error means the image in ECR was built for another arch (e.g. arm64 on a Mac).
+
+- **Fix 1 (recommended):** Push to **main** so CI runs. The workflow builds with `platforms: linux/amd64` and the Dockerfile uses `FROM --platform=linux/amd64`; it pushes to ECR and starts an App Runner deployment. After that run, the service will pull the new amd64 image.
+- **Fix 2:** If you already pushed from this repo and still see the error, the **current** image in ECR may be an old arm64 one. In ECR → `myinvestments` → delete the `latest` (and any other) tag(s) for the bad image, then push to main again so CI builds and pushes a fresh amd64 image and deploys.
+- **Local build/push:** Always use `docker build --platform linux/amd64 ...` and push that image to ECR.
 
 ---
 

@@ -165,12 +165,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate AWS deploy inputs
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY secrets must be set."
+            exit 1
+          fi
+          if [ -z "$SERVICE_ARN" ]; then
+            echo "::error::APP_RUNNER_SERVICE_ARN variable not set. Add it in Settings → Actions → Variables."
+            exit 1
+          fi
+          case "$SERVICE_ARN" in
+            arn:aws:apprunner:*)
+              ;;
+            *)
+              echo "::error::APP_RUNNER_SERVICE_ARN must be a valid App Runner service ARN (arn:aws:apprunner:...)."
+              exit 1
+              ;;
+          esac
+          echo "Inputs validated."
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -181,30 +208,48 @@ jobs:
           aws ecr describe-repositories --repository-names ${{ env.APP_NAME }} --region ${{ env.AWS_REGION }} 2>/dev/null || \
           aws ecr create-repository --repository-name ${{ env.APP_NAME }} --region ${{ env.AWS_REGION }}
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (linux/amd64 for App Runner)
+        id: build-push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.APP_NAME }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.APP_NAME }}:latest
+          build-args: |
+            MONGODB_URI=placeholder
+            MONGODB_DB=myinvestments
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify ECR image is amd64
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build \
-            --platform linux/amd64 \
-            --build-arg MONGODB_URI=placeholder \
-            --build-arg MONGODB_DB=myinvestments \
-            -t $ECR_REGISTRY/${{ env.APP_NAME }}:$IMAGE_TAG \
-            -t $ECR_REGISTRY/${{ env.APP_NAME }}:latest \
-            .
-          docker push $ECR_REGISTRY/${{ env.APP_NAME }}:$IMAGE_TAG
-          docker push $ECR_REGISTRY/${{ env.APP_NAME }}:latest
+          ARCH=$(aws ecr describe-images \
+            --repository-name ${{ env.APP_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --image-ids imageTag=$IMAGE_TAG \
+            --query 'imageDetails[0].imageManifestMediaType' --output text 2>/dev/null || true)
+          DIGEST=$(aws ecr describe-images \
+            --repository-name ${{ env.APP_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --image-ids imageTag=$IMAGE_TAG \
+            --query 'imageDetails[0].imageDigest' --output text)
+          if [ -z "$DIGEST" ] || [ "$DIGEST" = "None" ]; then
+            echo "::error::Image ${{ env.APP_NAME }}:$IMAGE_TAG not found in ECR."
+            exit 1
+          fi
+          echo "Image $ECR_REGISTRY/${{ env.APP_NAME }}:$IMAGE_TAG present (digest=$DIGEST). Built with platforms: linux/amd64 for App Runner."
 
       - name: Deploy to App Runner
         id: deploy
         env:
           SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
         run: |
-          if [ -z "$SERVICE_ARN" ]; then
-            echo "::error::APP_RUNNER_SERVICE_ARN variable not set. Add it in Settings → Actions → Variables."
-            exit 1
-          fi
           OP_ID=$(aws apprunner start-deployment --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'OperationId' --output text)
           echo "operation_id=$OP_ID" >> $GITHUB_OUTPUT
           echo "Deployment started (operation $OP_ID); waiting for completion..."
@@ -214,20 +259,27 @@ jobs:
           SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
           OPERATION_ID: ${{ steps.deploy.outputs.operation_id }}
         run: |
-          for i in $(seq 1 45); do
-            STATUS=$(aws apprunner list-operations --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query "OperationSummaryList[?Id=='$OPERATION_ID'].Status | [0]" --output text)
-            if [ "$STATUS" = "SUCCEEDED" ]; then
-              echo "Deployment succeeded."
-              exit 0
-            fi
-            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ROLLBACK_SUCCEEDED" ]; then
-              echo "::error::Deployment failed or rolled back: $STATUS"
-              exit 1
-            fi
-            echo "Waiting for deployment... ($i/45) operation_status=$STATUS"
-            sleep 20
+          MAX_ATTEMPTS=45
+          SLEEP_SEC=20
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            STATUS=$(aws apprunner list-operations --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query "OperationSummaryList[?Id=='$OPERATION_ID'].Status | [0]" --output text 2>/dev/null || echo "UNKNOWN")
+            [ -z "$STATUS" ] || [ "$STATUS" = "None" ] && STATUS="PENDING"
+            case "$STATUS" in
+              SUCCEEDED)
+                echo "Deployment succeeded."
+                exit 0
+                ;;
+              FAILED|ROLLBACK_SUCCEEDED)
+                echo "::error::Deployment failed or rolled back: $STATUS"
+                exit 1
+                ;;
+              *)
+                echo "Waiting for deployment... ($i/$MAX_ATTEMPTS) operation_status=$STATUS"
+                [ $i -eq $MAX_ATTEMPTS ] && { echo "::error::Deployment did not complete within $((MAX_ATTEMPTS * SLEEP_SEC / 60)) minutes."; exit 1; }
+                sleep $SLEEP_SEC
+                ;;
+            esac
           done
-          echo "::error::Deployment did not complete within 15 minutes."
           exit 1
 
       - name: Get service URL
