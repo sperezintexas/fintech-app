@@ -27,6 +27,11 @@ const SIDE_NAV_ITEMS: NavItem[] = [
     label: "Investment strategy",
     isActive: (p) => (p ?? "").startsWith("/docs/strategy"),
   },
+  {
+    href: "/settings/access-keys",
+    label: "Access keys",
+    isActive: (p) => (p ?? "").startsWith("/settings/access-keys"),
+  },
 ];
 
 type SideNavProps = {

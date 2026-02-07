@@ -1,6 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import { useState } from "react";
 
 type Props = {
   accessDenied: boolean;
@@ -13,6 +14,55 @@ export function ContactContent({
   calendlyUrl,
   callbackUrl,
 }: Props) {
+  const [key, setKey] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState<"key" | "password" | null>(null);
+  const [error, setError] = useState("");
+
+  const handleKeySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading("key");
+    try {
+      const res = await signIn("credentials", {
+        key: key.trim(),
+        callbackUrl,
+        redirect: false,
+      });
+      if (res?.error) {
+        setError("Invalid access key.");
+        setLoading(null);
+        return;
+      }
+      if (res?.url) window.location.href = res.url;
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading("password");
+    try {
+      const res = await signIn("credentials", {
+        email: email.trim(),
+        password,
+        callbackUrl,
+        redirect: false,
+      });
+      if (res?.error) {
+        setError("Invalid email or password.");
+        setLoading(null);
+        return;
+      }
+      if (res?.url) window.location.href = res.url;
+    } finally {
+      setLoading(null);
+    }
+  };
+
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-4 bg-cover bg-center bg-no-repeat"
@@ -20,7 +70,7 @@ export function ContactContent({
     >
       <div className="text-center max-w-md rounded-xl bg-white/90 px-6 py-8 shadow-lg">
         <h1 className="text-2xl font-bold text-gray-800 mb-2">
-          myInvestments
+          xAI powered myInvestments
         </h1>
         {accessDenied ? (
           <p className="text-gray-600 mb-6">
@@ -49,6 +99,59 @@ export function ContactContent({
             </svg>
             Sign in with X
           </button>
+
+          <form onSubmit={handleKeySubmit} className="flex flex-col gap-2">
+            <label htmlFor="access-key" className="text-left text-sm font-medium text-gray-700">
+              Or sign in with access key
+            </label>
+            <input
+              id="access-key"
+              type="password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder="Paste your access key"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
+              autoComplete="off"
+            />
+            <button
+              type="submit"
+              disabled={loading === "key" || !key.trim()}
+              className="py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 disabled:opacity-50 font-medium"
+            >
+              {loading === "key" ? "Signing in…" : "Sign in with key"}
+            </button>
+          </form>
+
+          <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-2 pt-2 border-t border-gray-200">
+            <label className="text-left text-sm font-medium text-gray-700">
+              Or sign in with email & password
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
+              autoComplete="email"
+            />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
+              autoComplete="current-password"
+            />
+            <button
+              type="submit"
+              disabled={loading === "password" || !email.trim() || !password}
+              className="py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 disabled:opacity-50 font-medium"
+            >
+              {loading === "password" ? "Signing in…" : "Sign in with password"}
+            </button>
+          </form>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <a
             href={calendlyUrl}
