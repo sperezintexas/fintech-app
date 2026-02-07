@@ -132,6 +132,15 @@ This takes 5-10 minutes. You'll see progress in the terminal.
 
 **IMPORTANT**: Use your SAME values from Vercel (Settings → Environment Variables). Do not commit real values.
 
+**Option A: From a file (recommended)** — sync EB from `.env.prod` (or another file). Keeps one source of truth; do not commit the file.
+
+```bash
+./scripts/eb-setenv-from-file.sh [env-file] [eb-environment-name]
+# Default: .env.prod, myinvestments-prod. Run from repo root; requires eb CLI and AWS credentials.
+```
+
+**Option B: Manual** — set each var explicitly:
+
 ```bash
 eb setenv \
   MONGODB_URI='<your-mongodb-uri>' \

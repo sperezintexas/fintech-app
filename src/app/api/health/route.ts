@@ -15,6 +15,10 @@ type HealthCheck = {
   nextRunAt?: string;
   dataSizeMB?: number;
   percentOfLimit?: number;
+  /** Sanitized connection string (password masked) for debugging */
+  connectionDisplay?: string;
+  /** Database name in use */
+  database?: string;
 };
 
 export async function GET() {
@@ -25,6 +29,25 @@ export async function GET() {
   checks.app = { status: "ok" };
 
   // MongoDB
+  const rawUri = process.env.MONGODB_URI || process.env.MONGODB_URI_B64
+    ? (process.env.MONGODB_URI ?? Buffer.from(process.env.MONGODB_URI_B64!, "base64").toString("utf8"))
+    : "mongodb://localhost:27017";
+  const dbName = process.env.MONGODB_DB || "myinvestments";
+  const sanitizeUri = (uri: string): string => {
+    try {
+      const at = uri.indexOf("@");
+      if (at === -1) return uri;
+      const cred = uri.slice(0, at);
+      const hostPart = uri.slice(at);
+      const protocolEnd = cred.indexOf("://") + 3;
+      const colon = cred.lastIndexOf(":");
+      if (colon > protocolEnd) return cred.slice(0, colon) + ":***" + hostPart;
+      return cred + hostPart;
+    } catch {
+      return "(hidden)";
+    }
+  };
+
   try {
     const start = Date.now();
     const db = await getDb();
@@ -32,6 +55,8 @@ export async function GET() {
     const mongodbCheck: HealthCheck = {
       status: "ok",
       latencyMs: Date.now() - start,
+      connectionDisplay: sanitizeUri(rawUri),
+      database: dbName,
     };
     try {
       const stats = await getDbStats();
@@ -50,6 +75,8 @@ export async function GET() {
     checks.mongodb = {
       status: "error",
       message: e instanceof Error ? e.message : "Connection failed",
+      connectionDisplay: sanitizeUri(rawUri),
+      database: dbName,
     };
     overallStatus = "error";
   }

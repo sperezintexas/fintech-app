@@ -151,17 +151,16 @@ jobs:
             MONGODB_URI=mongodb://localhost:27017
             MONGODB_DB=myinvestments
 
-  # AWS: build Docker image, push to ECR, deploy to Elastic Beanstalk (main only, when enabled).
-  # Set variable ENABLE_AWS_DEPLOY=true and secrets AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY to run.
-  aws-deploy:
-    name: Build & Deploy to AWS (EB)
+  # AWS App Runner: build Docker image, push to ECR, deploy to App Runner (main only, when enabled).
+  # Variables: ENABLE_AWS_DEPLOY=true, APP_RUNNER_SERVICE_ARN (required). Secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.
+  apprunner-deploy:
+    name: Build & Deploy to App Runner
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test, build, docker]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_AWS_DEPLOY == 'true'
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
       APP_NAME: myinvestments
-      EB_ENV_NAME: ${{ vars.EB_ENV_NAME || 'myinvestments-prod' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -188,6 +187,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build \
+            --platform linux/amd64 \
             --build-arg MONGODB_URI=placeholder \
             --build-arg MONGODB_DB=myinvestments \
             -t $ECR_REGISTRY/${{ env.APP_NAME }}:$IMAGE_TAG \
@@ -196,60 +196,54 @@ jobs:
           docker push $ECR_REGISTRY/${{ env.APP_NAME }}:$IMAGE_TAG
           docker push $ECR_REGISTRY/${{ env.APP_NAME }}:latest
 
-      - name: Update Dockerrun.aws.json
+      - name: Deploy to App Runner
+        id: deploy
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
         run: |
-          cat > Dockerrun.aws.json << EOF
-          {
-            "AWSEBDockerrunVersion": "1",
-            "Image": {
-              "Name": "$ECR_REGISTRY/${{ env.APP_NAME }}:latest",
-              "Update": "true"
-            },
-            "Ports": [
-              { "ContainerPort": 3000, "HostPort": 3000 }
-            ],
-            "Logging": "/var/log/nodejs"
-          }
-          EOF
-          cat Dockerrun.aws.json
+          if [ -z "$SERVICE_ARN" ]; then
+            echo "::error::APP_RUNNER_SERVICE_ARN variable not set. Add it in Settings → Actions → Variables."
+            exit 1
+          fi
+          OP_ID=$(aws apprunner start-deployment --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'OperationId' --output text)
+          echo "operation_id=$OP_ID" >> $GITHUB_OUTPUT
+          echo "Deployment started (operation $OP_ID); waiting for completion..."
 
-      - name: Create deployment package
+      - name: Wait for App Runner deployment
+        env:
+          SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
+          OPERATION_ID: ${{ steps.deploy.outputs.operation_id }}
         run: |
-          zip -r deploy.zip . \
-            -x "*.git*" \
-            -x "node_modules/*" \
-            -x ".next/*" \
-            -x "tests/*" \
-            -x "docs/*" \
-            -x "docker-compose.yml"
+          for i in $(seq 1 45); do
+            STATUS=$(aws apprunner list-operations --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query "OperationSummaryList[?Id=='$OPERATION_ID'].Status | [0]" --output text)
+            if [ "$STATUS" = "SUCCEEDED" ]; then
+              echo "Deployment succeeded."
+              exit 0
+            fi
+            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ROLLBACK_SUCCEEDED" ]; then
+              echo "::error::Deployment failed or rolled back: $STATUS"
+              exit 1
+            fi
+            echo "Waiting for deployment... ($i/45) operation_status=$STATUS"
+            sleep 20
+          done
+          echo "::error::Deployment did not complete within 15 minutes."
+          exit 1
 
-      - name: Deploy to Elastic Beanstalk
-        uses: einaregilsson/beanstalk-deploy@v22
-        with:
-          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          application_name: ${{ env.APP_NAME }}
-          environment_name: ${{ env.EB_ENV_NAME }}
-          version_label: ${{ github.sha }}
-          region: ${{ env.AWS_REGION }}
-          deployment_package: deploy.zip
-          wait_for_environment_recovery: 120
-
-      - name: Get deployment URL
+      - name: Get service URL
         id: url
         env:
           APP_URL_VAR: ${{ vars.APP_URL }}
+          SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
         run: |
           if [ -n "$APP_URL_VAR" ]; then
             echo "url=$APP_URL_VAR" >> $GITHUB_OUTPUT
           else
-            CNAME=$(aws elasticbeanstalk describe-environments --environment-names ${{ env.EB_ENV_NAME }} --region ${{ env.AWS_REGION }} --query 'Environments[0].CNAME' --output text)
-            echo "url=http://$CNAME" >> $GITHUB_OUTPUT
+            SVC_URL=$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'Service.ServiceUrl' --output text)
+            echo "url=https://$SVC_URL" >> $GITHUB_OUTPUT
           fi
 
-      - name: Verify AWS deployment (health check)
+      - name: Verify App Runner deployment (health check)
         id: health
         env:
           APP_URL: ${{ steps.url.outputs.url }}
@@ -283,7 +277,7 @@ jobs:
         run: |
           STATUS="${{ steps.health.outputs.status }}"
           if [ -z "$STATUS" ] || [ "$STATUS" = "skipped" ]; then
-            echo "Health check did not run or was skipped; cannot report success. Set APP_URL or ensure EB env is reachable."
+            echo "Health check did not run or was skipped; cannot report success. Set APP_URL or ensure App Runner service is reachable."
             exit 1
           fi
           if [ "$STATUS" != "ok" ]; then
@@ -292,7 +286,7 @@ jobs:
           fi
           echo "Health check passed; posting to Slack."
 
-      - name: Notify Slack (AWS deploy)
+      - name: Notify Slack (App Runner deploy)
         if: always()
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -304,23 +298,23 @@ jobs:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           if [ -z "$SLACK_WEBHOOK_URL" ]; then
-            echo "SLACK_WEBHOOK_URL not set; skipping AWS deploy Slack notification."
+            echo "SLACK_WEBHOOK_URL not set; skipping App Runner deploy Slack notification."
             exit 0
           fi
           if [ "$DEPLOY_RESULT" = "success" ]; then
             EMOJI=":white_check_mark:"
             COLOR="good"
-            TITLE="AWS EB Deploy: Success"
+            TITLE="App Runner Deploy: Success"
           else
             EMOJI=":x:"
             COLOR="danger"
-            TITLE="AWS EB Deploy: Failed"
+            TITLE="App Runner Deploy: Failed"
           fi
           COMMIT_ONE=$(echo "$COMMIT_MSG" | head -n 1 | tr -d '\n' | sed 's/"/\\"/g')
           PAYLOAD=$(jq -n \
             --arg color "$COLOR" \
             --arg title "$EMOJI $TITLE" \
-            --arg fallback "AWS EB Deploy $DEPLOY_RESULT" \
+            --arg fallback "App Runner Deploy $DEPLOY_RESULT" \
             --arg commit "${{ github.sha }}" \
             --arg msg "${COMMIT_ONE:-n/a}" \
             --arg health "${HEALTH_STATUS:-n/a}" \
@@ -344,47 +338,24 @@ jobs:
             }')
           curl -sSf -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$SLACK_WEBHOOK_URL" || true
 
-  # Post build: optional Vercel deployment status; verify deployment via app health check (APP_URL = AWS EB or Vercel).
-  # Notify Slack with commit, deployment status, health result, app version.
-  # Secrets: SLACK_WEBHOOK_URL; optional VERCEL_TOKEN. Vars: APP_URL (health check URL, e.g. EB or Vercel).
+  # Post build: notify Slack with build status; optional health check when APP_URL is set (App Runner).
+  # Secrets: SLACK_WEBHOOK_URL. Variables: APP_URL (App Runner service URL for health check on main/develop).
   notify-slack:
     name: Notify Slack
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, build, docker]
-    if: always() && !cancelled()
+    needs: [lint, typecheck, test, build, docker, apprunner-deploy]
+    if: always() && !cancelled() && (needs.apprunner-deploy == 'success' || needs.apprunner-deploy == 'skipped' || needs.apprunner-deploy == 'failure')
     steps:
-      - name: Get deployment status (optional Vercel)
-        id: vercel
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
-          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
-        run: |
-          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
-            echo "state=skipped" >> $GITHUB_OUTPUT
-            echo "url=" >> $GITHUB_OUTPUT
-            echo "Vercel token or project id not set; skipping optional deployment status."
-            exit 0
-          fi
-          QUERY="projectId=$VERCEL_PROJECT_ID"
-          [ -n "$VERCEL_ORG_ID" ] && QUERY="${QUERY}&teamId=${VERCEL_ORG_ID}"
-          RES=$(curl -sSf -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v6/deployments?${QUERY}&limit=1")
-          STATE=$(echo "$RES" | jq -r '.deployments[0].state // "unknown"')
-          DEPLOY_URL=$(echo "$RES" | jq -r '.deployments[0].url // ""')
-          echo "state=$STATE" >> $GITHUB_OUTPUT
-          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
-
       - name: Verify deployment (health check)
         id: health
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
         env:
-          APP_URL: ${{ vars.APP_URL || steps.vercel.outputs.url }}
+          APP_URL: ${{ vars.APP_URL }}
         run: |
           if [ -z "$APP_URL" ]; then
             echo "status=skipped" >> $GITHUB_OUTPUT
             echo "version=" >> $GITHUB_OUTPUT
-            echo "APP_URL not set; skipping health check (set APP_URL to your EB or Vercel URL)."
+            echo "APP_URL not set; skipping health check (set APP_URL to your App Runner URL)."
             exit 0
           fi
           case "$APP_URL" in http://*|https://*) ;; *) APP_URL="https://$APP_URL";; esac
@@ -418,14 +389,12 @@ jobs:
       - name: Send Slack build notification
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          STATUS: ${{ (needs.lint.result == 'failure' || needs.typecheck.result == 'failure' || needs.test.result == 'failure' || needs.build.result == 'failure' || needs.docker.result == 'failure') && 'failure' || (needs.lint.result == 'cancelled' || needs.typecheck.result == 'cancelled' || needs.test.result == 'cancelled' || needs.build.result == 'cancelled' || needs.docker.result == 'cancelled') && 'cancelled' || 'success' }}
+          STATUS: ${{ (needs.lint.result == 'failure' || needs.typecheck.result == 'failure' || needs.test.result == 'failure' || needs.build.result == 'failure' || needs.docker.result == 'failure' || needs.apprunner-deploy.result == 'failure') && 'failure' || (needs.lint.result == 'cancelled' || needs.typecheck.result == 'cancelled' || needs.test.result == 'cancelled' || needs.build.result == 'cancelled' || needs.docker.result == 'cancelled' || needs.apprunner-deploy.result == 'cancelled') && 'cancelled' || 'success' }}
           RUN_URL: ${{ format('https://github.com/{0}/actions/runs/{1}', github.repository, github.run_id) }}
           BRANCH: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
           COMMIT_MSG: ${{ github.event.head_commit.message || github.event.pull_request.title || github.ref_name }}
           ACTOR: ${{ github.actor }}
-          VERCEL_STATE: ${{ steps.vercel.outputs.state }}
-          VERCEL_URL: ${{ steps.vercel.outputs.url }}
           HEALTH_STATUS: ${{ steps.health.outputs.status }}
           HEALTH_VERSION: ${{ steps.health.outputs.version }}
         run: |
@@ -460,8 +429,6 @@ jobs:
             --arg actor "$ACTOR" \
             --arg commit "$COMMIT" \
             --arg commit_msg "$COMMIT_MSG_ONE" \
-            --arg vercel_state "${VERCEL_STATE:-}" \
-            --arg vercel_url "${VERCEL_URL:-}" \
             --arg health_status "${HEALTH_STATUS:-}" \
             --arg health_version "${HEALTH_VERSION:-}" \
             '{
@@ -477,7 +444,6 @@ jobs:
                     { title: "Commit ID", value: $commit, short: false },
                     { title: "Commit", value: $commit_msg, short: false }
                   ]
-                  + (if $vercel_state != "" and $vercel_state != "skipped" then [{ title: "Vercel", value: $vercel_state, short: true }, (if $vercel_url != "" then { title: "Deploy URL", value: $vercel_url, short: true } else null end)] | map(select(. != null)) else [] end)
                   + (if $health_status != "" and $health_status != "skipped" then [{ title: "Health", value: $health_status, short: true }] else [] end)
                   + (if $health_version != "" then [{ title: "Version", value: $health_version, short: true }] else [] end)
                 )

@@ -1,57 +1,19 @@
-# syntax=docker/dockerfile:1
-
-# ---- Base ----
-# Using Node 22 to match package.json engines requirement
-FROM node:22-alpine AS base
+FROM node:22-alpine AS builder
 WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# ---- Dependencies ----
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
-
-COPY package.json package-lock.json* ./
+COPY package*.json ./
 RUN npm ci --legacy-peer-deps
-
-# ---- Builder ----
-FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# Build arguments for environment variables
-ARG MONGODB_URI
-ARG MONGODB_DB
-
-ENV MONGODB_URI=$MONGODB_URI
-ENV MONGODB_DB=$MONGODB_DB
-
+ARG MONGODB_URI=placeholder
+ARG MONGODB_DB=myinvestments
+ENV MONGODB_URI=$MONGODB_URI MONGODB_DB=$MONGODB_DB
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npm run build
 
-# ---- Runner ----
-FROM base AS runner
+FROM node:22-alpine
+WORKDIR /app
 ENV NODE_ENV=production
-
-RUN apk add --no-cache wget
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-# Copy public assets
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-
-# Set correct permissions for prerender cache
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
-
-# Copy standalone build
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
-
 EXPOSE 3000
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-ENV NODE_OPTIONS="--no-deprecation"
-
 CMD ["node", "server.js"]

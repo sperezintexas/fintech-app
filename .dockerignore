@@ -46,3 +46,7 @@ docker-compose*
 # Misc
 *.md
 !README.md
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+.git
+.gitignore

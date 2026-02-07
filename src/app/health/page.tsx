@@ -11,6 +11,10 @@ type HealthCheck = {
   latencyMs?: number;
   jobsCount?: number;
   nextRunAt?: string;
+  dataSizeMB?: number;
+  percentOfLimit?: number;
+  connectionDisplay?: string;
+  database?: string;
 };
 
 type HealthResponse = {
@@ -113,8 +117,19 @@ export default function HealthPage() {
                   <p className="text-sm text-gray-600 mb-2">{check.message}</p>
                 )}
                 <div className="text-sm text-gray-500 space-y-1">
+                  {check.connectionDisplay != null && (
+                    <p className="font-mono text-xs break-all" title="Connection string (password masked)">
+                      {check.connectionDisplay}
+                    </p>
+                  )}
+                  {check.database != null && (
+                    <p>Database: {check.database}</p>
+                  )}
                   {check.latencyMs != null && (
                     <p>Latency: {check.latencyMs}ms</p>
+                  )}
+                  {check.dataSizeMB != null && (
+                    <p>Data size: {check.dataSizeMB} MB{check.percentOfLimit != null ? ` (${check.percentOfLimit}% of limit)` : ""}</p>
                   )}
                   {check.jobsCount != null && (
                     <p>Scheduled jobs: {check.jobsCount}</p>
