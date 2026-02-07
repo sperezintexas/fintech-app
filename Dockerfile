@@ -13,11 +13,12 @@ RUN npm run build
 FROM --platform=linux/amd64 node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
-# App Runner / containers: must listen on 0.0.0.0 (all interfaces), not localhost
+# App Runner / containers: must listen on 0.0.0.0 so health check can reach the app
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 EXPOSE 3000
-CMD ["node", "server.js"]
+# Explicit host at runtime so health check from App Runner always reaches the server
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 exec node server.js"]
