@@ -250,6 +250,12 @@ jobs:
         env:
           SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
         run: |
+          SVC_STATUS=$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'Service.Status' --output text 2>/dev/null || echo "UNKNOWN")
+          if [ "$SVC_STATUS" != "RUNNING" ]; then
+            echo "::error::App Runner service is not RUNNING (current: $SVC_STATUS). Start deployment only works when the service is RUNNING."
+            echo "In AWS Console → App Runner → your service: fix any errors (e.g. CREATE_FAILED, bad image), resume if paused, then re-run this workflow."
+            exit 1
+          fi
           OP_ID=$(aws apprunner start-deployment --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'OperationId' --output text)
           echo "operation_id=$OP_ID" >> $GITHUB_OUTPUT
           echo "Deployment started (operation $OP_ID); waiting for completion..."

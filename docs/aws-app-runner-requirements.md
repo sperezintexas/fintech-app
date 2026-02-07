@@ -55,7 +55,7 @@ IAM → Users → **myinvestments-deploy** (or your user) → Add permissions �
 ```
 
 Replace `YOUR_ACCOUNT_ID` with your AWS account ID (e.g. `205562145226`).
-`GetAuthorizationToken` must be `Resource: "*"`.
+`GetAuthorizationToken` must be `Resource: "*"`. If you get **AccessDeniedException** on `StartDeployment`, ensure the App Runner statement exists and the resource ARN matches your service (or use `"Resource": "*"` for the App Runner block to allow all services in the account).
 
 **Option B — managed policies**
 
@@ -105,12 +105,15 @@ After this, the repo `myinvestments` in ECR must have the `latest` (or a specifi
 4. **Deployment trigger:** “Manual” (CI will run `start-deployment`).
 5. **Service name:** e.g. `myinvestments-prod`.
 6. **Port:** `3000`.
-7. **CPU:** 1 vCPU. **Memory:** 2 GB (or more if needed).
-8. **Environment variables:** Add the same vars as in `.env.prod`:
+7. **Health check:** Set **path** to `/api/health` (not `/`). If you leave the default `/`, the app may redirect or return non-200 and App Runner will mark the deployment as failed even though the app started.
+8. **CPU:** 1 vCPU. **Memory:** 2 GB (or more if needed).
+9. **Environment variables:** Add the same vars as in `.env.prod`:
    `MONGODB_URI`, `MONGODB_DB`, `AUTH_SECRET`, `NEXTAUTH_URL`, `X_CLIENT_ID`, `X_CLIENT_SECRET`, `XAI_API_KEY`, `WEB_SEARCH_API_KEY`, `CRON_SECRET`, `SLACK_WEBHOOK_URL`.
    (Or reference Secrets Manager if you used `scripts/aws-secrets-from-env.sh`.)
-9. **Create service.** Wait until status is **Running**.
-10. Copy **Service ARN** and **Service URL** (e.g. `https://xxxxx.us-east-1.awsapprunner.com`).
+10. **Create service.** Wait until status is **Running**.
+11. Copy **Service ARN** and **Service URL** (e.g. `https://xxxxx.us-east-1.awsapprunner.com`).
+
+**If the app logs show "Ready" but the deployment still fails:** App Runner’s health check is likely using the wrong path. Edit the service → **Configure** → under **Health check** set **Path** to `/api/health`, save, then start a new deployment.
 
 **CLI (alternative)**
 
