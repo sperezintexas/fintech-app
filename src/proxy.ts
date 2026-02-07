@@ -1,7 +1,7 @@
 import { NextFetchEvent, NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 
-const authMiddleware = auth((req) => {
+const authProxy = auth((req) => {
   if (!req.auth) {
     const contactUrl = new URL("/contact", req.nextUrl.origin);
     contactUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
@@ -9,11 +9,11 @@ const authMiddleware = auth((req) => {
   }
 });
 
-export default function middleware(req: NextRequest, event: NextFetchEvent) {
+export function proxy(req: NextRequest, event: NextFetchEvent) {
   if (process.env.SKIP_AUTH === "true") {
     return NextResponse.next();
   }
-  return (authMiddleware as unknown as (req: NextRequest, ev: NextFetchEvent) => Promise<Response>)(req, event);
+  return (authProxy as unknown as (req: NextRequest, ev: NextFetchEvent) => Promise<Response>)(req, event);
 }
 
 export const config = {

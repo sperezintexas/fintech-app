@@ -18,6 +18,7 @@ export default defineConfig({
     url: "http://localhost:3000",
     reuseExistingServer: true,
     timeout: 60_000,
+    env: { SKIP_AUTH: "true" },
   },
   timeout: 30_000,
 });

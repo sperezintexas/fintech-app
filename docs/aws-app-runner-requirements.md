@@ -44,18 +44,19 @@ IAM → Users → **myinvestments-deploy** (or your user) → Add permissions �
       "Sid": "AppRunner",
       "Effect": "Allow",
       "Action": [
-        "apprunner:StartDeployment",
+        "apprunner:ListServices",
         "apprunner:DescribeService",
+        "apprunner:StartDeployment",
         "apprunner:ListOperations"
       ],
-      "Resource": "arn:aws:apprunner:*:YOUR_ACCOUNT_ID:service/*"
+      "Resource": "*"
     }
   ]
 }
 ```
 
 Replace `YOUR_ACCOUNT_ID` with your AWS account ID (e.g. `205562145226`).
-`GetAuthorizationToken` must be `Resource: "*"`. If you get **AccessDeniedException** on `StartDeployment`, ensure the App Runner statement exists and the resource ARN matches your service (or use `"Resource": "*"` for the App Runner block to allow all services in the account).
+`GetAuthorizationToken` must be `Resource: "*"`. The App Runner block uses `Resource: "*"` because `ListServices` does not support resource-level permissions. If you get **AccessDeniedException** on other App Runner actions, ensure the statement includes all required actions (e.g. `UpdateService`, `PauseService`, `ResumeService` if you use them).
 
 **Option B — managed policies**
 
@@ -128,6 +129,16 @@ After this, the repo `myinvestments` in ECR must have the `latest` (or a specifi
 4. Set GitHub variable **APP_RUNNER_SERVICE_ARN** to the new service ARN from the output.
 
 The generated JSON is in `.gitignore` (it contains secrets). You can re-run the script anytime to regenerate it after changing `.env.prod`.
+
+**Update env vars from CLI (e.g. after rotating X keys):**
+
+1. Edit `.env.prod` with new values (e.g. `X_CLIENT_ID`, `X_CLIENT_SECRET`).
+2. From repo root:
+   ```bash
+   export APP_RUNNER_SERVICE_ARN=arn:aws:apprunner:us-east-1:YOUR_ACCOUNT:service/your-service/id
+   ./scripts/update-apprunner-env.sh .env.prod us-east-1
+   ```
+3. The script pushes all vars from the file to App Runner and starts a deployment. Wait for the deployment to complete in the Console (or poll `aws apprunner list-operations`).
 
 ---
 

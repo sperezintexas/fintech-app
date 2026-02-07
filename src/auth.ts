@@ -1,8 +1,6 @@
 import NextAuth from "next-auth";
 import Twitter from "next-auth/providers/twitter";
 import Credentials from "next-auth/providers/credentials";
-import { validateAccessKey } from "@/lib/access-keys";
-import { validateAuthUser } from "@/lib/auth-users";
 
 const ALLOWED_USERNAMES = ["atxbogart", "sperezintexas", "shelleyperezatx"];
 
@@ -23,11 +21,12 @@ if (envUrl) {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   basePath: "/api/auth",
   trustHost: true,
-  pages: { signIn: "/contact" },
+  pages: { signIn: "/contact", error: "/contact" },
   providers: [
     Twitter({
       clientId: process.env.X_CLIENT_ID ?? "",
       clientSecret: process.env.X_CLIENT_SECRET ?? "",
+      userinfo: "https://api.x.com/2/users/me?user.fields=username,profile_image_url",
       profile({ data }) {
         return {
           id: data?.id ?? "",
@@ -46,20 +45,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       async authorize(credentials) {
         if (!credentials) return null;
-        const key = credentials.key as string | undefined;
-        const email = credentials.email as string | undefined;
-        const password = credentials.password as string | undefined;
-
-        if (key) {
-          const ok = await validateAccessKey(key);
-          if (ok) return { id: "key", name: "Key holder", email: null };
-          return null;
-        }
-        if (email && password) {
-          const ok = await validateAuthUser(email, password);
-          if (ok) return { id: email, name: email, email };
-          return null;
-        }
+        const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+        const baseUrl = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "http://localhost:3000";
+        if (!secret) return null;
+        const url = new URL("/api/auth/validate-credentials", baseUrl).href;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
+          body: JSON.stringify({
+            key: credentials.key,
+            email: credentials.email,
+            password: credentials.password,
+          }),
+        });
+        if (!res.ok) return null;
+        const data = (await res.json()) as { ok?: boolean; user?: { id: string; name: string; email: string | null } };
+        if (data.ok && data.user) return data.user;
         return null;
       },
     }),
@@ -70,8 +71,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     signIn({ user, profile }) {
       if (user?.id === "key" || user?.email) return true;
-      const data = (profile as { data?: { username?: string } })?.data;
-      const username = data?.username?.toLowerCase();
+      const raw = profile as { data?: { username?: string }; username?: string; reason?: string; title?: string } | undefined;
+      if (raw?.reason === "client-not-enrolled" || raw?.title === "Client Forbidden") {
+        console.error(
+          "[auth] X API returned Client Forbidden: your app must be attached to a Project in the X Developer Portal. See https://developer.x.com/en/docs/projects/overview"
+        );
+        return false;
+      }
+      const fromUser = (user as { username?: string | null })?.username?.toLowerCase();
+      const fromProfile = raw?.data?.username?.toLowerCase() ?? raw?.username?.toLowerCase();
+      const username = fromUser ?? fromProfile;
       if (!username) return false;
       return ALLOWED_USERNAMES.includes(username);
     },

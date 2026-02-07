@@ -2,6 +2,7 @@
 
 import { signIn } from "next-auth/react";
 import { useState } from "react";
+import loginBg from "@/app/back1.jpeg";
 
 type Props = {
   accessDenied: boolean;
@@ -64,18 +65,28 @@ export function ContactContent({
   };
 
   return (
-    <div
-      className="min-h-screen flex flex-col items-center justify-center px-4 bg-cover bg-center bg-no-repeat"
-      style={{ backgroundImage: "url(/back1.jpeg)" }}
-    >
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 relative">
+      <div
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat -z-10"
+        style={{ backgroundImage: `url(${loginBg.src})` }}
+        aria-hidden
+      />
       <div className="text-center max-w-md rounded-xl bg-white/90 px-6 py-8 shadow-lg">
         <h1 className="text-2xl font-bold text-gray-800 mb-2">
           xAI powered myInvestments
         </h1>
         {accessDenied ? (
-          <p className="text-gray-600 mb-6">
-            You don’t have access yet. Schedule a time below to get in touch.
-          </p>
+          <div className="text-gray-600 mb-6 space-y-2">
+            <p>You don't have access yet. Schedule a time below to get in touch.</p>
+            <p className="text-sm text-amber-800 bg-amber-50/90 rounded-lg px-3 py-2 text-left">
+              If you used <strong>Sign in with X</strong>, the X API may have rejected the request. In the{" "}
+              <a href="https://developer.x.com/en/docs/projects/overview" target="_blank" rel="noopener noreferrer" className="underline">X Developer Portal</a>, ensure your app is <strong>attached to a Project</strong> and add both callback URLs:
+            </p>
+            <ul className="text-sm text-amber-800 bg-amber-50/90 rounded-lg px-3 py-2 text-left list-disc list-inside space-y-1 font-mono text-xs break-all">
+              <li>Local: <code className="bg-white/80 px-1 rounded">http://localhost:3000/api/auth/callback/twitter</code></li>
+              <li>Production: <code className="bg-white/80 px-1 rounded">https://fzece27dg2.us-east-1.awsapprunner.com/api/auth/callback/twitter</code></li>
+            </ul>
+          </div>
         ) : (
           <p className="text-gray-600 mb-6">
             Sign in if you have access, or schedule a time to connect.
