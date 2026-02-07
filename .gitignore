@@ -31,6 +31,7 @@ credentials.json
 secrets.json
 *-credentials.json
 *-secrets.json
+apprunner-create-input.json
 service-account*.json
 .secrets.baseline
 
