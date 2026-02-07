@@ -113,7 +113,7 @@ After this, the repo `myinvestments` in ECR must have the `latest` (or a specifi
 10. **Create service.** Wait until status is **Running**.
 11. Copy **Service ARN** and **Service URL** (e.g. `https://xxxxx.us-east-1.awsapprunner.com`).
 
-**If the app logs show "Ready" but the deployment still fails:** Use the liveness path so the check doesn’t wait on MongoDB. Edit the service → **Configure** → **Health check** set **Path** to `/api/health/live`, save, then start a new deployment.
+**If the app logs show "Ready" but the deployment still fails:** Use the liveness path so the check doesn’t wait on MongoDB. Try **TCP health check** so App Runner only checks port 3000 is open: run `aws apprunner update-service --service-arn YOUR_ARN --region us-east-1 --health-check-configuration "Protocol=TCP,Interval=10,Timeout=5,HealthyThreshold=1,UnhealthyThreshold=5"`, then start a new deployment. Once Running, you can switch back to HTTP path `/api/health/live` in Configure → Health check if desired.
 
 **CLI (alternative) — one command with all env vars from `.env.prod`**
 
@@ -158,6 +158,16 @@ The generated JSON is in `.gitignore` (it contains secrets). You can re-run the 
 
 - Push to **main**: CI builds the image, pushes to ECR, runs **App Runner** `start-deployment`, waits for the operation, then health-checks and (optionally) Slack.
 - Set **NEXTAUTH_URL** in the App Runner service (and in X callback) to the App Runner **Service URL** (e.g. `https://xxxxx.us-east-1.awsapprunner.com`).
+
+### Auth: avoid `[auth][warn][env-url-basepath-mismatch]`
+
+Auth.js compares `AUTH_URL` / `NEXTAUTH_URL` with `basePath` (`/api/auth`). To avoid the warning:
+
+- Set **NEXTAUTH_URL** (and optionally **AUTH_URL**) to the **app root only**: `https://<your-app-runner-domain>` — no path, or path `/`.
+  Example: `https://fzece27dg2.us-east-1.awsapprunner.com`
+- Or set it to the full base path: `https://<domain>/api/auth`
+- Do **not** set a different path (e.g. `https://domain/auth`) or the warning will appear.
+  The app normalizes a wrong path to the origin at runtime, but it’s better to set the correct URL in App Runner env and in your X app callback URL.
 
 ---
 

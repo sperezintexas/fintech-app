@@ -3,6 +3,20 @@ import Twitter from "next-auth/providers/twitter";
 
 const ALLOWED_USERNAMES = ["atxbogart", "sperezintexas", "shelleyperezatx"];
 
+// Avoid [auth][warn][env-url-basepath-mismatch]: AUTH_URL/NEXTAUTH_URL path must be "/" or match basePath "/api/auth"
+const envUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
+if (envUrl) {
+  try {
+    const u = new URL(envUrl);
+    if (u.pathname !== "/" && u.pathname !== "/api/auth") {
+      process.env.AUTH_URL = u.origin;
+      process.env.NEXTAUTH_URL = u.origin;
+    }
+  } catch {
+    // ignore invalid URL
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   basePath: "/api/auth",
   trustHost: true,
