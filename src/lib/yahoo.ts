@@ -562,6 +562,11 @@ function probOtmCall(stockPrice: number, strike: number): number {
   return Math.min(99, Math.round(50 + otmPercent * 2));
 }
 
+/** Probability of assignment (0–100) for a short call; used in alerts and recommendations. */
+export function probAssignmentCall(stockPrice: number, strike: number): number {
+  return Math.max(0, Math.min(100, 100 - probOtmCall(stockPrice, strike)));
+}
+
 export type CoveredCallAlternative = {
   strike: number;
   expiration: string;

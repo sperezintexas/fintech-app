@@ -14,6 +14,7 @@ vi.mock("../mongodb", () => ({
 vi.mock("../yahoo", () => ({
   getOptionMetrics: vi.fn(),
   getOptionMarketConditions: vi.fn(),
+  probAssignmentCall: vi.fn().mockReturnValue(25),
 }));
 
 const { getDb } = await import("../mongodb");

@@ -5,6 +5,8 @@
  * Each sub-scanner is wrapped in try/catch so one failure doesn't abort the rest; errors are accumulated.
  */
 
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/mongodb";
 import { getOptionChainDetailed, type OptionChainDetailedData } from "@/lib/yahoo";
 import { parseUnifiedOptionsScannerConfig } from "@/lib/job-config-schemas";
 import { getCoveredCallPositions } from "./covered-call-analyzer";
@@ -52,40 +54,92 @@ function truncate(s: string | undefined, maxLen: number): string {
   return t.slice(0, maxLen - 1).trim() + "…";
 }
 
-/** Build a concise recommendation summary from scanner results (for UI/report). */
+type RecWithAccountAndMetrics = {
+  accountId?: string;
+  symbol: string;
+  strike?: number;
+  optionType?: string;
+  recommendation: string;
+  reason: string;
+  metrics?: { dte?: number; assignmentProbability?: number };
+};
+
+function formatOptionSuffix(metrics?: { dte?: number; assignmentProbability?: number }): string {
+  if (!metrics) return "";
+  const dte = metrics.dte;
+  const assign = metrics.assignmentProbability;
+  const parts: string[] = [];
+  if (dte != null) parts.push(`DTE ${dte}`);
+  if (assign != null) parts.push(`Assign ${assign}%`);
+  return parts.length === 0 ? "" : ` (${parts.join(", ")})`;
+}
+
+/** Build a concise recommendation summary from scanner results (for UI/report). Includes account name, DTE, and assignment prob when applicable. */
 function buildRecommendationSummary(
   optResult: { recs: unknown[]; error?: unknown },
   ccResult: { recs: unknown[]; error?: unknown },
   ppResult: { recs: unknown[]; error?: unknown },
-  ssResult: { recs: unknown[]; error?: unknown }
+  ssResult: { recs: unknown[]; error?: unknown },
+  accountIdToName: Record<string, string>
 ): string {
   const lines: string[] = [];
+  const accountLabel = (r: RecWithAccountAndMetrics) =>
+    accountIdToName[r.accountId ?? ""] ?? r.accountId ?? "—";
 
   if (!optResult.error && Array.isArray(optResult.recs) && optResult.recs.length > 0) {
     lines.push("Options (hold / close):");
-    for (const r of optResult.recs as Array<{ symbol: string; strike: number; optionType: string; recommendation: string; reason: string }>) {
-      lines.push(`  ${r.symbol} $${r.strike} ${r.optionType?.toUpperCase() ?? "?"} — ${r.recommendation} — ${truncate(r.reason, 70)}`);
+    for (const r of optResult.recs as RecWithAccountAndMetrics[]) {
+      const suffix = formatOptionSuffix(r.metrics);
+      lines.push(
+        `  [${accountLabel(r)}] ${r.symbol} $${r.strike ?? "?"} ${(r.optionType ?? "?").toUpperCase()} — ${r.recommendation} — ${truncate(r.reason, 55)}${suffix}`
+      );
     }
   }
   if (!ccResult.error && Array.isArray(ccResult.recs) && ccResult.recs.length > 0) {
     lines.push("Covered calls (hold / BTC / sell new / roll):");
-    for (const r of ccResult.recs as Array<{ symbol: string; recommendation: string; reason: string }>) {
-      lines.push(`  ${r.symbol} — ${r.recommendation} — ${truncate(r.reason, 70)}`);
+    for (const r of ccResult.recs as RecWithAccountAndMetrics[]) {
+      const suffix = formatOptionSuffix(r.metrics);
+      lines.push(
+        `  [${accountLabel(r)}] ${r.symbol} — ${r.recommendation} — ${truncate(r.reason, 55)}${suffix}`
+      );
     }
   }
   if (!ppResult.error && Array.isArray(ppResult.recs) && ppResult.recs.length > 0) {
     lines.push("Protective puts (hold / STC / roll / buy new):");
-    for (const r of ppResult.recs as Array<{ symbol: string; recommendation: string; reason: string }>) {
-      lines.push(`  ${r.symbol} — ${r.recommendation} — ${truncate(r.reason, 70)}`);
+    for (const r of ppResult.recs as RecWithAccountAndMetrics[]) {
+      const suffix = formatOptionSuffix(r.metrics);
+      lines.push(
+        `  [${accountLabel(r)}] ${r.symbol} — ${r.recommendation} — ${truncate(r.reason, 55)}${suffix}`
+      );
     }
   }
   if (!ssResult.error && Array.isArray(ssResult.recs) && ssResult.recs.length > 0) {
     lines.push("Straddle/Strangle (hold / STC / roll / add):");
-    for (const r of ssResult.recs as Array<{ symbol: string; recommendation: string; reason: string }>) {
-      lines.push(`  ${r.symbol} — ${r.recommendation} — ${truncate(r.reason, 70)}`);
+    for (const r of ssResult.recs as RecWithAccountAndMetrics[]) {
+      const suffix = formatOptionSuffix(r.metrics);
+      lines.push(
+        `  [${accountLabel(r)}] ${r.symbol} — ${r.recommendation} — ${truncate(r.reason, 55)}${suffix}`
+      );
     }
   }
   return lines.length === 0 ? "" : lines.join("\n");
+}
+
+/** Resolve account IDs to display names for alert summary. */
+async function getAccountIdToName(accountIds: string[]): Promise<Record<string, string>> {
+  const unique = [...new Set(accountIds)].filter((id) => id && ObjectId.isValid(id) && id.length === 24);
+  if (unique.length === 0) return {};
+  const db = await getDb();
+  const accounts = await db
+    .collection<{ _id: ObjectId; name?: string; broker?: string }>("accounts")
+    .find({ _id: { $in: unique.map((id) => new ObjectId(id)) } })
+    .toArray();
+  const map: Record<string, string> = {};
+  for (const a of accounts) {
+    const id = a._id.toString();
+    map[id] = a.broker ?? a.name ?? id;
+  }
+  return map;
 }
 
 /** Collect unique symbols that need option-chain data (covered-call + protective-put opportunities). */
@@ -297,7 +351,27 @@ export async function runUnifiedOptionsScanner(
     res.protectivePutScanner.alertsCreated +
     res.straddleStrangleScanner.alertsCreated;
 
-  res.recommendationSummary = buildRecommendationSummary(optResult, ccResult, ppResult, ssResult);
+  const accountIds: string[] = [];
+  for (const r of (optResult.recs as RecWithAccountAndMetrics[])) {
+    if (r.accountId) accountIds.push(r.accountId);
+  }
+  for (const r of (ccResult.recs as RecWithAccountAndMetrics[])) {
+    if (r.accountId) accountIds.push(r.accountId);
+  }
+  for (const r of (ppResult.recs as RecWithAccountAndMetrics[])) {
+    if (r.accountId) accountIds.push(r.accountId);
+  }
+  for (const r of (ssResult.recs as RecWithAccountAndMetrics[])) {
+    if (r.accountId) accountIds.push(r.accountId);
+  }
+  const accountIdToName = await getAccountIdToName(accountIds);
+  res.recommendationSummary = buildRecommendationSummary(
+    optResult,
+    ccResult,
+    ppResult,
+    ssResult,
+    accountIdToName
+  );
 
   return res;
 }

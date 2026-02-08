@@ -541,6 +541,8 @@ export type OptionRecommendationMetrics = {
   intrinsicValue: number;
   timeValue: number;
   impliedVolatility?: number;
+  /** Probability of assignment (0–100) for short calls; shown in alerts. */
+  assignmentProbability?: number;
 };
 
 export type OptionRecommendation = {
@@ -613,6 +615,8 @@ export type CoveredCallRecommendationMetrics = {
   moneyness?: "ITM" | "ATM" | "OTM";
   iv?: number;
   ivRank?: number;
+  /** Probability of assignment (0–100) for short call; shown in alerts. */
+  assignmentProbability?: number;
 };
 
 export type CoveredCallRecommendation = {

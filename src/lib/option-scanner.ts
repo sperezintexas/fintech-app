@@ -6,7 +6,7 @@
 
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { getOptionMetrics, getOptionMarketConditions } from "@/lib/yahoo";
+import { getOptionMetrics, getOptionMarketConditions, probAssignmentCall } from "@/lib/yahoo";
 import { callOptionDecision } from "@/lib/xai-grok";
 import type {
   Position,
@@ -354,6 +354,9 @@ export async function scanOptions(
         intrinsicValue: r.metrics.intrinsicValue,
         timeValue: r.metrics.timeValue,
         impliedVolatility: r.metrics.impliedVolatility,
+        ...(r.pos.optionType === "call" && {
+          assignmentProbability: probAssignmentCall(r.metrics.underlyingPrice, r.pos.strike),
+        }),
       },
       createdAt: new Date().toISOString(),
     };

@@ -14,6 +14,7 @@ import {
   getIVRankOrPercentile,
   getOptionMarketConditions,
   getSuggestedCoveredCallOptions,
+  probAssignmentCall,
   type OptionChainDetailedData,
 } from "@/lib/yahoo";
 import { callCoveredCallDecision } from "@/lib/xai-grok";
@@ -512,6 +513,7 @@ export async function analyzeCoveredCalls(
           moneyness: getMoneyness(stockPrice, pair.callStrike),
           iv: metrics.impliedVolatility,
           ivRank: ivRank ?? undefined,
+          assignmentProbability: probAssignmentCall(stockPrice, pair.callStrike),
         },
         createdAt: new Date().toISOString(),
       });
@@ -644,6 +646,7 @@ export async function analyzeCoveredCalls(
           moneyness: getMoneyness(stockPrice, call.callStrike),
           iv: metrics.impliedVolatility,
           ivRank: ivRank ?? undefined,
+          assignmentProbability: probAssignmentCall(stockPrice, call.callStrike),
         },
         createdAt: new Date().toISOString(),
       });
@@ -747,6 +750,7 @@ export async function analyzeCoveredCalls(
           moneyness: getMoneyness(stockPrice, strike),
           iv: metrics.impliedVolatility,
           ivRank: ivRank ?? undefined,
+          assignmentProbability: probAssignmentCall(stockPrice, strike),
         },
         createdAt: new Date().toISOString(),
       });

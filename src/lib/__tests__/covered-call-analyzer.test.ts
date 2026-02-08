@@ -18,6 +18,7 @@ vi.mock("../yahoo", () => ({
   getIVRankOrPercentile: vi.fn(),
   getOptionMarketConditions: vi.fn(),
   getSuggestedCoveredCallOptions: vi.fn(),
+  probAssignmentCall: vi.fn().mockReturnValue(30),
 }));
 
 vi.mock("../xai-grok", () => ({

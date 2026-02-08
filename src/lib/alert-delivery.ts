@@ -32,11 +32,14 @@ export type StoredAlert = {
     putBid?: number;
     putAsk?: number;
     dte?: number;
+    daysToExpiration?: number;
     pl?: number;
     plPercent?: number;
     netPremium?: number;
     netProtectionCost?: number;
     effectiveFloor?: number;
+    /** Probability of assignment (0–100) for short calls; shown in alerts. */
+    assignmentProbability?: number;
   };
   details?: {
     currentPrice?: number;
@@ -69,6 +72,7 @@ type MetricsLike = {
   pl?: number;
   netPremium?: number;
   netProtectionCost?: number;
+  assignmentProbability?: number;
 };
 
 /** Build Slack/X message from scanner alert using template. */
@@ -84,6 +88,9 @@ export function formatScannerAlert(
   const plPercent = metrics.plPercent ?? metrics.priceChangePercent;
   const dte = metrics.dte ?? metrics.daysToExpiration;
 
+  const assignmentProb =
+    metrics.assignmentProbability != null ? `${metrics.assignmentProbability}%` : "N/A";
+
   const variables: Record<string, string> = {
     account: accountName ?? "Account",
     symbol: alert.symbol,
@@ -96,6 +103,7 @@ export function formatScannerAlert(
     profitPercent: formatPercent(plPercent),
     profitDollars: formatCurrency(metrics.pl ?? metrics.netPremium ?? metrics.netProtectionCost),
     dte: dte != null ? String(dte) : "N/A",
+    assignmentProb,
     riskLevel: "MEDIUM",
     riskWarning: "",
     actions: "",
@@ -271,6 +279,26 @@ export async function getAlertConfig(
   return globalConfig;
 }
 
+/** Get account display name for alert (which account to take action on). */
+async function getAccountNameForAlert(
+  db: Awaited<ReturnType<typeof getDb>>,
+  accountId: string
+): Promise<string | undefined> {
+  try {
+    const acc = await db
+      .collection("accounts")
+      .findOne(
+        { _id: new ObjectId(accountId) },
+        { projection: { name: 1, broker: 1 } }
+      );
+    if (!acc) return undefined;
+    const a = acc as { name?: string; broker?: string };
+    return a.broker ?? a.name;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Get webhook/target for channel from alertPreferences. */
 async function getChannelTarget(
   accountId: string | undefined,
@@ -351,19 +379,23 @@ export async function processAlertDelivery(accountId?: string): Promise<{
 
       const deliveryStatus = (alert.deliveryStatus ?? {}) as Record<string, AlertDeliveryRecord>;
 
+      const displayAccountName =
+        accountName ??
+        (alert.accountId ? await getAccountNameForAlert(db, alert.accountId) : undefined);
+
       for (const ch of config.channels) {
         const existing = deliveryStatus[ch];
         if (existing?.status === "sent") continue;
 
         let webhookUrl: string | null = null;
         if (ch === "slack") {
-          webhookUrl = await getChannelTarget(alert.accountId ?? accountId, "slack");
+          webhookUrl = await getChannelTarget(alert.accountId ?? accountId ?? undefined, "slack");
         }
 
         const result = await deliverAlert(alert, ch, {
           webhookUrl: webhookUrl ?? undefined,
           templateId: config.templateId,
-          accountName,
+          accountName: displayAccountName,
         });
 
         const record: AlertDeliveryRecord = {
