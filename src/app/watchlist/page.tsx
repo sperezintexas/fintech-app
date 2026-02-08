@@ -940,9 +940,18 @@ export default function WatchlistPage() {
                                 {selectedItemId === item._id && (
                                   <tr className="border-b border-gray-100 bg-indigo-50/50">
                                     <td colSpan={8} className="py-1.5 px-1.5">
-                                      <p className="text-xs text-gray-600 whitespace-pre-wrap pl-1">
-                                        {item.notes || "—"}
-                                      </p>
+                                      <div className="pl-1 space-y-1 text-xs text-gray-600">
+                                        {item.rationale && (
+                                          <p className="whitespace-pre-wrap">
+                                            <span className="font-medium text-gray-700">Rationale: </span>
+                                            {item.rationale}
+                                          </p>
+                                        )}
+                                        <p className="whitespace-pre-wrap">
+                                          <span className="font-medium text-gray-700">Notes: </span>
+                                          {item.notes || "—"}
+                                        </p>
+                                      </div>
                                     </td>
                                   </tr>
                                 )}

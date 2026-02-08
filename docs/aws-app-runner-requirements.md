@@ -118,7 +118,7 @@ After this, the repo `myinvestments` in ECR must have the `latest` (or a specifi
 
 **CLI (alternative) — one command with all env vars from `.env.prod`**
 
-1. **Create an IAM role** for App Runner to pull from ECR (one-time). In IAM → Roles → Create role → AWS service → App Runner → Next → Attach **AWSAppRunnerECRAccess** (or a custom policy that allows `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability` on your ECR repo) → Create role. Note the role ARN.
+1. **Create an IAM role** for App Runner to pull from ECR (one-time). In IAM → Roles → Create role → AWS service → App Runner → Next → Attach **AWSAppRunnerServicePolicyForECRAccess** (or a custom policy that allows `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability` on your ECR repo) → Create role. Note the role ARN.
 2. From repo root:
    ```bash
    export APP_RUNNER_ECR_ACCESS_ROLE=arn:aws:iam::YOUR_ACCOUNT_ID:role/YourAppRunnerECRRole
@@ -130,15 +130,23 @@ After this, the repo `myinvestments` in ECR must have the `latest` (or a specifi
 
 The generated JSON is in `.gitignore` (it contains secrets). You can re-run the script anytime to regenerate it after changing `.env.prod`.
 
-**Update env vars from CLI (e.g. after rotating X keys):**
+**Push config (env vars) to App Runner from the command line:**
 
-1. Edit `.env.prod` with new values (e.g. `X_CLIENT_ID`, `X_CLIENT_SECRET`).
-2. From repo root:
+1. **Get your service ARN** (if you don’t have it):
    ```bash
-   export APP_RUNNER_SERVICE_ARN=arn:aws:apprunner:us-east-1:YOUR_ACCOUNT:service/your-service/id
+   aws apprunner list-services --region us-east-1 --query 'ServiceSummaryList[*].ServiceArn' --output text
+   ```
+   Or use the ARN from the App Runner console (e.g. `arn:aws:apprunner:us-east-1:205562145226:service/myinvestments-prod/xxxx`).
+
+2. **From repo root**, push `.env.prod` to App Runner (SKIP_AUTH is never pushed; prod always uses real auth):
+   ```bash
+   export APP_RUNNER_SERVICE_ARN=arn:aws:apprunner:us-east-1:205562145226:service/YOUR_SERVICE_NAME/YOUR_ID
    ./scripts/update-apprunner-env.sh .env.prod us-east-1
    ```
-3. The script pushes all vars from the file to App Runner and starts a deployment. Wait for the deployment to complete in the Console (or poll `aws apprunner list-operations`).
+
+3. **Wait for the deployment** to complete. In the Console, the service status will go to "Operation in progress" then back to "Running". If the deployment fails (e.g. health check), App Runner rolls back and the previous config (including any SKIP_AUTH from the Console) returns. Fix the cause (health path, image) and run the script again.
+
+**Update env vars from CLI (e.g. after rotating X keys):** Edit `.env.prod`, then run the same two steps above.
 
 ---
 
@@ -156,6 +164,8 @@ The generated JSON is in `.gitignore` (it contains secrets). You can re-run the 
 - `APP_RUNNER_SERVICE_ARN` = the **Service ARN** from step 3 (e.g. `arn:aws:apprunner:us-east-1:205562145226:service/myinvestments-prod/xxxx`).
 - (Optional) `APP_URL` = the **Service URL** from step 3 (e.g. `https://xxxxx.us-east-1.awsapprunner.com`). If unset, CI gets it from `describe-service`.
 - (Optional) `AWS_REGION` (e.g. `us-east-1`; default in workflow is `us-east-1`).
+
+**If you see "Invalid Access Role in AuthenticationConfiguration" or "Failed to copy the image from ECR":** App Runner uses an IAM role to pull from ECR. That role must exist, have the correct **trust policy** (allow `apprunner.amazonaws.com` to assume it), and have ECR pull permissions. See [Fix ECR access role](#fix-ecr-access-role) below.
 
 **If you see `exec format error` in App Runner logs:** App Runner only runs **linux/amd64**. That error means the image in ECR was built for another arch (e.g. arm64 on a Mac).
 
@@ -179,6 +189,47 @@ Auth.js compares `AUTH_URL` / `NEXTAUTH_URL` with `basePath` (`/api/auth`). To a
 - Or set it to the full base path: `https://<domain>/api/auth`
 - Do **not** set a different path (e.g. `https://domain/auth`) or the warning will appear.
   The app normalizes a wrong path to the origin at runtime, but it’s better to set the correct URL in App Runner env and in your X app callback URL.
+
+---
+
+## Fix ECR access role
+
+When deployments fail with **Invalid Access Role in AuthenticationConfiguration** or **Failed to copy the image from ECR**, the IAM role that App Runner uses to pull from ECR is missing or misconfigured.
+
+1. **See which role the service uses**
+   ```bash
+   aws apprunner describe-service --service-arn YOUR_SERVICE_ARN --region us-east-1 \
+     --query 'Service.SourceConfiguration.AuthenticationConfiguration.AccessRoleArn' --output text
+   ```
+   Example: `arn:aws:iam::205562145226:role/AppRunnerECRAccess`
+
+2. **Create or fix the role in IAM**
+   - IAM → Roles → look for that role name (e.g. `AppRunnerECRAccess`). If it’s missing, create it; if it exists, open it to fix trust + permissions.
+   - **Trust relationship:** Must allow App Runner to assume the role. Replace the role’s trust policy with:
+     ```json
+     {
+       "Version": "2012-10-17",
+       "Statement": [
+         {
+           "Effect": "Allow",
+           "Principal": { "Service": "build.apprunner.amazonaws.com" },
+           "Action": "sts:AssumeRole"
+         }
+         ]
+     }
+     ```
+     (App Runner’s ECR pull uses the **build** service principal.)
+   - **Permissions:** Attach the managed policy **AWSAppRunnerServicePolicyForECRAccess**, or an inline policy that allows:
+     - `ecr:GetDownloadUrlForLayer`
+     - `ecr:BatchGetImage`
+     - `ecr:BatchCheckLayerAvailability`
+     on resource `arn:aws:ecr:us-east-1:YOUR_ACCOUNT_ID:repository/myinvestments` (and `*` for `GetAuthorizationToken` if you use a custom policy; ECR pull typically uses the repo ARN).
+
+3. **Redeploy**
+   After saving the role, start a new deployment (no service update needed if the role ARN is unchanged):
+   ```bash
+   aws apprunner start-deployment --service-arn YOUR_SERVICE_ARN --region us-east-1
+   ```
 
 ---
 

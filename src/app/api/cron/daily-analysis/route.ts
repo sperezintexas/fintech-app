@@ -7,6 +7,7 @@ import { getMultipleTickerOHLC, getMultipleTickerPrices } from "@/lib/yahoo";
 import { computeRiskMetricsWithPositions } from "@/lib/risk-management";
 import { analyzeRiskWithGrok } from "@/lib/xai-grok";
 import { computeAndStoreGoalProgress } from "@/lib/goal-progress";
+import { getHeldSymbols } from "@/lib/holdings";
 
 // Removed - using Yahoo Finance
 // Removed - using Yahoo Finance
@@ -56,7 +57,7 @@ function estimateOptionPrice(
  * GET /api/cron/daily-analysis
  *
  * Triggered daily at market close (4:30 PM ET recommended).
- * Analyzes all watchlist items and generates alerts.
+ * Analyzes all watchlist items (updates prices); creates alerts only for items that are account holdings (not watchlist-only).
  *
  * Can be triggered by:
  * - Vercel Cron: Add to vercel.json { "crons": [{ "path": "/api/cron/daily-analysis", "schedule": "30 21 * * 1-5" }] }
@@ -107,18 +108,28 @@ export async function GET(request: NextRequest) {
     console.log(`Fetched ${groupedData.size} tickers from Yahoo Finance`);
 
     // Get account risk levels
-    const accountIds = [...new Set(items.map((i) => i.accountId))];
+    const accountIds = [...new Set(items.map((i) => i.accountId).filter(Boolean))];
     const accounts = await db
       .collection("accounts")
-      .find({
-        _id: { $in: accountIds.map((id) => new ObjectId(id)) },
-      })
+      .find(
+        accountIds.length > 0
+          ? { _id: { $in: accountIds.map((id) => new ObjectId(id)) } }
+          : {}
+      )
       .toArray();
 
     const accountRiskMap = new Map<string, RiskLevel>();
     accounts.forEach((acc) => {
       accountRiskMap.set(acc._id.toString(), acc.riskLevel as RiskLevel);
     });
+
+    // Held symbols: alerts are only created for watchlist items that are account holdings
+    const allAccountsWithPositions = await db
+      .collection("accounts")
+      .find({})
+      .project({ _id: 1, positions: 1 })
+      .toArray();
+    const heldSymbols = getHeldSymbols(allAccountsWithPositions);
 
     // Analyze each item
     const alerts: WatchlistAlert[] = [];
@@ -173,7 +184,8 @@ export async function GET(request: NextRequest) {
       // Run analysis (no technical indicators to save API calls)
       const analysis = analyzeWatchlistItem(watchlistItem, riskLevel, marketData);
 
-      // Update watchlist item with current prices
+      // Update watchlist item with current prices and last recommendation/rationale
+      const rationaleText = [analysis.recommendation, analysis.reason].filter(Boolean).join(" — ");
       await db.collection("watchlist").updateOne(
         { _id: item._id },
         {
@@ -185,13 +197,24 @@ export async function GET(request: NextRequest) {
               watchlistItem.quantity *
               (watchlistItem.type === "stock" ? 1 : 100),
             profitLossPercent: analysis.details.priceChangePercent,
+            rationale: rationaleText || undefined,
             updatedAt: new Date().toISOString(),
           },
         }
       );
 
-      // Create alert if significant
-      if (analysis.severity !== "info" || analysis.recommendation !== "HOLD") {
+      // Create alert only for account holdings (not watchlist-only items)
+      const symbolForItem = (
+        watchlistItem.type === "stock"
+          ? watchlistItem.symbol
+          : (watchlistItem.underlyingSymbol || watchlistItem.symbol.replace(/\d+[CP]\d+$/, ""))
+      ).toUpperCase();
+      const isHolding = heldSymbols.has(symbolForItem);
+
+      if (
+        isHolding &&
+        (analysis.severity !== "info" || analysis.recommendation !== "HOLD")
+      ) {
         const newAlert: Omit<WatchlistAlert, "_id"> = {
           watchlistItemId: watchlistItem._id,
           accountId: watchlistItem.accountId ?? undefined,

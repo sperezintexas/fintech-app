@@ -186,7 +186,8 @@ export async function POST(request: NextRequest) {
         technicals as TechnicalIndicators | undefined
       );
 
-      // Update watchlist item with current prices
+      // Update watchlist item with current prices and recommendation/rationale
+      const rationaleText = [analysis.recommendation, analysis.reason].filter(Boolean).join(" — ");
       await db.collection("watchlist").updateOne(
         { _id: item._id },
         {
@@ -198,6 +199,7 @@ export async function POST(request: NextRequest) {
               (watchlistItem.quantity || 0) *
               (watchlistItem.type === "stock" ? 1 : 100),
             profitLossPercent: analysis.details.priceChangePercent,
+            rationale: rationaleText || undefined,
             updatedAt: new Date().toISOString(),
           },
         }

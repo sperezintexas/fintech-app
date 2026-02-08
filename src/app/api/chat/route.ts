@@ -165,7 +165,7 @@ function buildToolContext(toolResults: {
   }
   if (toolResults.watchlist) {
     const w = toolResults.watchlist as {
-      watchlists: { name: string; items: { symbol: string; type?: string; strategy?: string; quantity?: number; entryPrice?: number; strikePrice?: number; expirationDate?: string; currentPrice?: number; notes?: string }[] }[];
+      watchlists: { name: string; items: { symbol: string; type?: string; strategy?: string; quantity?: number; entryPrice?: number; strikePrice?: number; expirationDate?: string; currentPrice?: number; notes?: string; rationale?: string }[] }[];
     };
     parts.push("\n## Watchlist (LIVE PRICES)\n");
     for (const wl of w.watchlists ?? []) {
@@ -177,7 +177,8 @@ function buildToolContext(toolResults: {
             item.strikePrice != null && item.expirationDate
               ? ` ${item.type ?? ""} ${item.strikePrice} exp ${item.expirationDate}`
               : "";
-          parts.push(`  - ${item.symbol}${optStr} qty ${item.quantity ?? 0} entry $${(item.entryPrice ?? 0).toFixed(2)}${priceStr}${item.notes ? ` (${item.notes})` : ""}`);
+          const rationaleStr = item.rationale ? ` [Last run: ${item.rationale}]` : "";
+          parts.push(`  - ${item.symbol}${optStr} qty ${item.quantity ?? 0} entry $${(item.entryPrice ?? 0).toFixed(2)}${priceStr}${rationaleStr}${item.notes ? ` (${item.notes})` : ""}`);
         }
       }
     }
@@ -313,6 +314,7 @@ export async function POST(request: NextRequest) {
           strikePrice?: number;
           expirationDate?: string;
           notes?: string;
+          rationale?: string;
         };
         const watchlists = await db.collection<WatchlistDoc>("watchlists").find({}).sort({ name: 1 }).toArray();
         const watchlistItems = await db.collection<WatchlistItemDoc>("watchlist").find({}).sort({ addedAt: -1 }).toArray();
@@ -359,6 +361,7 @@ export async function POST(request: NextRequest) {
               expirationDate: item.expirationDate,
               currentPrice: livePrice,
               notes: item.notes,
+              rationale: item.rationale,
             };
           });
           return { name: w.name, items: enriched };

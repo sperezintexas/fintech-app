@@ -32,6 +32,21 @@ vi.mock("../x", () => ({
   postToXThread: vi.fn().mockResolvedValue(undefined),
 }));
 
+/** Accounts collection mock: supports find().toArray() and find().project().toArray() for runWatchlistAnalysis (holdings check). */
+function mockAccountsCollection(accId?: ObjectId) {
+  const id = accId ?? new ObjectId();
+  return {
+    find: vi.fn().mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([{ _id: id, riskLevel: "medium" }]),
+      project: vi.fn().mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([
+          { _id: id, positions: [{ type: "stock", ticker: "TSLA" }] },
+        ]),
+      }),
+    }),
+  };
+}
+
 describe("Watchlist Report", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -123,11 +138,7 @@ describe("Watchlist Report", () => {
           };
         }
         if (name === "accounts") {
-          return {
-            find: vi.fn().mockReturnValue({
-              toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(), riskLevel: "medium" }]),
-            }),
-          };
+          return mockAccountsCollection(accId);
         }
         if (name === "alertPreferences") {
           return {
@@ -217,11 +228,7 @@ describe("Watchlist Report", () => {
           };
         }
         if (name === "accounts") {
-          return {
-            find: vi.fn().mockReturnValue({
-              toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(), riskLevel: "medium" }]),
-            }),
-          };
+          return mockAccountsCollection(accId);
         }
         if (name === "alertPreferences") {
           return { findOne: vi.fn().mockResolvedValue(mockPrefs) };
@@ -312,11 +319,7 @@ describe("Watchlist Report", () => {
           };
         }
         if (name === "accounts") {
-          return {
-            find: vi.fn().mockReturnValue({
-              toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(), riskLevel: "medium" }]),
-            }),
-          };
+          return mockAccountsCollection();
         }
         if (name === "alertPreferences") {
           return { findOne: vi.fn().mockResolvedValue(mockPrefs) };
@@ -438,11 +441,7 @@ describe("Watchlist Report", () => {
           };
         }
         if (name === "accounts") {
-          return {
-            find: vi.fn().mockReturnValue({
-              toArray: vi.fn().mockResolvedValue([{ _id: new ObjectId(), riskLevel: "medium" }]),
-            }),
-          };
+          return mockAccountsCollection();
         }
         if (name === "alertPreferences") {
           return { findOne: vi.fn().mockResolvedValue(mockPrefs) };

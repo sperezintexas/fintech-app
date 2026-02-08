@@ -8,6 +8,35 @@ import { getDb } from "@/lib/mongodb";
 import { getMultipleTickerPrices, getOptionPremiumForPosition } from "@/lib/yahoo";
 import type { Account, Position } from "@/types/portfolio";
 
+/** Extract underlying symbol from option ticker (e.g. TSLA250117C250 -> TSLA). */
+export function getUnderlyingFromTicker(ticker: string): string {
+  return ticker?.replace(/\d.*$/, "").toUpperCase() ?? ticker?.toUpperCase() ?? "";
+}
+
+/** Build set of symbols held (stock tickers + option underlyings). When accountId is set, only that account's positions are considered. */
+export function getHeldSymbols(
+  accounts: Array<{ _id?: ObjectId | string; positions?: Position[] }>,
+  accountId?: string
+): Set<string> {
+  const set = new Set<string>();
+  const filtered =
+    accountId != null
+      ? accounts.filter((a) => (a._id instanceof ObjectId ? a._id.toString() : a._id) === accountId)
+      : accounts;
+  for (const acc of filtered) {
+    const positions = acc.positions ?? [];
+    for (const p of positions) {
+      if (!p.ticker) continue;
+      if (p.type === "stock") {
+        set.add(p.ticker.toUpperCase());
+      } else if (p.type === "option") {
+        set.add(getUnderlyingFromTicker(p.ticker));
+      }
+    }
+  }
+  return set;
+}
+
 export type EnhancedPosition = Position & {
   marketValue: number;
   unrealizedPL: number;

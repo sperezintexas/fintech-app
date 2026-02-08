@@ -151,8 +151,8 @@ jobs:
             MONGODB_URI=mongodb://localhost:27017
             MONGODB_DB=myinvestments
 
-  # AWS App Runner: build Docker image, push to ECR, deploy to App Runner (main only, when enabled).
-  # Variables: ENABLE_AWS_DEPLOY=true, APP_RUNNER_SERVICE_ARN (required). Secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.
+  # AWS App Runner: build image, push to ECR, start-deployment only. No update-service (no config/env changes) and no create/delete service.
+  # Config updates: run scripts/update-apprunner-env.sh manually. Variables: ENABLE_AWS_DEPLOY=true, APP_RUNNER_SERVICE_ARN. Secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.
   apprunner-deploy:
     name: Build & Deploy to App Runner
     runs-on: ubuntu-latest

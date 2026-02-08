@@ -161,6 +161,8 @@ export type WatchlistItem = {
   breakeven?: number;
   // Metadata
   notes?: string;
+  /** Last daily-analysis recommendation + reason; updated when watchlist report runs */
+  rationale?: string;
   /** Company name (e.g. longName from quote); enriched by API when loading watchlist */
   companyDescription?: string;
   addedAt: string;

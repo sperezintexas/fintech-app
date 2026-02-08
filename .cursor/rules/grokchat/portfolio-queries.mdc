@@ -1,0 +1,141 @@
+---
+description: Guidelines for querying portfolio-related data in MongoDB for Grok chat and features. Use getDb() and native MongoDB collections (no Prisma).
+globs:
+alwaysApply: false
+---
+# Portfolio Data Query Guidelines (Grok Chat & API)
+
+This rule describes how portfolio, accounts, holdings, watchlist, scheduler jobs, and alerts are stored and how to query them so Grok (and developers) can reason about user data correctly. **The app uses native MongoDB via `getDb()` — there is no Prisma.**
+
+## Core Principles
+
+- **DB access**: `import { getDb } from "@/lib/mongodb";` then `const db = await getDb();` and `db.collection("collectionName")`.
+- **IDs**: MongoDB `_id` is `ObjectId` in DB; use `.toString()` when returning to API/UI. Query with `new ObjectId(id)` when accepting string IDs.
+- **Scoping**: This app does not scope accounts by `userId` in the schema; accounts are global. Auth is handled at route level (e.g. protected pages). For chat, portfolio/watchlist tools fetch all accounts and watchlists.
+- **Async**: Use async/await; handle errors in try/catch in API routes or server actions.
+- **Enrichment**: Portfolio and watchlist often need live prices — use `getMultipleTickerPrices(tickers)` from `@/lib/yahoo` and merge into positions/items.
+
+## Key Collections & Data Structures
+
+Types live in `src/types/portfolio.ts`. Collections and shapes:
+
+### 1. Accounts (holdings / positions)
+
+- **Collection**: `accounts`
+- **Document shape** (Account): `_id` (ObjectId), `name`, `balance`, `riskLevel` ("low"|"medium"|"high"), `strategy` (e.g. "growth"|"income"|"balanced"|"aggressive"), **`positions`** (array embedded), `recommendations` (array).
+- **Position** (element of `positions`): `_id`, `type` ("stock"|"option"|"cash"), `ticker`, `shares` (stocks), `purchasePrice`, `currentPrice`, `dailyChange`, `dailyChangePercent`; for options: `strike`, `expiration`, `optionType` ("call"|"put"), `contracts`, `premium`; for cash: `amount`, `currency`. Enriched by API: `marketValue`, `unrealizedPL`, `unrealizedPLPercent`, `isExpired`.
+
+**Query examples:**
+
+```typescript
+const db = await getDb();
+type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
+const accounts = await db.collection<AccountDoc>("accounts").find({}).toArray();
+// All tickers from positions:
+const tickers = [...new Set(accounts.flatMap((a) => (a.positions ?? []).map((p) => p.ticker).filter(Boolean)))];
+```
+
+### 2. Watchlists (containers) and Watchlist (items)
+
+- **Watchlists** (containers): Collection `watchlists`. Fields: `_id`, `name`, `purpose`, `createdAt`, `updatedAt`. Default list is usually named `"Default"`.
+- **Watchlist items**: Collection `watchlist`. Fields: `_id`, `watchlistId` (string or ObjectId ref), `accountId?`, `symbol`, `underlyingSymbol`, `type` ("stock"|"call"|"put"|"csp"|"covered-call"), `strategy` (e.g. "covered-call"|"long-stock"|"wheel"), `quantity`, `entryPrice`, `entryDate`; options: `strikePrice`, `expirationDate`, `entryPremium`; tracking: `currentPrice`, `currentPremium`, `profitLoss`, `profitLossPercent`; metadata: `notes`, `rationale` (last daily-analysis recommendation + reason), `companyDescription`, `addedAt`, `updatedAt`.
+
+**Query examples:**
+
+```typescript
+const watchlists = await db.collection("watchlists").find({}).sort({ name: 1 }).toArray();
+const watchlistItems = await db.collection("watchlist").find({}).sort({ addedAt: -1 }).toArray();
+// Items for a watchlist (including legacy items with no watchlistId for Default):
+const defaultId = watchlists.find((w) => w.name === "Default")?._id?.toString();
+const itemsForList = watchlistItems.filter((i) =>
+  String(i.watchlistId ?? "") === wlId || (defaultId && wlId === defaultId && !i.watchlistId)
+);
+```
+
+### 3. Alerts
+
+- **Collection**: `alerts`
+- **Shape** (WatchlistAlert and variants): `_id`, `watchlistItemId?`, `accountId?`, `symbol`, `recommendation` ("HOLD"|"CLOSE"|"ROLL"|"BTC"|"STC"|"WATCH"), `severity` ("info"|"warning"|"urgent"|"critical"), `reason`, `details`, `riskWarning`, `suggestedActions`, `createdAt`, `acknowledged`, `type?` (e.g. "daily-analysis", "risk-scanner"). Alerts are created by daily-analysis (holdings only), risk-scanner, and option scanners.
+
+**Query examples:**
+
+```typescript
+const recentAlerts = await db.collection("alerts")
+  .find({ createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() } })
+  .sort({ createdAt: -1 })
+  .limit(50)
+  .toArray();
+const undelivered = await db.collection("alerts").find({ acknowledged: false }).toArray();
+```
+
+### 4. Scheduler / Report Jobs
+
+- **Collection**: `reportJobs`
+- **Shape** (Job): `_id`, `accountId` (string | null; null = portfolio-level), `name`, `jobType` (e.g. "watchlistreport", "unifiedOptionsScanner", "riskScanner", "portfoliosummary", "deliverAlerts"), `scheduleCron`, `channels` (e.g. ["slack","twitter"]), `status` ("active"|"paused"), `lastRunAt`, `lastRunError`, `lastRunNotes`, `nextRunAt`, `templateId`, `config`, `createdAt`, `updatedAt`. Actual scheduling is in Agenda (MongoDB collection `scheduledJobs`); `nextRunAt` can be merged from Agenda when listing jobs.
+
+**Query examples:**
+
+```typescript
+const jobs = await db.collection("reportJobs").find({ accountId: null }).sort({ createdAt: -1 }).toArray();
+const scannerJobs = await db.collection("reportJobs").find({ jobType: "unifiedOptionsScanner" }).toArray();
+```
+
+**API**: `GET /api/jobs?accountId=...` or `?all=1` returns jobs with `nextRunAt` from Agenda when available.
+
+### 5. Recommendation collections (scanner outputs)
+
+- **coveredCallRecommendations**: `getRecentCoveredCallRecommendations(limit)` in `@/lib/covered-call-analyzer`. Fields include `accountId`, `symbol`, `recommendation`, `reason`, `source` ("holdings"|"watchlist"), `metrics`, `createdAt`, etc.
+- **optionRecommendations**, **protectivePutRecommendations**, **straddleStrangleRecommendations**: Similar pattern; stored after scanner runs, queried by report/API as needed.
+
+For Grok chat, only covered call recs are pre-fetched when message triggers `needsCoveredCallTool()` and injected as context.
+
+### 6. Alert configuration (delivery)
+
+- **Collection**: `alertConfigs`
+- **Shape** (AlertConfig): `jobType` (AlertConfigJobType), `accountId?`, `channels`, `templateId`, `thresholds`, `quietHours`, `enabled`, `createdAt`, `updatedAt`. Controls which job types deliver to Slack/X and when.
+
+## How Grok Chat Gets Data (Pre-Fetch Tools)
+
+In `POST /api/chat` (`src/app/api/chat/route.ts`):
+
+| User intent (keywords) | Config | Data fetched | Injected as |
+|------------------------|--------|---------------|-------------|
+| portfolio, holdings, positions, account, balance, watchlist, watching, tracking | `tools.portfolio` | `accounts` + `watchlists` + `watchlist` + Yahoo prices | `## Portfolio`, `## Watchlist` |
+| risk, var, beta, sharpe, diversification, volatility, analyze portfolio | `tools.portfolio` | Same accounts + `computeRiskMetricsWithPositions` + `analyzeRiskWithGrok` | `## Risk Analysis` |
+| market, news, outlook, sentiment, indices | `tools.marketData` | `getMarketNewsAndOutlook()` | `## Market Data` |
+| price, quote, stock, option, ticker symbols | `tools.marketData` | `getStockAndOptionPrices(symbol)` | `## {Symbol} Price Data` |
+| covered call, btc, roll, scanner, recommendations | `tools.coveredCallRecs` | `getRecentCoveredCallRecommendations(20)` | `## Covered Call Recommendations` |
+
+Context is built by `buildToolContext(toolResults)` and prepended to the user message as `[Context from tools - REAL-TIME DATA]`. Grok is instructed to use this data for prices and positions, not training data.
+
+**LLM tools** (Grok can call during the turn): `web_search` (SerpAPI), `covered_call_alternatives` (when order context or covered-call question).
+
+## Gaps & Optimizations
+
+1. **Scheduler jobs not in context**
+   Questions like “when does my options scanner run?” or “what jobs are scheduled?” have no injected data. Consider adding a trigger (e.g. `scheduler|schedule|cron|job|when does.*run`) and when matched, fetch `reportJobs` (and optionally next run from Agenda) and add a short “## Scheduled Jobs” block to `buildToolContext`.
+
+2. **Alerts not in context**
+   “My alerts”, “pending alerts”, “what did the scanner recommend?” beyond covered calls — not currently injected. Consider triggering on `alert|pending|recommendation|scanner.*said` and injecting recent alerts (e.g. last 24h, undelivered) so Grok can summarize.
+
+3. **Watchlist rationale in context**
+   `buildToolContext` already includes watchlist items with `symbol`, `type`, `strategy`, `quantity`, `entryPrice`, `currentPrice`, `notes`. It does not include `rationale` (last daily-analysis recommendation). Adding `rationale` to the enriched watchlist items in the chat route would let Grok reference “last run said HOLD — …” when the user asks about a watchlist item.
+
+4. **Single source of truth**
+   This file is the single place to align Grok rules and code: when adding a new collection or field used for “portfolio-like” answers, document it here and extend chat triggers/context if needed.
+
+5. **Account filtering**
+   If you later add multi-tenant by user, scope `accounts` (and optionally watchlists) by `userId` and pass that into chat tools; document the filter in this rule.
+
+## Quick Reference: Collection Names
+
+- `accounts` — accounts with embedded `positions`
+- `watchlists` — list of watchlist containers (name, purpose)
+- `watchlist` — watchlist items (symbol, type, strategy, prices, notes, rationale)
+- `alerts` — generated alerts (daily-analysis, risk-scanner, option scanners)
+- `reportJobs` — scheduled report/job definitions (cron, channels, status)
+- `alertConfigs` — per-job-type delivery config (Slack/X, quiet hours)
+- `coveredCallRecommendations`, `optionRecommendations`, `protectivePutRecommendations`, `straddleStrangleRecommendations` — scanner outputs
+- `scheduledJobs` — Agenda collection for next run times (used by scheduler)
+- `chatHistory` — per-user chat messages
+- `appUtil` — key-value (e.g. `grokChatConfig`)

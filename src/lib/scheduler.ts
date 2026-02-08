@@ -12,6 +12,7 @@ import { processAlertDelivery } from "./alert-delivery";
 import { formatUnifiedOptionsScannerReport, formatUnifiedOptionsScannerRunNotes, type SlackBlock } from "./slack-templates";
 import { shouldRunPurge, runPurge } from "./cleanup-storage";
 import { runRiskScanner } from "./risk-scanner";
+import { getHeldSymbols } from "./holdings";
 
 // Removed - using Yahoo Finance
 // Removed - using Yahoo Finance
@@ -967,6 +968,17 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
     accountRiskMap.set(acc._id.toString(), acc.riskLevel || "medium");
   });
 
+  // Alerts only for account holdings (not watchlist-only items)
+  const allAccountsWithPositions = await db
+    .collection("accounts")
+    .find(accountId ? { _id: new ObjectId(accountId) } : {})
+    .project({ _id: 1, positions: 1 })
+    .toArray();
+  const heldSymbols = getHeldSymbols(
+    allAccountsWithPositions,
+    accountId ?? undefined
+  );
+
   let analyzed = 0;
   let alertsCreated = 0;
   let errors = 0;
@@ -1015,7 +1027,8 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
       // Run analysis
       const analysis = analyzeWatchlistItem(item, riskLevel, analysisMarketData);
 
-      // Update watchlist item with current data
+      // Update watchlist item with current data and last recommendation/rationale
+      const rationaleText = [analysis.recommendation, analysis.reason].filter(Boolean).join(" — ");
       await db.collection("watchlist").updateOne(
         { _id: new ObjectId(item._id) },
         {
@@ -1024,6 +1037,7 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
             currentPremium: analysisMarketData.optionMid,
             profitLoss: priceChange * item.quantity * (item.type === "stock" ? 1 : 100),
             profitLossPercent: priceChangePercent,
+            rationale: rationaleText || undefined,
             updatedAt: new Date().toISOString(),
           },
         }
@@ -1031,8 +1045,18 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
 
       analyzed++;
 
-      // Create alert if significant (not just info/HOLD)
-      if (analysis.severity !== "info" || analysis.recommendation !== "HOLD") {
+      // Create alert only for account holdings (not watchlist-only items)
+      const symbolForItem = (
+        item.type === "stock"
+          ? item.symbol
+          : (item.underlyingSymbol || item.symbol.replace(/\d+[CP]\d+$/, ""))
+      ).toUpperCase();
+      const isHolding = heldSymbols.has(symbolForItem);
+
+      if (
+        isHolding &&
+        (analysis.severity !== "info" || analysis.recommendation !== "HOLD")
+      ) {
         // Check for duplicate recent alert
         const recentAlert = await db.collection("alerts").findOne({
           watchlistItemId: item._id.toString(),

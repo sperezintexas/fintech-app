@@ -65,6 +65,7 @@ while IFS= read -r line; do
   key="${line%%=*}"
   key="${key%"${key##*[![:space:]]}"}"
   [[ -z "$key" ]] && continue
+  [[ "$key" == "SKIP_AUTH" ]] && continue
   value="${line#*=}"
   value="${value#"${value%%[![:space:]]*}"}"
   value="${value%"${value##*[![:space:]]}"}"

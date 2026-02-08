@@ -28,7 +28,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-# Build RuntimeEnvironmentVariables JSON from env file (same logic as create-apprunner-service.sh)
+# Build RuntimeEnvironmentVariables JSON from env file (same logic as create-apprunner-service.sh).
+# SKIP_AUTH is omitted so production always uses real auth (do not add SKIP_AUTH to .env.prod).
 ENV_JSON="{}"
 while IFS= read -r line; do
   line="${line%%#*}"
@@ -38,6 +39,7 @@ while IFS= read -r line; do
   key="${line%%=*}"
   key="${key%"${key##*[![:space:]]}"}"
   [[ -z "$key" ]] && continue
+  [[ "$key" == "SKIP_AUTH" ]] && continue
   value="${line#*=}"
   value="${value#"${value%%[![:space:]]*}"}"
   value="${value%"${value##*[![:space:]]}"}"
@@ -46,6 +48,14 @@ while IFS= read -r line; do
   fi
   ENV_JSON=$(jq -n --argjson prev "$ENV_JSON" --arg k "$key" --arg v "$value" '$prev + {($k): $v}')
 done < "$ENV_FILE"
+
+# Verify X auth vars are present (no values printed)
+KEYS=$(jq -r 'keys[]' <<< "$ENV_JSON")
+if echo "$KEYS" | grep -q '^X_CLIENT_SECRET$'; then
+  echo "Env includes X_CLIENT_SECRET (and $(echo "$KEYS" | wc -l | tr -d ' ') total vars)."
+else
+  echo "Warning: X_CLIENT_SECRET not in env file; X sign-in may fail."
+fi
 
 # Get current service source config (ImageIdentifier, AccessRoleArn, etc.)
 DESC=$(aws apprunner describe-service --service-arn "$APP_RUNNER_SERVICE_ARN" --region "$AWS_REGION" --output json)
