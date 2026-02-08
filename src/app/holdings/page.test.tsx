@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import type { Account } from "@/types/portfolio";
 import HoldingsPage from "./page";
 
 vi.mock("@/components/AppHeader", () => ({
@@ -18,16 +19,23 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+vi.mock("@/lib/data-server", () => ({
+  getAccountsServer: vi.fn(),
+}));
+
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
+const { getAccountsServer } = await import("@/lib/data-server");
+
 describe("Holdings Page", () => {
-  const mockAccounts = [{ _id: "acc1", name: "Merrill", balance: 50000, riskLevel: "medium", strategy: "balanced", positions: [], recommendations: [] }];
+  const mockAccounts: Account[] = [{ _id: "acc1", name: "Merrill", balance: 50000, riskLevel: "medium", strategy: "balanced", positions: [], recommendations: [] }];
   const mockPositions = [
     { _id: "pos1", type: "stock", ticker: "TSLA", shares: 100, purchasePrice: 250, currentPrice: 255 },
   ];
 
   beforeEach(() => {
+    vi.mocked(getAccountsServer).mockResolvedValue(mockAccounts);
     mockFetch.mockReset();
     mockFetch.mockImplementation((url: string) => {
       if (url.includes("/api/accounts")) return Promise.resolve({ ok: true, json: async () => mockAccounts } as Response);
@@ -37,7 +45,8 @@ describe("Holdings Page", () => {
   });
 
   it("renders Holdings page with account selector when loaded", async () => {
-    render(<HoldingsPage />);
+    const Page = await HoldingsPage({ searchParams: Promise.resolve({}) });
+    render(Page);
 
     await waitFor(() => {
       expect(screen.getByText("Holdings")).toBeInTheDocument();

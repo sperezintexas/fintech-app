@@ -1,15 +1,13 @@
 import { MongoClient, Db } from "mongodb";
+import { getEnv } from "@/lib/env";
 
 export function getMongoUri(): string {
-  if (process.env.MONGODB_URI) return process.env.MONGODB_URI;
-  if (process.env.MONGODB_URI_B64) {
-    return Buffer.from(process.env.MONGODB_URI_B64, "base64").toString("utf8");
-  }
-  return "mongodb://localhost:27017";
+  return getEnv().MONGODB_URI;
 }
 
-const MONGODB_URI = getMongoUri();
-const MONGODB_DB = process.env.MONGODB_DB || "SmartTrader";
+export function getMongoDbName(): string {
+  return getEnv().MONGODB_DB;
+}
 
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
@@ -22,8 +20,10 @@ export async function connectToDatabase(): Promise<{
     return { client: cachedClient, db: cachedDb };
   }
 
-  const client = await MongoClient.connect(MONGODB_URI);
-  const db = client.db(MONGODB_DB);
+  const uri = getMongoUri();
+  const dbName = getMongoDbName();
+  const client = await MongoClient.connect(uri);
+  const db = client.db(dbName);
 
   cachedClient = client;
   cachedDb = db;

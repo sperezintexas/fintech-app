@@ -1,7 +1,7 @@
 import Agenda, { Job as AgendaJob } from "agenda";
 import { NextRequest } from "next/server";
 import { ObjectId } from "mongodb";
-import { getDb, getMongoUri } from "./mongodb";
+import { getDb, getMongoUri, getMongoDbName } from "./mongodb";
 import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, Job } from "@/types/portfolio";
 import { getReportTemplate } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
@@ -17,6 +17,51 @@ import { getHeldSymbols } from "./holdings";
 // Removed - using Yahoo Finance
 // Removed - using Yahoo Finance
 
+/** Backoff delays in ms: 1 min, 2 min, 4 min (exponential). */
+const RETRY_BACKOFF_MS = [60_000, 120_000, 240_000];
+const MAX_ATTEMPTS = 3;
+
+/** Classify as transient (retry) vs permanent (no retry). */
+export function isTransientError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  if (lower.includes("timeout") || lower.includes("etimedout") || lower.includes("econnreset") || lower.includes("econnrefused")) return true;
+  if (lower.includes("network") || lower.includes("fetch") || lower.includes("enotfound")) return true;
+  if (/\b5\d{2}\b/.test(msg) || lower.includes("503") || lower.includes("502") || lower.includes("504")) return true;
+  if (/\b4\d{2}\b/.test(msg) || lower.includes("401") || lower.includes("403") || lower.includes("validation") || lower.includes("auth")) return false;
+  return true;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Run fn with retries on transient errors. Backoff: 1 min, 2 min, 4 min.
+ * On permanent error or after max attempts, throws (caller should save lastError and not rethrow to avoid reschedule).
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: { maxAttempts?: number; backoffMs?: number[]; jobName?: string } = {}
+): Promise<T> {
+  const maxAttempts = options.maxAttempts ?? MAX_ATTEMPTS;
+  const backoffMs = options.backoffMs ?? RETRY_BACKOFF_MS;
+  const jobName = options.jobName ?? "job";
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (attempt === maxAttempts || !isTransientError(e)) throw e;
+      const delay = backoffMs[Math.min(attempt - 1, backoffMs.length - 1)] ?? backoffMs[backoffMs.length - 1];
+      console.warn(`[scheduler] ${jobName} attempt ${attempt}/${maxAttempts} failed (transient), retrying in ${delay / 1000}s:`, e instanceof Error ? e.message : e);
+      await sleep(delay);
+    }
+  }
+  throw lastError;
+}
+
 // Singleton agenda instance
 let agenda: Agenda | null = null;
 
@@ -24,7 +69,7 @@ export async function getAgenda(): Promise<Agenda> {
   if (agenda) return agenda;
 
   const mongoUri = getMongoUri();
-  const dbName = process.env.MONGODB_DB || "myinvestments";
+  const dbName = getMongoDbName();
 
   agenda = new Agenda({
     db: {
@@ -48,7 +93,7 @@ export async function getAgenda(): Promise<Agenda> {
 
 // Define all scheduled job types
 function defineJobs(agenda: Agenda) {
-  // Deliver Alerts job - sends pending alerts to Slack/X per AlertConfig
+  // Deliver Alerts job - sends pending alerts to Slack/X per AlertConfig (with retry on transient errors)
   agenda.define("deliverAlerts", async (job: AgendaJob) => {
     console.log("Running Alert Delivery...", new Date().toISOString());
 
@@ -56,7 +101,10 @@ function defineJobs(agenda: Agenda) {
     const accountId = data?.accountId;
 
     try {
-      const result = await processAlertDelivery(accountId);
+      const result = await withRetry(
+        () => processAlertDelivery(accountId),
+        { jobName: "deliverAlerts" }
+      );
 
       job.attrs.data = {
         ...job.attrs.data,
@@ -78,11 +126,11 @@ function defineJobs(agenda: Agenda) {
         lastError: msg,
       };
       await job.save();
-      throw error;
+      // Do not rethrow: job completes so Agenda does not reschedule; lastError is stored.
     }
   });
 
-  // Unified Options Scanner job - runs all 4 scanners (Option, CoveredCall, ProtectivePut, StraddleStrangle)
+  // Unified Options Scanner job - runs all 4 scanners (Option, CoveredCall, ProtectivePut, StraddleStrangle) with retry on transient errors
   agenda.define("unifiedOptionsScanner", async (job: AgendaJob) => {
     console.log("Running Unified Options Scanner...", new Date().toISOString());
 
@@ -106,7 +154,10 @@ function defineJobs(agenda: Agenda) {
     }
 
     try {
-      const result = await runUnifiedOptionsScanner(accountId, config);
+      const result = await withRetry(
+        () => runUnifiedOptionsScanner(accountId, config),
+        { jobName: "unifiedOptionsScanner" }
+      );
 
       job.attrs.data = {
         ...job.attrs.data,
@@ -133,7 +184,7 @@ function defineJobs(agenda: Agenda) {
         lastError: msg,
       };
       await job.save();
-      throw error;
+      // Do not rethrow: job completes so Agenda does not reschedule; lastError is stored.
     }
   });
 
@@ -159,12 +210,27 @@ function defineJobs(agenda: Agenda) {
     }
   });
 
-  // Scheduled report job (user-configured)
+  // Scheduled report job (user-configured) with retry on transient errors
   agenda.define("scheduled-report", async (job: AgendaJob) => {
     const data = job.attrs.data as { jobId?: string } | undefined;
     const jobId = data?.jobId;
     if (!jobId) return;
-    await executeJob(jobId);
+    try {
+      await withRetry(
+        () => executeJob(jobId),
+        { jobName: "scheduled-report" }
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("scheduled-report failed:", error);
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        lastError: msg,
+      };
+      await job.save();
+      // Do not rethrow so Agenda does not reschedule; lastError is stored.
+    }
   });
 }
 

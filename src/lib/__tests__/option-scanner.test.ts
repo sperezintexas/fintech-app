@@ -289,6 +289,55 @@ describe("Option Scanner", () => {
       });
     });
 
+    it("uses in-memory cache so second scan does not duplicate Yahoo calls", async () => {
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          find: vi.fn().mockReturnValue({
+            toArray: vi.fn().mockResolvedValue([
+              {
+                _id: { toString: () => "acc1" },
+                positions: [
+                  {
+                    _id: "pos1",
+                    type: "option",
+                    ticker: "TSLA",
+                    strike: 250,
+                    expiration: "2026-02-20",
+                    optionType: "call",
+                    contracts: 1,
+                    premium: 5,
+                  },
+                ],
+              },
+            ]),
+          }),
+        }),
+      } as never);
+
+      vi.mocked(getOptionMetrics).mockResolvedValue({
+        price: 6,
+        bid: 5.8,
+        ask: 6.2,
+        underlyingPrice: 255,
+        impliedVolatility: 25,
+        intrinsicValue: 5,
+        timeValue: 1,
+      });
+
+      vi.mocked(getOptionMarketConditions).mockResolvedValue({
+        vix: 18,
+        vixLevel: "low",
+        trend: "up",
+      });
+
+      clearMarketCache();
+      await scanOptions();
+      await scanOptions();
+
+      expect(getOptionMetrics).toHaveBeenCalledTimes(1);
+      expect(getOptionMarketConditions).toHaveBeenCalledTimes(1);
+    });
+
     it("skips positions when metrics unavailable", async () => {
       vi.mocked(getDb).mockResolvedValue({
         collection: vi.fn().mockReturnValue({

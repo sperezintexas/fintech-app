@@ -22,6 +22,7 @@ paths = [
   '''\.env\.template''',
   '''docs/aws-setup-guide\.md''',
   '''docs/aws-elastic-beanstalk\.md''',
+  '''src/lib/__tests__/env\.test\.ts''',
 ]
 
 # Additional rules for common secrets in this project

@@ -1,13 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import type { Account } from "@/types/portfolio";
 import AlertsPage from "./page";
 
 vi.mock("@/components/AppHeader", () => ({
   AppHeader: () => <header data-testid="app-header">AppHeader</header>,
 }));
 
+vi.mock("@/lib/data-server", () => ({
+  getAccountsServer: vi.fn(),
+  getAlertsServer: vi.fn(),
+}));
+
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
+
+const { getAccountsServer, getAlertsServer } = await import("@/lib/data-server");
 
 describe("Alerts Page", () => {
   const mockAlerts = [
@@ -49,20 +57,23 @@ describe("Alerts Page", () => {
     },
   ];
 
-  const mockAccounts = [
+  const mockAccounts: Account[] = [
     { _id: "acc1", name: "Merrill", balance: 50000, riskLevel: "medium", strategy: "balanced", positions: [], recommendations: [] },
   ];
 
   beforeEach(() => {
     mockFetch.mockReset();
+    vi.mocked(getAccountsServer).mockResolvedValue(mockAccounts);
   });
 
-  it("renders page title and description", async () => {
-    mockFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => mockAccounts } as Response)
-      .mockResolvedValueOnce({ ok: true, json: async () => [] } as Response);
+  async function renderAlertsPage() {
+    const Page = await AlertsPage();
+    render(Page);
+  }
 
-    render(<AlertsPage />);
+  it("renders page title and description", async () => {
+    vi.mocked(getAlertsServer).mockResolvedValue([]);
+    await renderAlertsPage();
 
     await waitFor(() => {
       expect(screen.getByText("Alerts")).toBeInTheDocument();
@@ -72,20 +83,9 @@ describe("Alerts Page", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows loading state initially", () => {
-    mockFetch.mockImplementation(() => new Promise(() => {}));
-
-    render(<AlertsPage />);
-
-    expect(screen.getByText("Loading alerts...")).toBeInTheDocument();
-  });
-
   it("shows empty state when no alerts", async () => {
-    mockFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => mockAccounts } as Response)
-      .mockResolvedValueOnce({ ok: true, json: async () => [] } as Response);
-
-    render(<AlertsPage />);
+    vi.mocked(getAlertsServer).mockResolvedValue([]);
+    await renderAlertsPage();
 
     await waitFor(() => {
       expect(screen.getByText("No Alerts")).toBeInTheDocument();
@@ -94,16 +94,9 @@ describe("Alerts Page", () => {
     expect(screen.getByRole("link", { name: /Go to Setup/ })).toBeInTheDocument();
   });
 
-  it("displays alerts when fetched", async () => {
-    mockFetch.mockImplementation((url: string) => {
-      if (url.includes("/api/accounts"))
-        return Promise.resolve({ ok: true, json: async () => mockAccounts } as Response);
-      if (url.includes("/api/alerts"))
-        return Promise.resolve({ ok: true, json: async () => mockAlerts } as Response);
-      return Promise.resolve({ ok: false } as Response);
-    });
-
-    render(<AlertsPage />);
+  it("displays alerts when initial data from server", async () => {
+    vi.mocked(getAlertsServer).mockResolvedValue(mockAlerts);
+    await renderAlertsPage();
 
     await waitFor(() => {
       expect(screen.getByText("TSLA")).toBeInTheDocument();
@@ -119,13 +112,8 @@ describe("Alerts Page", () => {
   });
 
   it("displays alert details for watchlist-style alerts", async () => {
-    mockFetch.mockImplementation((url: string) => {
-      if (url.includes("/api/accounts")) return Promise.resolve({ ok: true, json: async () => mockAccounts } as Response);
-      if (url.includes("/api/alerts")) return Promise.resolve({ ok: true, json: async () => [mockAlerts[0]] } as Response);
-      return Promise.resolve({ ok: false } as Response);
-    });
-
-    render(<AlertsPage />);
+    vi.mocked(getAlertsServer).mockResolvedValue([mockAlerts[0]]);
+    await renderAlertsPage();
 
     await waitFor(() => {
       expect(screen.getByText("TSLA")).toBeInTheDocument();
@@ -135,11 +123,8 @@ describe("Alerts Page", () => {
   });
 
   it("displays alert metrics for option-scanner style alerts", async () => {
-    mockFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => mockAccounts } as Response)
-      .mockResolvedValueOnce({ ok: true, json: async () => [mockAlerts[1]] } as Response);
-
-    render(<AlertsPage />);
+    vi.mocked(getAlertsServer).mockResolvedValue([mockAlerts[1]]);
+    await renderAlertsPage();
 
     await waitFor(() => {
       expect(screen.getByText("AAPL")).toBeInTheDocument();
@@ -150,17 +135,13 @@ describe("Alerts Page", () => {
   });
 
   it("calls acknowledge API when acknowledge button clicked", async () => {
+    vi.mocked(getAlertsServer).mockResolvedValue(mockAlerts);
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
-      if (url.includes("/api/accounts")) return Promise.resolve({ ok: true, json: async () => mockAccounts } as Response);
-      if (url.includes("/api/alerts/")) {
-        if (init?.method === "PUT") return Promise.resolve({ ok: true } as Response);
-        return Promise.resolve({ ok: true, json: async () => mockAlerts } as Response);
-      }
+      if (url.includes("/api/alerts/") && init?.method === "PUT") return Promise.resolve({ ok: true } as Response);
       if (url.includes("/api/alerts")) return Promise.resolve({ ok: true, json: async () => mockAlerts } as Response);
       return Promise.resolve({ ok: false } as Response);
     });
-
-    render(<AlertsPage />);
+    await renderAlertsPage();
 
     await waitFor(() => {
       expect(screen.getByText("TSLA")).toBeInTheDocument();
@@ -181,15 +162,13 @@ describe("Alerts Page", () => {
   });
 
   it("shows account filter when multiple accounts", async () => {
-    const twoAccounts = [
+    const twoAccounts: Account[] = [
       ...mockAccounts,
       { _id: "acc2", name: "Fidelity", balance: 25000, riskLevel: "high", strategy: "aggressive", positions: [], recommendations: [] },
     ];
-    mockFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => twoAccounts } as Response)
-      .mockResolvedValueOnce({ ok: true, json: async () => [] } as Response);
-
-    render(<AlertsPage />);
+    vi.mocked(getAccountsServer).mockResolvedValue(twoAccounts);
+    vi.mocked(getAlertsServer).mockResolvedValue([]);
+    await renderAlertsPage();
 
     await waitFor(() => {
       const selects = screen.getAllByRole("combobox");
