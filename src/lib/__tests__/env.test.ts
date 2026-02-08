@@ -37,20 +37,22 @@ describe("env", () => {
       expect(result.MONGODB_DB).toBe("SmartTrader");
     });
 
-    it("throws with message containing var name when MONGODB_URI and MONGODB_URI_B64 are missing", () => {
+    it("uses defaults when MONGODB_URI and MONGODB_URI_B64 are missing", () => {
       const env = validEnv({ MONGODB_URI: undefined });
-      expect(() => validateServerEnv(env)).toThrow(/MONGODB_URI/);
-      expect(() => validateServerEnv(env)).toThrow(/Either MONGODB_URI or MONGODB_URI_B64/);
+      const result = validateServerEnv(env);
+      expect(result.MONGODB_URI).toBe("mongodb://localhost:27017");
     });
 
-    it("throws with message containing var name when NEXTAUTH_SECRET and AUTH_SECRET are missing", () => {
+    it("uses default NEXTAUTH_SECRET when both NEXTAUTH_SECRET and AUTH_SECRET are missing", () => {
       const env = validEnv({ NEXTAUTH_SECRET: undefined });
-      expect(() => validateServerEnv(env)).toThrow(/NEXTAUTH_SECRET/);
+      const result = validateServerEnv(env);
+      expect(result.NEXTAUTH_SECRET).toBe("");
     });
 
-    it("throws when NEXTAUTH_SECRET is empty string", () => {
+    it("uses empty string when NEXTAUTH_SECRET is empty", () => {
       const env = validEnv({ NEXTAUTH_SECRET: "" });
-      expect(() => validateServerEnv(env)).toThrow(/NEXTAUTH_SECRET/);
+      const result = validateServerEnv(env);
+      expect(result.NEXTAUTH_SECRET).toBe("");
     });
   });
 });

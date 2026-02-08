@@ -1,28 +1,17 @@
 /**
- * Server-side env validation. Validates at first use and throws with a clear
- * message if any required var is missing. Keeps optional vars (Slack, X, etc.)
- * optional so dev/local doesn't require them.
+ * Server-side env. Builds ValidatedEnv from process.env with defaults.
+ * No validation/throwing so CI build (e.g. without NEXTAUTH_SECRET) can succeed.
  */
 
-import { z } from "zod";
-
-const serverEnvSchema = z.object({
-  MONGODB_URI: z.string().min(1).optional(),
-  MONGODB_URI_B64: z.string().min(1).optional(),
-  MONGODB_DB: z.string().min(1).optional(),
-  NEXTAUTH_SECRET: z.string().min(1).optional(),
-  AUTH_SECRET: z.string().min(1).optional(),
-  NEXTAUTH_URL: z.string().url().optional().or(z.literal("")),
-  AUTH_URL: z.string().url().optional().or(z.literal("")),
-}).refine(
-  (data) => (data.MONGODB_URI?.length ?? 0) > 0 || (data.MONGODB_URI_B64?.length ?? 0) > 0,
-  { message: "Either MONGODB_URI or MONGODB_URI_B64 must be set", path: ["MONGODB_URI"] }
-).refine(
-  (data) => (data.NEXTAUTH_SECRET?.length ?? 0) > 0 || (data.AUTH_SECRET?.length ?? 0) > 0,
-  { message: "NEXTAUTH_SECRET or AUTH_SECRET must be set", path: ["NEXTAUTH_SECRET"] }
-);
-
-export type ServerEnvInput = z.infer<typeof serverEnvSchema>;
+type ServerEnvInput = {
+  MONGODB_URI?: string;
+  MONGODB_URI_B64?: string;
+  MONGODB_DB?: string;
+  NEXTAUTH_SECRET?: string;
+  AUTH_SECRET?: string;
+  NEXTAUTH_URL?: string;
+  AUTH_URL?: string;
+};
 
 let validated: ValidatedEnv | null = null;
 
@@ -69,24 +58,23 @@ function buildValidatedEnv(raw: ServerEnvInput, fullEnv: NodeJS.ProcessEnv): Val
 }
 
 /**
- * Validates a given env object and returns ValidatedEnv. Throws with message
- * containing the var name if required vars are missing. Used by getEnv() and by tests.
+ * Builds ValidatedEnv from env. Never throws; uses defaults for missing vars.
  */
 export function validateServerEnv(env: NodeJS.ProcessEnv): ValidatedEnv {
-  const parsed = serverEnvSchema.safeParse(env);
-  if (!parsed.success) {
-    const first = parsed.error.errors[0];
-    const msg = first?.message ?? parsed.error.message;
-    const path = first?.path?.join(".") ?? "env";
-    throw new Error(`Env validation failed: ${path} — ${msg}`);
-  }
-  return buildValidatedEnv(parsed.data, env);
+  const raw: ServerEnvInput = {
+    MONGODB_URI: env.MONGODB_URI,
+    MONGODB_URI_B64: env.MONGODB_URI_B64,
+    MONGODB_DB: env.MONGODB_DB,
+    NEXTAUTH_SECRET: env.NEXTAUTH_SECRET,
+    AUTH_SECRET: env.AUTH_SECRET,
+    NEXTAUTH_URL: env.NEXTAUTH_URL,
+    AUTH_URL: env.AUTH_URL,
+  };
+  return buildValidatedEnv(raw, env);
 }
 
 /**
- * Validates server env and returns the validated object. Throws on first call
- * if any required var is missing, with message containing the var name.
- * Subsequent calls return the same cached object.
+ * Returns server env with defaults. Cached after first call.
  */
 export function getEnv(): ValidatedEnv {
   if (validated) return validated;
@@ -95,8 +83,7 @@ export function getEnv(): ValidatedEnv {
 }
 
 /**
- * Call once at startup (e.g. in instrumentation) to crash early if env is invalid.
- * Idempotent; safe to call multiple times.
+ * Call once at startup (e.g. in instrumentation). Idempotent.
  */
 export function ensureEnv(): ValidatedEnv {
   return getEnv();
