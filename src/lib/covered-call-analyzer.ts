@@ -996,8 +996,10 @@ export async function storeCoveredCallRecommendations(
     });
     stored++;
 
+    const isFromHoldings = rec.source !== "watchlist";
     if (
       options?.createAlerts &&
+      isFromHoldings &&
       (rec.recommendation === "BUY_TO_CLOSE" || rec.recommendation === "SELL_NEW_CALL" || rec.recommendation === "ROLL")
     ) {
       const alert: Record<string, unknown> = {

@@ -542,8 +542,11 @@ export async function storeProtectivePutRecommendations(
     });
     stored++;
 
+    const isFromHoldings =
+      rec.accountId !== "portfolio" && rec.accountId !== "symbol-mode";
     if (
       options?.createAlerts &&
+      isFromHoldings &&
       (rec.recommendation === "SELL_TO_CLOSE" ||
         rec.recommendation === "ROLL" ||
         rec.recommendation === "BUY_NEW_PUT")

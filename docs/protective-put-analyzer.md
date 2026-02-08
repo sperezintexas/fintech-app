@@ -115,7 +115,7 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `putBid`, `
 ### API
 
 - **Report type:** Unified Options Scanner; no dedicated protective-put-only report type.
-- **Alerts:** `type: "protective-put"` in alerts collection for SELL_TO_CLOSE, ROLL, BUY_NEW_PUT
+- **Alerts:** `type: "protective-put"` in alerts collection for SELL_TO_CLOSE, ROLL, BUY_NEW_PUT — **only for recommendations from actual holdings** (not for watchlist-only or symbol-mode). Watchlist BUY_NEW_PUT recommendations are stored and shown on the watchlist page but do not create alerts.
 - **Scan test:** `POST /api/scan-test` with `scannerType: "protectivePut"` runs protective put only (for testing).
 
 ### UI
@@ -128,7 +128,7 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `putBid`, `
 ## Storage & Alerts
 
 - **Collection:** `protectivePutRecommendations` — each recommendation stored with `storedAt`
-- **Alerts:** Created when `recommendation` is `SELL_TO_CLOSE`, `ROLL`, or `BUY_NEW_PUT`; `type: "protective-put"`, `severity: "warning"`
+- **Alerts:** Created when `recommendation` is `SELL_TO_CLOSE`, `ROLL`, or `BUY_NEW_PUT` and the recommendation is from **holdings** (real account positions). Recommendations from watchlist-only (`accountId: "portfolio"`) or symbol-mode are stored but do not create alerts.
 - **Delivery:** Via `deliverAlerts` job → Slack/X per `AlertConfig`
 
 ---

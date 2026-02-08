@@ -4,7 +4,7 @@
 
 The **Unified Options Scanner** is an orchestrator that runs four option scanners in sequence: **Option Scanner**, **Covered Call Scanner**, **Protective Put Scanner**, and **Straddle/Strangle Scanner**. It stores all recommendations, creates alerts, and returns a combined summary. One job replaces four separate scheduled runs.
 
-**Core purpose:** Run all option analysis in a single job; pass optional per-scanner config overrides; persist recommendations and create alerts for delivery via Slack/X.
+**Core purpose:** Run all option analysis in a single job; pass optional per-scanner config overrides; persist recommendations and create alerts for delivery via Slack/X. **Alerts are created only for recommendations from actual holdings**; watchlist-only recommendations (e.g. protective put “100-share block” or covered call from watchlist) are stored and appear on the watchlist/reports but do not create alerts.
 
 ---
 

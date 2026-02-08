@@ -906,5 +906,44 @@ describe("Protective Put Analyzer", () => {
       expect(alertsCreated).toBe(0);
       expect(mockInsertOne).toHaveBeenCalledTimes(1);
     });
+
+    it("does not create alerts for BUY_NEW_PUT from watchlist (accountId portfolio)", async () => {
+      const mockInsertOne = vi.fn().mockResolvedValue({ insertedId: "id1" });
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          insertOne: mockInsertOne,
+        }),
+      } as never);
+
+      const recommendations = [
+        {
+          accountId: "portfolio",
+          symbol: "BE",
+          recommendation: "BUY_NEW_PUT" as const,
+          confidence: "MEDIUM" as const,
+          reason: "Watchlist: 100-share block",
+          metrics: {
+            stockPrice: 10,
+            putBid: 0,
+            putAsk: 0,
+            dte: 0,
+            netProtectionCost: 0,
+            effectiveFloor: 0,
+            stockUnrealizedPl: 0,
+            stockUnrealizedPlPercent: 0,
+            protectionCostPercent: 0,
+          },
+          createdAt: new Date().toISOString(),
+        },
+      ];
+
+      const { stored, alertsCreated } = await storeProtectivePutRecommendations(recommendations, {
+        createAlerts: true,
+      });
+
+      expect(stored).toBe(1);
+      expect(alertsCreated).toBe(0);
+      expect(mockInsertOne).toHaveBeenCalledTimes(1);
+    });
   });
 });

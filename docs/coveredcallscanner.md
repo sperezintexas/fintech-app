@@ -129,7 +129,7 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `callBid`, 
 ### API
 
 - **Report type:** `coveredCallScanner` (id, handlerKey, name, description)
-- **Alerts:** `type: "covered-call"` in alerts collection
+- **Alerts:** `type: "covered-call"` in alerts collection — **only for recommendations from holdings**; recommendations with `source: "watchlist"` are stored but do not create alerts (they appear on the watchlist page only).
 - **Scan API:** `POST /api/covered-call/scan` — single-option scan (e.g. from xStrategyBuilder Review Order)
 
 ### UI
@@ -143,7 +143,7 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `callBid`, 
 ## Storage & Alerts
 
 - **Collection:** `coveredCallRecommendations` — each recommendation stored with `storedAt`
-- **Alerts:** Created when `recommendation` is `BUY_TO_CLOSE`, `SELL_NEW_CALL`, or `ROLL`; `type: "covered-call"`, `severity: "warning"`
+- **Alerts:** Created when `recommendation` is `BUY_TO_CLOSE`, `SELL_NEW_CALL`, or `ROLL` and the recommendation is from **holdings** (not `source: "watchlist"`). Watchlist recommendations are stored but do not create alerts.
 - **Delivery:** Via `deliverAlerts` job → Slack/X per `AlertConfig`
 
 ---
