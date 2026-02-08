@@ -31,14 +31,18 @@ export async function GET(request: NextRequest) {
       .sort({ createdAt: -1 })
       .toArray();
 
-    const agenda = await getAgenda();
-    const scheduledReports = await agenda.jobs({ name: "scheduled-report" });
     const nextRunByJobId = new Map<string, string>();
-    for (const job of scheduledReports) {
-      const jid = (job.attrs.data as { jobId?: string })?.jobId;
-      if (jid && job.attrs.nextRunAt) {
-        nextRunByJobId.set(jid, job.attrs.nextRunAt.toISOString());
+    try {
+      const agenda = await getAgenda();
+      const scheduledReports = await agenda.jobs({ name: "scheduled-report" });
+      for (const job of scheduledReports) {
+        const jid = (job.attrs.data as { jobId?: string })?.jobId;
+        if (jid && job.attrs.nextRunAt) {
+          nextRunByJobId.set(jid, job.attrs.nextRunAt.toISOString());
+        }
       }
+    } catch (agendaErr) {
+      console.warn("Agenda jobs unavailable (nextRunAt omitted):", agendaErr instanceof Error ? agendaErr.message : agendaErr);
     }
 
     return NextResponse.json(
