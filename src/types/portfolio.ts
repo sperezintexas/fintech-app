@@ -55,6 +55,8 @@ export type Position = {
   unrealizedPL?: number;
   unrealizedPLPercent?: number;
   isExpired?: boolean;
+  /** Current underlying stock price (options only; from API). */
+  underlyingPrice?: number;
 };
 
 export type Recommendation = {

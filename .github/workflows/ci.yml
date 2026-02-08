@@ -396,13 +396,14 @@ jobs:
             }')
           curl -sSf -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$SLACK_WEBHOOK_URL" || true
 
-  # Post build: notify Slack with build status; optional health check when APP_URL is set (App Runner).
-  # Secrets: SLACK_WEBHOOK_URL. Variables: APP_URL (App Runner service URL for health check on main/develop).
+  # Post build: notify Slack with build status; runs after core pipeline (no dependency on apprunner-deploy so it always runs).
+  # Set repository secret SLACK_WEBHOOK_URL to your Slack Incoming Webhook URL to receive notifications.
+  # Variables: APP_URL (optional, for health check on main/develop).
   notify-slack:
     name: Notify Slack
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, build, docker, apprunner-deploy]
-    if: always() && !cancelled() && (needs.apprunner-deploy == 'success' || needs.apprunner-deploy == 'skipped' || needs.apprunner-deploy == 'failure')
+    needs: [lint, typecheck, test, build, docker]
+    if: always() && !cancelled()
     steps:
       - name: Verify deployment (health check)
         id: health
@@ -447,7 +448,7 @@ jobs:
       - name: Send Slack build notification
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          STATUS: ${{ (needs.lint.result == 'failure' || needs.typecheck.result == 'failure' || needs.test.result == 'failure' || needs.build.result == 'failure' || needs.docker.result == 'failure' || needs.apprunner-deploy.result == 'failure') && 'failure' || (needs.lint.result == 'cancelled' || needs.typecheck.result == 'cancelled' || needs.test.result == 'cancelled' || needs.build.result == 'cancelled' || needs.docker.result == 'cancelled' || needs.apprunner-deploy.result == 'cancelled') && 'cancelled' || 'success' }}
+          STATUS: ${{ (needs.lint.result == 'failure' || needs.typecheck.result == 'failure' || needs.test.result == 'failure' || needs.build.result == 'failure' || needs.docker.result == 'failure') && 'failure' || (needs.lint.result == 'cancelled' || needs.typecheck.result == 'cancelled' || needs.test.result == 'cancelled' || needs.build.result == 'cancelled' || needs.docker.result == 'cancelled') && 'cancelled' || 'success' }}
           RUN_URL: ${{ format('https://github.com/{0}/actions/runs/{1}', github.repository, github.run_id) }}
           BRANCH: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}

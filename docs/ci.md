@@ -4,7 +4,7 @@
 
 - **Workflow:** `.github/workflows/ci.yml` runs on push/PR to `main` and `develop`.
 - **Node:** 22 (required for yahoo-finance2).
-- **Jobs (order):** Lint → Type Check → Test → Build → Docker Build → [Build & Deploy to App Runner, on main when ENABLE_AWS_DEPLOY=true] → Notify Slack.
+- **Jobs (order):** Lint → Type Check → Test → Build → Docker Build → [Build & Deploy to App Runner, on main when ENABLE_AWS_DEPLOY=true] → Notify Slack. Notify Slack runs after the core pipeline (no dependency on apprunner-deploy) so build status is always reported.
 
 ## Job Summary
 
@@ -16,7 +16,7 @@
 | **Build** | `npm run build` (Next.js) | OOM, Next.js error, or missing `.next` — see below. |
 | **Docker Build** | Build image from Dockerfile | Dockerfile or build-args (MONGODB_URI, MONGODB_DB). |
 | **Build & Deploy to App Runner** | Build Docker image, push to ECR, deploy to AWS App Runner | Only on push to `main` when `ENABLE_AWS_DEPLOY=true`. ECR/App Runner permissions, missing APP_RUNNER_SERVICE_ARN. |
-| **Notify Slack** | Post build result + health check (when APP_URL set) | Missing SLACK_WEBHOOK_URL; health check fails if APP_URL wrong or app down. |
+| **Notify Slack** | Post build result + optional health check (when APP_URL set) | Missing SLACK_WEBHOOK_URL; health check fails if APP_URL wrong or app down. Runs after lint/typecheck/test/build/docker (not after App Runner deploy). |
 
 ## Build Job Details
 
@@ -42,7 +42,7 @@
   - **Slack:** If `SLACK_WEBHOOK_URL` is set, posts deploy result (success/failure), health status, app version, commit, and workflow link (`if: always()` so failure is also reported).
 - **Variables (required for deploy):** `ENABLE_AWS_DEPLOY` = `true`, **`APP_RUNNER_SERVICE_ARN`** (ARN of the App Runner service; set in Settings → Actions → Variables).
 - **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. Optional: `SLACK_WEBHOOK_URL` (for deploy notification).
-- **Variables (optional):** `AWS_REGION` (default `us-east-1`), `APP_URL` (App Runner URL for health check; if unset, URL is derived from describe-service).
+- **Variables (optional):** `AWS_REGION` (default `us-east-1`), `APP_URL` (URL for health check on main/develop, e.g. App Runner service URL or custom domain; if unset when deploying, URL is derived from describe-service).
 - **Requirements:** App Runner service must already exist (ECR source, port 3000, env vars set in service config). IAM user must have ECR push and App Runner (`StartDeployment`, `DescribeService`, `ListOperations`) permissions.
 
 ## Secrets & Variables (Notify Slack / Health)

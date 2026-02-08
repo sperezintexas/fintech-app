@@ -13,7 +13,7 @@ Plan to remove EB deployment and use AWS App Runner instead. App Runner runs con
    - **Instance role:** For ECR pull (App Runner provides a default or use custom).
    - **CPU / memory:** e.g. 1 vCPU, 2 GB (adjust as needed).
    - **Port:** 3000 (matches Dockerfile).
-   - **Environment variables:** Set in service config (Console → Service → Configuration → Edit → Environment variables). Same keys as today: `MONGODB_URI`, `MONGODB_DB`, `AUTH_SECRET`, `NEXTAUTH_URL`, `X_CLIENT_ID`, `X_CLIENT_SECRET`, `XAI_API_KEY`, `WEB_SEARCH_API_KEY`, `CRON_SECRET`, `SLACK_WEBHOOK_URL`. No script like `eb setenv` — set once in Console or via CLI when creating/updating the service.
+   - **Environment variables:** Set in service config (Console → Service → Configuration → Edit → Environment variables). Same keys as today: `MONGODB_URI`, `MONGODB_DB`, `AUTH_SECRET`, `NEXTAUTH_URL`, `X_CLIENT_ID`, `X_CLIENT_SECRET`, `XAI_API_KEY`, `WEB_SEARCH_API_KEY`, `CRON_SECRET`, `SLACK_WEBHOOK_URL`. For a custom domain (e.g. `https://example.com`), set `NEXTAUTH_URL`, `AUTH_URL`, and `NEXT_PUBLIC_APP_URL` to that URL so the app and auth redirects use it instead of the default App Runner URL. No script like `eb setenv` — set once in Console or via CLI when creating/updating the service.
    - **Auto-deploy:** Optional. If you turn off “Deploy new image when available”, CI will trigger deploy via `aws apprunner start-deployment`.
 
 2. **IAM** (for GitHub Actions):

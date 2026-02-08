@@ -218,6 +218,9 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                 Symbols
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
+                Last
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
                 Cost basis
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
@@ -300,6 +303,22 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                   </td>
                   <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
                     {formatQty(position, values)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
+                    {isOption ? (
+                      <div className="flex flex-col items-end gap-0.5">
+                        {position.underlyingPrice != null && (
+                          <span className="text-xs text-gray-600" title="Underlying stock">
+                            {formatCurrency(position.underlyingPrice)}
+                          </span>
+                        )}
+                        <span className="font-medium text-gray-900" title="Option last">
+                          {formatCurrency(values.lastPrice)}
+                        </span>
+                      </div>
+                    ) : (
+                      formatCurrency(values.lastPrice)
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
                     {formatCurrency(values.totalCost)}
@@ -544,9 +563,15 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                   <div className="text-gray-900 font-medium tabular-nums">{formatQty(position, values)}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500 mb-0.5">Price</div>
+                  <div className="text-xs text-gray-500 mb-0.5">{isOption ? "Last" : "Price"}</div>
                   <div className="text-gray-900 font-medium tabular-nums">
-                    {formatCurrency(values.lastPrice)}
+                    {isOption && position.underlyingPrice != null && (
+                      <span className="text-gray-600 text-xs block">Stock {formatCurrency(position.underlyingPrice)}</span>
+                    )}
+                    <span>
+                      {isOption && position.underlyingPrice != null ? "Option " : ""}
+                      {formatCurrency(values.lastPrice)}
+                    </span>
                     {hasChange && (
                       <span className={isPositive ? "text-green-600 ml-1" : "text-red-600 ml-1"}>
                         ({isPositive ? "+" : ""}{formatNumber(position.dailyChangePercent ?? 0, 2)}%)

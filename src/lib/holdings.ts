@@ -98,15 +98,22 @@ export async function getPositionsWithMarketValues(
     }
   }
 
-  // For expired options we need underlying stock price for intrinsic value
-  const optionUnderlyings = positions
+  // Underlying stock prices for options (symbol -> price, e.g. RDW -> 10.04)
+  const optionUnderlyingSymbols = positions
     .filter((p) => p.type === "option" && p.ticker)
-    .map((p) => p.ticker!.toUpperCase());
-  const uniqueOptionUnderlyings = Array.from(new Set(optionUnderlyings));
+    .map((p) => getUnderlyingFromTicker(p.ticker!));
+  const uniqueUnderlyingSymbols = Array.from(new Set(optionUnderlyingSymbols)).filter(Boolean);
   const underlyingPrices = new Map<string, number>();
-  for (const sym of uniqueOptionUnderlyings) {
-    const data = stockPrices.get(sym) ?? (await getMultipleTickerPrices([sym])).get(sym);
-    if (data) underlyingPrices.set(sym, data.price);
+  if (uniqueUnderlyingSymbols.length > 0) {
+    try {
+      const underlyingData = await getMultipleTickerPrices(uniqueUnderlyingSymbols);
+      for (const sym of uniqueUnderlyingSymbols) {
+        const data = underlyingData.get(sym);
+        if (data) underlyingPrices.set(sym, data.price);
+      }
+    } catch (e) {
+      console.error("holdings: underlying prices for options failed:", e);
+    }
   }
 
   const enhanced: EnhancedPosition[] = await Promise.all(
@@ -151,17 +158,18 @@ export async function getPositionsWithMarketValues(
       const strike = position.strike ?? 0;
       const expiration = position.expiration;
       const optionType = position.optionType ?? "call";
-      const underlying = position.ticker?.toUpperCase();
+      const underlyingSymbol = position.ticker ? getUnderlyingFromTicker(position.ticker) : "";
 
       const expired = isOptionExpired(expiration);
+      const underlyingPrice = underlyingSymbol ? underlyingPrices.get(underlyingSymbol) ?? undefined : undefined;
       let currentPremium: number;
 
       if (expired) {
-        const stockPrice = underlying ? underlyingPrices.get(underlying) ?? 0 : 0;
+        const stockPrice = underlyingPrice ?? 0;
         currentPremium = intrinsicValue(stockPrice, strike, optionType);
-      } else if (underlying && expiration && strike) {
+      } else if (underlyingSymbol && expiration && strike) {
         const fetched = await getOptionPremiumForPosition(
-          underlying,
+          underlyingSymbol,
           expiration,
           strike,
           optionType
@@ -180,6 +188,7 @@ export async function getPositionsWithMarketValues(
       return {
         ...position,
         currentPrice: currentPremium,
+        underlyingPrice,
         marketValue,
         unrealizedPL,
         unrealizedPLPercent,
