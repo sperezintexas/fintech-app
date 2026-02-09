@@ -1,0 +1,106 @@
+---
+description: Optimized Dockerfile & best practices for production Node.js (Next.js + scheduler) containers
+globs:
+  - Dockerfile
+  - docker-compose.yml
+alwaysApply: false
+---
+
+# Docker Optimization Guidelines for Node.js / Next.js + Scheduler
+
+## Core Goals (Production 2025/2026)
+- Small final image size (<300 MB)
+- Fast rebuilds via layer caching
+- Secure: non-root user, minimal attack surface
+- Reliable: multi-process (web + scheduler) with auto-restart
+- Compatible with AWS App Runner, Railway, Fly.io, Render
+
+## Dockerfile Structure (Preferred Pattern)
+
+Use **multi-stage build** with **pnpm**:
+
+```dockerfile
+# ── Builder ───────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9 --activate
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build
+RUN pnpm prune --prod
+
+# ── Runner ────────────────────────────────────────
+FROM node:20-alpine
+WORKDIR /app
+
+# Security: non-root user
+RUN addgroup -S nodejs -g 1001 && adduser -S nextjs -u 1001 -G nodejs
+
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public      # if exists
+COPY --from=builder --chown=nextjs:nodejs /app/src ./src           # for scheduler
+
+USER nextjs
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+
+EXPOSE 3000
+
+# Use pm2-runtime for multiple processes
+RUN npm install -g pm2@5
+COPY ecosystem.config.js ./
+CMD ["pm2-runtime", "start", "ecosystem.config.js"]
+
+ecosystem.config.js (must exist)
+JavaScriptmodule.exports = {
+  apps: [
+    { name: "web", script: "npm", args: "start", env: { NODE_ENV: "production" } },
+    {
+      name: "scheduler",
+      script: "npm",
+      args: "run start-scheduler",
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 4000,
+    },
+  ],
+};
+
+Key Rules to Follow
+
+Always use pnpm over npm/yarn (faster, disk-efficient)
+Copy only needed files to final image
+Non-root user (nextjs or node) mandatory for security
+Use pm2-runtime or dumb-init + custom entrypoint for multi-process
+Never run npm install in final stage
+Set NODE_ENV=production and disable telemetry
+Expose 3000 (Next.js default)
+Prefer Alpine base images
+Add .dockerignore with:textnode_modules
+.next
+.git
+*.md
+coverage
+
+Common Mistakes to Avoid
+
+Installing dev dependencies in final image
+Running as root
+Using single CMD ["npm", "start"] → scheduler dies
+Large images (>500 MB)
+Missing healthcheck path in App Runner
+
+AWS App Runner Recommendations
+
+Port: 3000
+Health check: / or /api/health (if exists)
+CPU: 1 vCPU, Memory: 2 GB (good starting point)
+Auto-deploy: connect GitHub / ECR
+Environment variables: use App Runner console or .env injection
+
+text
