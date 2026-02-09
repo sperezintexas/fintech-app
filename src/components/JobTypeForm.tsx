@@ -300,7 +300,7 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
             )}
             {channels.includes("twitter") && (
               <div>
-                <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">X (Twitter)</span>
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">X</span>
                 <pre className="mt-1 p-3 bg-white border border-gray-200 rounded-lg text-sm whitespace-pre-wrap break-words font-sans">
                   {previewSample.x}
                 </pre>

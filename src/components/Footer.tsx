@@ -28,10 +28,10 @@ export function Footer() {
               © 2026 myInvestments. All rights reserved.
             </p>
             <Link
-              href="/docs/strategy"
+              href="/docs"
               className="text-sm text-gray-600 hover:text-gray-900 underline underline-offset-2 transition-colors"
             >
-              Investment strategy
+              Documentation
             </Link>
             <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full font-mono">
               v{APP_VERSION}

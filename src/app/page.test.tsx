@@ -27,7 +27,7 @@ const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
 const mockSession = {
-  user: { name: "Sam", username: "sperezintexas" },
+  user: { name: "Test User", username: "testuser" },
   expires: "",
 };
 
@@ -44,7 +44,7 @@ describe("Home Page", () => {
       </SessionProvider>
     );
 
-    expect(screen.getByRole("heading", { name: /Hello, Sam/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Hello, Test User/i })).toBeInTheDocument();
   });
 
   it("renders Dashboard component when authenticated", () => {

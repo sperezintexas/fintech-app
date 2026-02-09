@@ -68,7 +68,7 @@ test.describe("Smoke tests", () => {
   test("Automation page: Alert Settings tab shows delivery channels", async ({ page }) => {
     await page.goto("/automation");
     await page.getByText("Alert Settings").first().click();
-    await expect(page.getByText(/Slack|Twitter|Push|Delivery Channels/i).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/Slack|X|Push|Delivery Channels/i).first()).toBeVisible({ timeout: 5000 });
   });
 
   test("Automation page: Strategy tab shows strategy settings", async ({ page }) => {

@@ -7,7 +7,7 @@ import type { AlertDeliveryChannel } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
-/** Default delivery channels: Slack or X (twitter) only. */
+/** Default delivery channels: Slack or X only. */
 const DEFAULT_DELIVERY_CHANNELS: AlertDeliveryChannel[] = ["slack", "twitter"];
 
 /**

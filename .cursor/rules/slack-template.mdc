@@ -60,7 +60,7 @@ Before finalizing Block Kit output, verify:
 
 ## Implementation (Unified Options Scanner)
 - **File:** `src/lib/slack-templates.ts`
-- **Blocks:** `buildUnifiedOptionsScannerBlocks()` — header → 🔥 Key Recommendations (section) → 🔴 Scanner errors (section when present) → actions (View Dashboard button when `NEXT_PUBLIC_APP_URL` or `VERCEL_URL` set). No delivery stats or context line in Slack.
+- **Blocks:** `buildUnifiedOptionsScannerBlocks()` — header → 🔥 Key Recommendations (section) → 🔴 Scanner errors (section when present) → actions (View Dashboard button when `NEXT_PUBLIC_APP_URL` set). No delivery stats or context line in Slack.
 - **Fallback:** `formatUnifiedOptionsScannerReport()` returns `bodyText` (plain mrkdwn for notifications/X/UI) and `slackBlocks`; scheduler sends `{ text, blocks }` to Slack when blocks present.
 
 ## Exceptions

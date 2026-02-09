@@ -541,10 +541,21 @@ export function ContractSelector({
       <div className="grid grid-cols-1 lg:grid-cols-[55%_1fr] gap-6">
         {/* Option chain table */}
         <div className="border border-gray-200 rounded-lg overflow-hidden">
+          {/* Current underlying price reference above table */}
+          <div className="px-3 py-2 bg-indigo-50 border-b border-gray-200 flex items-center gap-2">
+            <span className="text-xs font-medium text-indigo-800 uppercase tracking-wider">Current (underlying)</span>
+            <span className="text-lg font-bold text-indigo-900">${stockPrice.toFixed(2)}</span>
+            <span className="text-xs text-indigo-600">— compare strikes to this price</span>
+          </div>
           <div className="overflow-x-auto max-h-80">
             {chainLoading ? (
               <div className="p-8 flex items-center justify-center text-gray-500">
                 <span className="animate-spin mr-2">⟳</span> Loading option chain…
+              </div>
+            ) : displayChain.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">
+                <p className="font-medium">No strikes in range.</p>
+                <p className="text-sm mt-1">Underlying: ${stockPrice.toFixed(2)}. Try a different expiration or symbol.</p>
               </div>
             ) : (
               <table className="w-full text-sm" role="grid" aria-label="Option chain">
@@ -555,40 +566,45 @@ export function ContractSelector({
                       Strike
                     </th>
                     <th className="px-3 py-2 text-right font-medium text-gray-600" scope="col">
-                      Bid*
+                      Bid
                     </th>
                     <th className="px-3 py-2 text-right font-medium text-gray-600" scope="col">
-                      Breakeven (BE)*
+                      Ask
                     </th>
                     <th className="px-3 py-2 text-right font-medium text-gray-600" scope="col">
-                      Prob OTM*
+                      Breakeven (BE)
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600" scope="col">
+                      Prob OTM
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {displayChain.map((row) => {
+                    const strike = Number.isFinite(row.strike) ? row.strike : (row as { call?: { strike_price?: number }; put?: { strike_price?: number } }).call?.strike_price ?? (row as { put?: { strike_price?: number } }).put?.strike_price ?? 0;
                     const c = contractType === 'call' ? row.call : row.put;
                     const bidVal = c?.last_quote?.bid ?? c?.premium ?? 0;
-                    const prem = c?.premium ?? bidVal;
-                    const be = contractType === 'call' ? row.strike + prem : row.strike - prem;
-                    const probOtm = mockProbOtm(stockPrice, row.strike, contractType === 'call');
-                    const selected = selectedStrike === row.strike;
-                    const itm = isItm(row.strike);
+                    const askVal = c?.last_quote?.ask ?? c?.premium ?? 0;
+                    const prem = c?.premium ?? ((bidVal + askVal) / 2 || 0);
+                    const be = contractType === 'call' ? strike + prem : strike - prem;
+                    const probOtm = mockProbOtm(stockPrice, strike, contractType === 'call');
+                    const selected = selectedStrike === strike;
+                    const itm = isItm(strike);
 
                     return (
                       <tr
-                        key={row.strike}
+                        key={strike}
                         role="row"
                         tabIndex={0}
                         onClick={() => {
                           setStrikeFilter('all');
-                          onStrikeChange(row.strike);
+                          onStrikeChange(strike);
                         }}
                         onKeyDown={(e) => {
                           if (e.key === ' ' || e.key === 'Enter') {
                             e.preventDefault();
                             setStrikeFilter('all');
-                            onStrikeChange(row.strike);
+                            onStrikeChange(strike);
                           }
                         }}
                         className={`cursor-pointer border-b border-gray-100 hover:bg-indigo-50/50 ${
@@ -602,10 +618,10 @@ export function ContractSelector({
                             checked={selected}
                             onChange={() => {
                               setStrikeFilter('all');
-                              onStrikeChange(row.strike);
+                              onStrikeChange(strike);
                             }}
                             className="sr-only"
-                            aria-label={`Select strike $${row.strike}`}
+                            aria-label={`Select strike $${strike.toFixed(2)}`}
                           />
                           <span
                             className={`inline-block w-4 h-4 rounded-full border-2 ${
@@ -616,13 +632,14 @@ export function ContractSelector({
                         </td>
                         <td className="px-3 py-2">
                           <span className={itm ? 'font-bold text-amber-800' : ''}>
-                            ${row.strike.toFixed(2)}
+                            ${strike.toFixed(2)}
                           </span>
                           {itm && (
                             <span className="ml-1 text-xs text-amber-600">ITM</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-right">${bidVal.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">${askVal.toFixed(2)}</td>
                         <td className="px-3 py-2 text-right">${be.toFixed(2)}</td>
                         <td className="px-3 py-2 text-right">{probOtm}%</td>
                       </tr>
@@ -633,7 +650,7 @@ export function ContractSelector({
             )}
           </div>
           <p className="text-xs text-gray-500 px-3 py-2 bg-gray-50 border-t">
-            * Values are calculated using current market prices.
+            Bid/Ask are current market prices for the option at each strike.
           </p>
         </div>
 

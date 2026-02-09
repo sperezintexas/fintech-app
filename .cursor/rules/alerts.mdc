@@ -1,14 +1,14 @@
 ---
-description: Guidelines for implementing Alert Delivery Channels (Slack & X/Twitter), Configuration Rules, and Alerts Page in myInvestments
+description: Guidelines for implementing Alert Delivery Channels (Slack & X), Configuration Rules, and Alerts Page in myInvestments
 globs:
 alwaysApply: false
 ---
 # Alert Delivery Channels and Configuration Guidelines for Cursor
 
-You are implementing/enhancing the alert delivery system in the myInvestments app to support two specific channels: a private Slack channel for family notifications and X (Twitter) for watchlist-related alerts. Include configuration rules per job/report (e.g., which channel, templates, thresholds), and add an Alerts page to view daily recommendations. Leverage the existing Agenda.js scheduler for job invocation and alert generation.
+You are implementing/enhancing the alert delivery system in the myInvestments app to support two specific channels: a private Slack channel for family notifications and X for watchlist-related alerts. Include configuration rules per job/report (e.g., which channel, templates, thresholds), and add an Alerts page to view daily recommendations. Leverage the existing Agenda.js scheduler for job invocation and alert generation.
 
 ## Core Goals
-- Support delivery to: Private Slack (family-focused, e.g., portfolio summaries/recommendations) and X/Twitter (public watchlist alerts, e.g., price triggers).
+- Support delivery to: Private Slack (family-focused, e.g., portfolio summaries/recommendations) and X (public watchlist alerts, e.g., price triggers).
 - Allow per-job/report configuration: Channel selection, custom templates, thresholds (e.g., min P/L change), quiet hours.
 - Create a simple Alerts page to list/view historical and daily recommendations/alerts.
 - Integrate with existing scheduler jobs (e.g., OptionScanner, CoveredCallScanner) to generate and deliver alerts.
@@ -17,7 +17,7 @@ You are implementing/enhancing the alert delivery system in the myInvestments ap
 ## Required Features
 - **Delivery Channels**
   - **Slack**: Post to private family channel via webhook. Message format: Markdown or blocks with recommendations, metrics, links.
-  - **X/Twitter**: Post to X via API (use Twitter API v2 with OAuth or existing lib). Limit to watchlist items; ensure compliance (no spam, rate limits).
+  - **X**: Post to X via API (OAuth or existing lib). Limit to watchlist items; ensure compliance (no spam, rate limits).
   - Fallback: If delivery fails, log error and retry once (via Agenda job).
 
 - **Configuration Rules**

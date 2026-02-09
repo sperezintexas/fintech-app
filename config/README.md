@@ -4,13 +4,13 @@ Edit these JSON files to customize report and alert message templates.
 
 ## Files
 
-- **report-templates.json** – Watchlist report templates (Slack + X/Twitter)
+- **report-templates.json** – Watchlist report templates (Slack + X)
 - **alert-templates.json** – Watchlist alert templates (Slack, X, SMS, push)
 
 ## Templates per channel
 
 - **slackTemplate** – Used for Slack (includes `{account}`)
-- **xTemplate** – Used for X/Twitter (no `{account}` for privacy)
+- **xTemplate** – Used for X (no `{account}` for privacy)
 
 ## Placeholders
 

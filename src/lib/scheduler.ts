@@ -815,7 +815,7 @@ export async function executeJob(jobId: string): Promise<{
         }
         const durationSeconds = (Date.now() - startTime) / 1000;
         const appBaseUrl =
-          (typeof process !== "undefined" && (process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL)) || "";
+          (typeof process !== "undefined" && process.env.NEXT_PUBLIC_APP_URL) || "";
         const report = formatUnifiedOptionsScannerReport(
           result,
           deliverySummary,
@@ -872,7 +872,7 @@ export async function executeJob(jobId: string): Promise<{
       bodyText += `Unknown job type: ${job.jobType} (handler: ${handlerKey})`;
     }
 
-    // Deliver (Slack only for now; push/twitter are placeholders)
+    // Deliver (Slack only for now; push/X are placeholders)
     let prefs = await db.collection("alertPreferences").findOne({ accountId: job.accountId });
     if (!prefs && job.accountId === null) {
       const firstAcc = await db.collection("accounts").findOne({});

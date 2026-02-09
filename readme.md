@@ -114,7 +114,7 @@ docker compose up -d
 | POST | `/api/scheduler` | `{ "action": "schedule", "jobName": "daily-analysis", "schedule": "0 16 * * 1-5" }` or `{ "action": "createRecommendedJobs" }` for Unified Options Scanner (`15 14-20 * * 1-5`) |
 | POST | `/api/scheduler` | `{ "action": "cancel", "jobName": "daily-analysis" }` |
 
-**Alert config:** Delivery (Slack, Push, Twitter), templates, thresholds, quiet hours — in Setup → Alert Settings.
+**Alert config:** Delivery (Slack, Push, X), templates, thresholds, quiet hours — in Setup → Alert Settings.
 
 ## Version
 See `package.json` for current version.

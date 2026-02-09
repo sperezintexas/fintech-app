@@ -159,17 +159,14 @@ type UnifiedOptionsScannerResult = {
 
 - **Job type:** `unifiedOptionsScanner`
 - **Handler:** `runUnifiedOptionsScanner(accountId?, config?)`
-- **Schedule (default):** `15 15 * * 1-5` in `vercel.json` (once per weekday at 15:15 UTC) to comply with **Vercel Hobby** “once per day” cron limit. For more frequent runs, use Pro or external cron (see Vercel section below).
+- **Schedule (default):** Use `.github/workflows/cron-unified-scanner.yml` or external cron to call the cron route at desired times (e.g. 15 14-20 * * 1-5 UTC).
 - **Run portfolio:** `POST /api/scheduler` with `{ action: "runPortfolio" }` runs unifiedOptionsScanner + watchlistreport + deliverAlerts
 
-### Vercel / serverless: cron route
-
-On **Vercel** (and any serverless deploy), **Agenda does not run** — there is no long-running Node process, so jobs scheduled in the Automation UI (Agenda) will **not** fire automatically. Use **Vercel Cron** to hit the cron API route:
+### Cron route (external or GitHub Actions)
 
 - **Route:** `GET /api/cron/unified-options-scanner`
-- **Vercel cron (vercel.json):** `15 15 * * 1-5` — Mon–Fri at 15:15 UTC (once per day). **Hobby plan** allows only one run per day per cron; expressions that run more often (e.g. `15 14-20 * * 1-5`) will **fail deployment** with “Hobby accounts are limited to daily cron jobs.”
-- **More frequent runs:** Upgrade to **Vercel Pro** (per-minute crons allowed) and restore e.g. `15 14-20 * * 1-5`, or use an **external cron** (e.g. [cron-job.org](https://cron-job.org) or GitHub Actions scheduled workflow) to call `GET https://your-app.vercel.app/api/cron/unified-options-scanner` with `Authorization: Bearer <CRON_SECRET>` at the desired times.
-- **Auth:** Set `CRON_SECRET` in env; call with `Authorization: Bearer <CRON_SECRET>` or `?secret=<CRON_SECRET>`.
+- **Schedule:** Use `.github/workflows/cron-unified-scanner.yml` or external cron (e.g. 15 14-20 * * 1-5 UTC).
+- **Auth:** Set `CRON_SECRET` in app env; call with `Authorization: Bearer <CRON_SECRET>` or `?secret=<CRON_SECRET>`.
 - **Behavior:** Runs portfolio-level scan (first account or null), merges strategy settings (e.g. `excludeWatchlist`), runs `runUnifiedOptionsScanner`, then `processAlertDelivery`. Returns JSON summary (scanner + delivery stats).
 
 ### Report Types
@@ -238,13 +235,13 @@ const result = await runUnifiedOptionsScanner("accountId123", {
 - **Persistence util:** `storeRecommendationsAndCreateAlerts(recommendations, storeFn)` centralizes persist + createAlerts logic.
 - **Performance metrics:** `console.time`/`console.timeEnd` per scanner for debugging slow runs.
 - **Run Now output:** When running from Automation → Scheduler, the job summary is always returned to the UI when the scanner produced output, even if Slack/X delivery fails or is not configured. The summary includes counts plus `recommendationSummary` (concise per-holding recommendations).
-- **Slack report format:** Uses **Slack Block Kit** (per `.cursor/rules/slack-template.mdc`). `formatUnifiedOptionsScannerReport()` and `buildUnifiedOptionsScannerBlocks()` in `src/lib/slack-templates.ts` build: (1) **Header** — "Daily Options Scanner Alert"; (2) **Recommendations** — section with 🔥 Key Recommendations (mrkdwn); (3) **Errors** — section with 🔴 Scanner errors when present; (4) **Actions** — "View Dashboard" button (when `NEXT_PUBLIC_APP_URL` or `VERCEL_URL` is set). Delivery stats (Sent/Failed/Skipped) and the closing context line are not sent to Slack; stats and breakdown are stored in job run history notes only. Plain-text fallback (`bodyText`) is used for notifications and X/UI.
+- **Slack report format:** Uses **Slack Block Kit** (per `.cursor/rules/slack-template.mdc`). `formatUnifiedOptionsScannerReport()` and `buildUnifiedOptionsScannerBlocks()` in `src/lib/slack-templates.ts` build: (1) **Header** — "Daily Options Scanner Alert"; (2) **Recommendations** — section with 🔥 Key Recommendations (mrkdwn); (3) **Errors** — section with 🔴 Scanner errors when present; (4) **Actions** — "View Dashboard" button (when `NEXT_PUBLIC_APP_URL` is set). Delivery stats (Sent/Failed/Skipped) and the closing context line are not sent to Slack; stats and breakdown are stored in job run history notes only. Plain-text fallback (`bodyText`) is used for notifications and X/UI.
 
 ## File Reference
 
 | File | Role |
 |------|------|
-| `src/app/api/cron/unified-options-scanner/route.ts` | Vercel Cron route: runs scanner + alert delivery weekdays at 15:15 UTC once per day (vercel.json: `15 15 * * 1-5`; Hobby limit) |
+| `src/app/api/cron/unified-options-scanner/route.ts` | Cron route: runs scanner + alert delivery; call via GitHub Actions or external cron with Authorization: Bearer CRON_SECRET |
 | `src/lib/unified-options-scanner.ts` | Orchestrator; runs all four scanners |
 | `src/lib/slack-templates.ts` | Slack Block Kit (buildUnifiedOptionsScannerBlocks): header, recommendations, errors, View Dashboard; no delivery/context in Slack |
 | `src/lib/option-scanner.ts` | Option Scanner (calls & puts) |

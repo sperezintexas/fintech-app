@@ -29,10 +29,10 @@ function AutomationContent() {
 
   // Alert preferences state
   const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState<"settings" | "strategy" | "jobs">("settings");
+  const [activeTab, setActiveTab] = useState<"auth-users" | "settings" | "strategy" | "jobs">("auth-users");
 
   useEffect(() => {
-    if (tabParam === "jobs" || tabParam === "settings" || tabParam === "strategy") {
+    if (tabParam === "jobs" || tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users") {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
@@ -68,6 +68,14 @@ function AutomationContent() {
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
 
+  // Auth Users (X allowed usernames) — auth_users table
+  const [authUsersList, setAuthUsersList] = useState<{ username: string; createdAt: string }[]>([]);
+  const [authUsersLoading, setAuthUsersLoading] = useState(false);
+  const [authUsersError, setAuthUsersError] = useState<string | null>(null);
+  const [authUsersNewUsername, setAuthUsersNewUsername] = useState("");
+  const [authUsersAdding, setAuthUsersAdding] = useState(false);
+  const [authUsersSeedResult, setAuthUsersSeedResult] = useState<string | null>(null);
+
   // App config (cleanup settings in appUtil collection)
   const [appConfig, setAppConfig] = useState<{
     cleanup: { storageLimitMB: number; purgeThreshold: number; purgeIntervalDays: number; lastDataCleanup?: string };
@@ -80,6 +88,27 @@ function AutomationContent() {
   const [_pushEnabled, setPushEnabled] = useState(false);
   const [pushPermission, setPushPermission] = useState<NotificationPermission | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
+
+  const fetchAuthUsers = useCallback(async () => {
+    setAuthUsersLoading(true);
+    setAuthUsersError(null);
+    try {
+      const res = await fetch("/api/x-allowed-usernames");
+      if (!res.ok) {
+        setAuthUsersError("Failed to load allowed usernames");
+        setAuthUsersList([]);
+        return;
+      }
+      const data = (await res.json()) as { username: string; createdAt: string }[];
+      setAuthUsersList(Array.isArray(data) ? data : []);
+    } finally {
+      setAuthUsersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "auth-users") fetchAuthUsers();
+  }, [activeTab, fetchAuthUsers]);
 
   // Check push notification permission on mount
   useEffect(() => {
@@ -494,6 +523,16 @@ function AutomationContent() {
         <div className="border-b border-gray-200 mb-6">
           <nav className="flex gap-4">
             <button
+              onClick={() => setActiveTab("auth-users")}
+              className={`py-3 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "auth-users"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Auth Users
+            </button>
+            <button
               onClick={() => setActiveTab("settings")}
               className={`py-3 px-1 border-b-2 font-medium text-sm ${
                 activeTab === "settings"
@@ -537,6 +576,130 @@ function AutomationContent() {
             </Link>
           </nav>
         </div>
+
+        {/* Auth Users Tab */}
+        {activeTab === "auth-users" && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">X allowed usernames</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Only these usernames can sign in with X. Add or remove below. No user IDs are stored — only usernames.
+              </p>
+              {authUsersError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm">{authUsersError}</div>
+              )}
+              {authUsersSeedResult && (
+                <div className="mb-4 p-3 rounded-lg bg-green-50 text-green-700 text-sm">{authUsersSeedResult}</div>
+              )}
+              <form
+                className="flex flex-wrap gap-2 mb-6"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!authUsersNewUsername.trim() || authUsersAdding) return;
+                  setAuthUsersAdding(true);
+                  setAuthUsersError(null);
+                  try {
+                    const res = await fetch("/api/x-allowed-usernames", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ username: authUsersNewUsername.trim() }),
+                    });
+                    const data = (await res.json()) as { error?: string };
+                    if (!res.ok) {
+                      setAuthUsersError(data.error ?? "Failed to add");
+                      return;
+                    }
+                    setAuthUsersNewUsername("");
+                    await fetchAuthUsers();
+                  } finally {
+                    setAuthUsersAdding(false);
+                  }
+                }}
+              >
+                <input
+                  type="text"
+                  value={authUsersNewUsername}
+                  onChange={(e) => setAuthUsersNewUsername(e.target.value)}
+                  placeholder="Username (e.g. myhandle)"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-48"
+                  aria-label="New X username"
+                />
+                <button
+                  type="submit"
+                  disabled={authUsersAdding || !authUsersNewUsername.trim()}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium"
+                >
+                  {authUsersAdding ? "Adding…" : "Add"}
+                </button>
+              </form>
+              <p className="text-xs text-gray-500 mb-3">
+                To seed from env: set <code className="bg-gray-100 px-1 rounded">ALLOWED_X_USERNAMES</code> (comma-separated) and click Seed below.
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  setAuthUsersSeedResult(null);
+                  setAuthUsersError(null);
+                  try {
+                    const res = await fetch("/api/x-allowed-usernames/seed", { method: "POST" });
+                    const data = (await res.json()) as { ok?: boolean; added?: number; error?: string };
+                    if (!res.ok) {
+                      setAuthUsersError(data.error ?? "Seed failed");
+                      return;
+                    }
+                    setAuthUsersSeedResult(
+                      data.added !== undefined ? `Seeded ${data.added} username(s) from env.` : "Seed completed."
+                    );
+                    await fetchAuthUsers();
+                  } catch {
+                    setAuthUsersError("Seed request failed");
+                  }
+                }}
+                className="mb-4 px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white hover:bg-gray-50"
+              >
+                Seed from env
+              </button>
+              {authUsersLoading ? (
+                <p className="text-gray-500">Loading…</p>
+              ) : authUsersList.length === 0 ? (
+                <p className="text-gray-500">No usernames yet. Add one above or seed from env.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {authUsersList.map((u) => (
+                    <li
+                      key={u.username}
+                      className="flex items-center justify-between gap-4 p-3 rounded-lg border border-gray-200 bg-gray-50/50"
+                    >
+                      <span className="font-medium text-gray-800">@{u.username}</span>
+                      <span className="text-sm text-gray-500">
+                        {new Date(u.createdAt).toLocaleDateString()}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch("/api/x-allowed-usernames", {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ username: u.username }),
+                            });
+                            if (res.ok) await fetchAuthUsers();
+                            else setAuthUsersError("Failed to remove");
+                          } catch {
+                            setAuthUsersError("Request failed");
+                          }
+                        }}
+                        className="text-red-600 hover:text-red-800 text-sm font-medium"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Alert Settings Tab */}
         {activeTab === "settings" && (
@@ -620,13 +783,13 @@ function AutomationContent() {
                   )}
                 </div>
 
-                {/* X / Twitter */}
+                {/* X */}
                 <div className={`p-4 rounded-xl border-2 ${prefsForm.channels.twitter.enabled ? "border-gray-800 bg-gray-50" : "border-gray-200"}`}>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">𝕏</span>
                       <div>
-                        <p className="font-medium">X / Twitter</p>
+                        <p className="font-medium">X</p>
                         <p className="text-xs text-gray-500">{ALERT_CHANNEL_COSTS.twitter.description}</p>
                       </div>
                     </div>

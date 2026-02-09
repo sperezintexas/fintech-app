@@ -167,7 +167,7 @@ eb status
 
 Look for `CNAME: myinvestments-prod.us-east-1.elasticbeanstalk.com`
 
-### Update X (Twitter) OAuth Callback
+### Update X OAuth Callback
 
 In X Developer Portal (https://developer.x.com/):
 1. Go to your app → Settings → User authentication settings

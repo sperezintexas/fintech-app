@@ -25,7 +25,7 @@ function verifyCronRequest(request: NextRequest): boolean {
  * On Vercel, Agenda does not run (no long-running process), so this route is required for scheduled runs.
  * Runs portfolio-level scan (first account or null), then delivers alerts.
  *
- * Vercel cron uses UTC. Default in vercel.json: "15 14-20 * * 1-5" (14:15–20:15 UTC ≈ 9:15–3:15 ET).
+ * Schedule in UTC. Example: 15 14-20 * * 1-5 (14:15–20:15 UTC ≈ 9:15–3:15 ET). Use GitHub Actions cron workflow or external cron to call this endpoint.
  */
 export async function GET(request: NextRequest) {
   if (!verifyCronRequest(request)) {

@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export { REPORT_HANDLER_KEYS, type ReportHandlerKey };
 
-/** Default delivery channels: Slack or X (twitter) only. */
+/** Default delivery channels: Slack or X only. */
 const DEFAULT_DELIVERY_CHANNELS: AlertDeliveryChannel[] = ["slack", "twitter"];
 
 const VALID_TEMPLATE_IDS = ["concise", "detailed", "actionable", "risk-aware"] as const;

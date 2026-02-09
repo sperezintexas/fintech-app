@@ -167,7 +167,7 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 | protectivePut | object | ProtectivePutScanner config |
 | deliverAlertsAfter | boolean | When true (default), run processAlertDelivery after the scan |
 
-**Output:** Slack message uses **Block Kit** (per `.cursor/rules/slack-template.mdc`). `formatUnifiedOptionsScannerReport()` and `buildUnifiedOptionsScannerBlocks()` in `src/lib/slack-templates.ts` build: header, stats (scanned/stored/alerts/duration), breakdown by strategy, 🔥 Key Recommendations, delivery (Sent/Failed/Skipped), 🔴 Scanner errors when present, View Dashboard button (when `NEXT_PUBLIC_APP_URL` or `VERCEL_URL` set), and context. Plain-text fallback is used for notifications and X/UI.
+**Output:** Slack message uses **Block Kit** (per `.cursor/rules/slack-template.mdc`). `formatUnifiedOptionsScannerReport()` and `buildUnifiedOptionsScannerBlocks()` in `src/lib/slack-templates.ts` build: header, stats (scanned/stored/alerts/duration), breakdown by strategy, 🔥 Key Recommendations, delivery (Sent/Failed/Skipped), 🔴 Scanner errors when present, View Dashboard button (when `NEXT_PUBLIC_APP_URL` set), and context. Plain-text fallback is used for notifications and X/UI.
 
 ---
 
@@ -251,7 +251,7 @@ Example: Create `coveredCallScanner-aggressive` with `handlerKey: coveredCallSca
 | Job | Type | Schedule (cron) | Purpose |
 |-----|------|-----------------|---------|
 | Weekly Portfolio | portfoliosummary | `0 18 * * 0` (Sun 6 PM) | Multi-account overview; enable "Include AI insights" for SmartXAI sentiment |
-| Daily Options | unifiedOptionsScanner | `15 14-20 * * 1-5` (weekdays at :15, 9:15–3:15 ET) | All option recommendations in one run; :15 avoids :00 (e.g. 9am) clashes. **On Vercel:** cron route `GET /api/cron/unified-options-scanner` uses this schedule in vercel.json. |
+| Daily Options | unifiedOptionsScanner | `15 14-20 * * 1-5` (weekdays at :15, 9:15–3:15 ET) | All option recommendations in one run; :15 avoids :00 (e.g. 9am) clashes. Use GitHub Actions cron workflow (`.github/workflows/cron-unified-scanner.yml`) or external cron to call `GET /api/cron/unified-options-scanner`. |
 | Watchlist Snapshot | watchlistreport | `0 9,16 * * 1-5` (9 AM & 4 PM) | Market snapshot + rationale per item; also runs daily analysis and creates alerts |
 | Deliver Alerts | deliverAlerts | `30 16 * * 1-5` (4:30 PM) | **Optional** if using inline delivery (see below). Sends pending alerts to Slack/X. |
 | Refresh Holdings Prices | refreshHoldingsPrices | `15 minutes` (Agenda repeat) | Populates `priceCache` (stocks) and `optionPriceCache` (option premiums). During market hours runs every 15 min; outside market runs at most every 1 hr. Holdings/dashboard use cache when fresh (20 min / 2 hr TTL). Scheduled automatically on first GET /api/scheduler. |

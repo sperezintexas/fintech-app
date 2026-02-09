@@ -10,7 +10,7 @@ Unified job configuration: jobs stored in `reportJobs` collection, scheduled via
 - **name**: String - Unique job name.
 - **jobType**: String - Type id from reportTypes (e.g. `unifiedOptionsScanner`, `watchlistreport`, `portfoliosummary`).
 - **scheduleCron**: String - Cron schedule (e.g. `0 16 * * 1-5` for Mon–Fri 4 PM).
-- **channels**: Array - Delivery channels: `slack`, `twitter`.
+- **channels**: Array - Delivery channels: `slack`, `twitter` (X).
 - **config**: Record<string, unknown> - Type-specific JSON (validated by Zod per handlerKey).
 - **accountId**: string | null - null = portfolio-level; string = single account.
 

@@ -23,7 +23,7 @@ export type ValidatedEnv = {
   AUTH_URL: string;
   /** Optional: Slack webhook for alerts */
   SLACK_WEBHOOK_URL: string | undefined;
-  /** Optional: X/Twitter API keys for alerts */
+  /** Optional: X API keys for alerts */
   X_API_KEY: string | undefined;
   X_API_SECRET: string | undefined;
   X_ACCESS_TOKEN: string | undefined;

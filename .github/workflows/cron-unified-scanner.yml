@@ -1,22 +1,20 @@
-# Scheduled workflow: calls your production app's unified-options-scanner cron endpoint
-# (AWS App Runner) at :15 past the hour during market hours (14:15–20:15 UTC ≈ 9:15–3:15 ET) on weekdays.
+# Optional: calls your app's /api/cron/unified-options-scanner endpoint.
+# NOT NEEDED on App Runner or EC2: Agenda runs inside the app and fires scheduled jobs from MongoDB.
+# Use this workflow only if you are on serverless (no long-running process) or want a manual/backup trigger.
 #
-# Setup required:
-#   1. GitHub repo → Settings → Secrets and variables → Actions
-#   2. Add secret: CRON_SECRET (same value as CRON_SECRET in your App Runner service env)
-#   3. Add variable: APP_URL = your App Runner URL (no trailing slash; same as health check)
-name: Cron – Unified Options Scanner
+# To enable scheduled runs: uncomment the schedule block below and set vars.APP_URL + secrets.CRON_SECRET.
+name: Cron – Unified Options Scanner (optional)
 
 on:
-  schedule:
-    # Mon–Fri at 14:15, 15:15, 16:15, 17:15, 18:15, 19:15, 20:15 UTC (~9:15–3:15 ET)
-    - cron: "15 14 * * 1-5"
-    - cron: "15 15 * * 1-5"
-    - cron: "15 16 * * 1-5"
-    - cron: "15 17 * * 1-5"
-    - cron: "15 18 * * 1-5"
-    - cron: "15 19 * * 1-5"
-    - cron: "15 20 * * 1-5"
+  # Schedule disabled by default when using App Runner/EC2 (Agenda runs in-process).
+  # schedule:
+  #   - cron: "15 14 * * 1-5"
+  #   - cron: "15 15 * * 1-5"
+  #   - cron: "15 16 * * 1-5"
+  #   - cron: "15 17 * * 1-5"
+  #   - cron: "15 18 * * 1-5"
+  #   - cron: "15 19 * * 1-5"
+  #   - cron: "15 20 * * 1-5"
   workflow_dispatch:
 
 jobs:
@@ -30,8 +28,10 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
-            echo "::error::Set vars.APP_URL and secrets.CRON_SECRET in repo Settings → Secrets and variables → Actions"
-            exit 1
+            echo "::warning::Skipping cron: set vars.APP_URL and secrets.CRON_SECRET in repo Settings → Secrets and variables → Actions to run the scanner."
+            echo "  Variables tab: APP_URL = your production URL (e.g. https://xxx.awsapprunner.com)"
+            echo "  Secrets tab: CRON_SECRET = same as CRON_SECRET in your app env"
+            exit 0
           fi
           BASE="${APP_URL%/}"
           URL="${BASE}/api/cron/unified-options-scanner"

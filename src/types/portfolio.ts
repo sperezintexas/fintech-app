@@ -251,7 +251,7 @@ export type AlertDeliveryChannel = "email" | "sms" | "slack" | "push" | "twitter
 export type AlertDeliveryConfig = {
   channel: AlertDeliveryChannel;
   enabled: boolean;
-  target: string; // email address, phone number, slack webhook, twitter handle, etc.
+  target: string; // email address, phone number, slack webhook, X handle, etc.
   verified?: boolean;
   // Cost tracking (per message)
   estimatedCost?: number; // in cents
@@ -272,7 +272,7 @@ export type AlertTemplate = {
   bodyTemplate: string;
   smsTemplate: string; // Short version for SMS (160 chars)
   slackTemplate: string; // Slack block format
-  /** X/Twitter template (no {account}) */
+  /** X template (no {account}) */
   xTemplate: string;
 };
 
@@ -312,7 +312,7 @@ export const ALERT_CHANNEL_COSTS: Record<AlertDeliveryChannel, { perMessage: num
   sms: { perMessage: 1, description: "$0.01 per SMS (Twilio)" },
   slack: { perMessage: 0, description: "Free - webhook integration" },
   push: { perMessage: 0, description: "Free - browser notifications" },
-  twitter: { perMessage: 0, description: "Free - X/Twitter integration" },
+  twitter: { perMessage: 0, description: "Free - X integration" },
 };
 
 // Alert templates loaded from config/alert-templates.json. Placeholders: {account}, {action}, {symbol}, {reason}, etc.
@@ -459,7 +459,7 @@ export type ReportTemplate = {
   name: string;
   description: string;
   slackTemplate: string;
-  /** X/Twitter template (no {account}). Placeholders: {date}, {reportName}, {stocks}. Watchlist X posts exclude options. */
+  /** X template (no {account}). Placeholders: {date}, {reportName}, {stocks}. Watchlist X posts exclude options. */
   xTemplate: string;
 };
 
@@ -485,7 +485,7 @@ export type ReportDefinition = {
   templateId?: ReportTemplateId;
   /** Override: custom Slack message body. Placeholders: {date}, {reportName}, {account}, {stocks}, {options} */
   customSlackTemplate?: string;
-  /** Override: custom X/Twitter message body (no {account}). Placeholders: {date}, {reportName}, {stocks}, {options} */
+  /** Override: custom X message body (no {account}). Placeholders: {date}, {reportName}, {stocks}, {options} */
   customXTemplate?: string;
   /** Scanner config for OptionScanner report type (holdDteMin, btcDteMax, etc.) */
   scannerConfig?: OptionScannerConfig;

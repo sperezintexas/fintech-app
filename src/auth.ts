@@ -1,8 +1,7 @@
 import NextAuth from "next-auth";
 import Twitter from "next-auth/providers/twitter";
 import Credentials from "next-auth/providers/credentials";
-
-const ALLOWED_USERNAMES = ["atxbogart", "sperezintexas", "shelleyperezatx"];
+import { isAllowedXUsername } from "@/lib/x-allowed-usernames";
 
 // Avoid [auth][warn][env-url-basepath-mismatch]: AUTH_URL/NEXTAUTH_URL path must be "/" or match basePath "/api/auth"
 const envUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
@@ -69,7 +68,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     authorized({ auth: session }) {
       return !!session;
     },
-    signIn({ user, profile }) {
+    async signIn({ user, profile }) {
       if (user?.id === "key" || user?.email) return true;
       const raw = profile as { data?: { username?: string }; username?: string; reason?: string; title?: string } | undefined;
       if (raw?.reason === "client-not-enrolled" || raw?.title === "Client Forbidden") {
@@ -82,7 +81,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const fromProfile = raw?.data?.username?.toLowerCase() ?? raw?.username?.toLowerCase();
       const username = fromUser ?? fromProfile;
       if (!username) return false;
-      return ALLOWED_USERNAMES.includes(username);
+      return isAllowedXUsername(username);
     },
     jwt({ token, user }) {
       if (user?.username) {

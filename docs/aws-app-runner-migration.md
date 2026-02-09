@@ -95,7 +95,7 @@ Plan to remove EB deployment and use AWS App Runner instead. App Runner runs con
 2. **CI:** In `ci.yml`, replace the `aws-deploy` job with `apprunner-deploy` (ECR push + App Runner start-deployment + wait + health + Slack). Use variable `ENABLE_AWS_DEPLOY` or new `ENABLE_APP_RUNNER` to gate the job.
 3. **Docs:** Add `docs/aws-app-runner.md` (and optionally setup guide). Update `docs/ci.md`, readme, and any links that point to EB.
 4. **Remove EB:** Delete or archive EB-only files and workflows; update scripts that reference EB; update gitleaks allowlist if needed.
-5. **Test:** Push to main, confirm App Runner deploys, health check passes, Slack notification works. Update X (Twitter) callback URL to App Runner URL if it was pointing to EB.
+5. **Test:** Push to main, confirm App Runner deploys, health check passes, Slack notification works. Update X callback URL to App Runner URL if it was pointing to EB.
 
 ---
 

@@ -6,7 +6,7 @@ The dashboard shows a **probability of reaching $1M by 2030** (0–100%) after t
 
 ## When It Updates
 
-- **Risk scanner** runs as part of the **daily-analysis** cron (e.g. `GET /api/cron/daily-analysis` on the schedule in `vercel.json`).
+- **Risk scanner** runs as part of the **daily-analysis** cron (e.g. `GET /api/cron/daily-analysis` on a schedule via GitHub Actions or external cron).
 - **`runRiskScanner`** (used by daily-analysis or manually) computes portfolio risk, calls Grok for analysis, and then **computes and stores** the goal probability.
 
 ## How It's Computed

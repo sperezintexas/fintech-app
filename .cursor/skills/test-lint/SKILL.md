@@ -1,5 +1,6 @@
 ---
 name: test-lint
+version: "1.0.0"
 description: Run npm test, npm run lint -- --fix, tsc --noEmit. On failure, fix code in-place and re-run until green. Use when validating changes, enforcing TDD, or when the user asks to run tests/lint/typecheck.
 ---
 

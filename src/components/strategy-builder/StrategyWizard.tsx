@@ -164,7 +164,17 @@ export function StrategyWizard({ onSymbolSelected, onOutlookChange, onStrategyCh
 
       setExpirations(sorted);
       if (sorted.length > 0) {
-        setExpiration(sorted[0]);
+        // Default to expiration closest to 2 weeks out
+        const twoWeeksFromToday = new Date(today);
+        twoWeeksFromToday.setDate(twoWeeksFromToday.getDate() + 14);
+        const targetTime = twoWeeksFromToday.getTime();
+        const closestToTwoWeeks = sorted.reduce((best, d) => {
+          const t = new Date(d + 'T12:00:00Z').getTime();
+          return Math.abs(t - targetTime) < Math.abs(new Date(best + 'T12:00:00Z').getTime() - targetTime)
+            ? d
+            : best;
+        });
+        setExpiration(closestToTwoWeeks);
       } else {
         setExpiration(null);
       }
@@ -183,11 +193,12 @@ export function StrategyWizard({ onSymbolSelected, onOutlookChange, onStrategyCh
       const data = await res.json();
       const chain: OptionChainRow[] = data.optionChain ?? [];
       setOptionChain(chain);
-      if (chain.length > 0 && !strike) {
+      if (chain.length > 0) {
         const atm = chain.reduce((a, b) =>
           Math.abs(b.strike - targetStrike) < Math.abs(a.strike - targetStrike) ? b : a
         );
         setStrike(atm.strike);
+        setLimitPrice('');
       }
     } catch {
       setOptionChain([]);
@@ -234,6 +245,17 @@ export function StrategyWizard({ onSymbolSelected, onOutlookChange, onStrategyCh
       fetchOptionChain(selectedSymbol.symbol, expiration, targetStrike);
     }
   }, [selectedSymbol, expiration, fetchOptionChain]);
+
+  // Default limit price to mid (bid+ask)/2 when chain + ATM strike are set and limit is empty
+  useEffect(() => {
+    if (step !== 4 || optionChain.length === 0 || strike == null || limitPrice !== '') return;
+    const row = optionChain.find((c) => c.strike === strike);
+    const c = contractType === 'call' ? row?.call : row?.put;
+    const bid = c?.last_quote?.bid ?? c?.premium ?? 0;
+    const ask = c?.last_quote?.ask ?? c?.premium ?? 0;
+    const mid = bid > 0 || ask > 0 ? (bid + ask) / 2 : c?.premium ?? 0;
+    if (mid > 0) setLimitPrice(mid.toFixed(2));
+  }, [step, optionChain, strike, contractType, limitPrice]);
 
   useEffect(() => {
     onSymbolSelected?.(selectedSymbol ?? null);

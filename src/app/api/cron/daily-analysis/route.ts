@@ -60,7 +60,7 @@ function estimateOptionPrice(
  * Analyzes all watchlist items (updates prices); creates alerts only for items that are account holdings (not watchlist-only).
  *
  * Can be triggered by:
- * - Vercel Cron: Add to vercel.json { "crons": [{ "path": "/api/cron/daily-analysis", "schedule": "30 21 * * 1-5" }] }
+ * - External cron or GitHub Actions: GET this URL with Authorization: Bearer CRON_SECRET on desired schedule (e.g. 30 21 * * 1-5 for 4:30 PM ET weekdays).
  * - GitHub Actions: Use workflow dispatch
  * - External cron service: Call with ?secret=YOUR_CRON_SECRET
  */

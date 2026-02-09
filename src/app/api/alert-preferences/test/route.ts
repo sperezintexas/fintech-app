@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       const handle = entry?.target?.trim();
       if (!handle) {
         return NextResponse.json(
-          { error: "X/Twitter target not configured" },
+          { error: "X target not configured" },
           { status: 400 }
         );
       }

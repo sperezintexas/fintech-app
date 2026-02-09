@@ -85,8 +85,8 @@ Set these via `eb setenv` or in the AWS Console (Elastic Beanstalk > Environment
 | `MONGODB_DB` | Yes | Database name (default: myinvestments) |
 | `AUTH_SECRET` | Yes | NextAuth secret (generate: `npx auth secret`) |
 | `NEXTAUTH_URL` | Yes | Your EB URL (http://env.region.elasticbeanstalk.com) |
-| `X_CLIENT_ID` | Yes | X (Twitter) OAuth client ID |
-| `X_CLIENT_SECRET` | Yes | X (Twitter) OAuth client secret |
+| `X_CLIENT_ID` | Yes | X OAuth client ID |
+| `X_CLIENT_SECRET` | Yes | X OAuth client secret |
 | `XAI_API_KEY` | No | xAI Grok API key for Smart Chat |
 | `WEB_SEARCH_API_KEY` | No | SerpAPI key for web search |
 | `CRON_SECRET` | No | Secret for external cron calls |

@@ -39,6 +39,7 @@ describe("Automation Page", () => {
       if (url.includes("/api/strategy-settings")) return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
       if (url.includes("/api/scheduler")) return Promise.resolve({ ok: true, json: async () => ({ status: "ok", jobs: [] }) } as Response);
       if (url.includes("/api/alert-preferences")) return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+      if (url.includes("/api/x-allowed-usernames") && !url.includes("/seed")) return Promise.resolve({ ok: true, json: async () => [] } as Response);
       return Promise.resolve({ ok: false } as Response);
     });
   });
@@ -47,20 +48,38 @@ describe("Automation Page", () => {
     render(<AutomationPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Alert Settings")).toBeInTheDocument();
+      expect(screen.getByText("Auth Users")).toBeInTheDocument();
     });
+    expect(screen.getByText("Alert Settings")).toBeInTheDocument();
     expect(screen.getByText("Strategy")).toBeInTheDocument();
     expect(screen.getByText("Scheduled Jobs")).toBeInTheDocument();
   });
 
-  it("renders Alert Settings tab content by default", async () => {
+  it("renders Auth Users tab content by default", async () => {
     render(<AutomationPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Setup")).toBeInTheDocument();
     });
-    expect(screen.getByText("Alert Settings")).toBeInTheDocument();
-    expect(screen.getByText("Alert Delivery Channels")).toBeInTheDocument();
+    expect(screen.getByText("Auth Users")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/X allowed usernames/)).toBeInTheDocument();
+    });
+  });
+
+  it("renders Alert Settings tab content when Alert Settings tab is clicked", async () => {
+    render(<AutomationPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Auth Users")).toBeInTheDocument();
+    });
+    const alertSettingsTab = screen.getByText("Alert Settings");
+    await act(async () => {
+      alertSettingsTab.click();
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Alert Delivery Channels")).toBeInTheDocument();
+    });
   });
 
   it("renders Scheduler, Job run history, Job types links when Scheduled Jobs tab is active", async () => {

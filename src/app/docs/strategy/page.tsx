@@ -24,12 +24,20 @@ export default function StrategyDocPage() {
         {/* Hero */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-blue-800 px-6 py-10 sm:px-8 sm:py-12 text-white shadow-xl">
           <div className="relative z-10">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1.5 text-sm text-blue-100 hover:text-white transition-colors mb-6"
-            >
-              <span aria-hidden>←</span> Back to Dashboard
-            </Link>
+            <div className="flex flex-wrap gap-3 mb-6">
+              <Link
+                href="/docs"
+                className="inline-flex items-center gap-1.5 text-sm text-blue-100 hover:text-white transition-colors"
+              >
+                <span aria-hidden>←</span> Documentation
+              </Link>
+              <Link
+                href="/"
+                className="inline-flex items-center gap-1.5 text-sm text-blue-100 hover:text-white transition-colors"
+              >
+                Dashboard
+              </Link>
+            </div>
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
               Investment Strategy
             </h1>
@@ -231,12 +239,12 @@ export default function StrategyDocPage() {
           </ul>
         </section>
 
-        <div className="mt-12 pt-8 border-t border-gray-200">
-          <Link
-            href="/"
-            className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
-          >
-            ← Back to Dashboard
+        <div className="mt-12 pt-8 border-t border-gray-200 flex flex-wrap gap-4">
+          <Link href="/docs" className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
+            ← Documentation
+          </Link>
+          <Link href="/" className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
+            Dashboard
           </Link>
         </div>
       </main>

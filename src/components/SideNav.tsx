@@ -23,9 +23,9 @@ const SIDE_NAV_ITEMS: NavItem[] = [
     isActive: (p) => (p ?? "").startsWith("/xstrategybuilder"),
   },
   {
-    href: "/docs/strategy",
-    label: "Investment strategy",
-    isActive: (p) => (p ?? "").startsWith("/docs/strategy"),
+    href: "/docs",
+    label: "Documentation",
+    isActive: (p) => (p ?? "").startsWith("/docs"),
   },
   {
     href: "/settings/access-keys",

@@ -33,7 +33,7 @@ Build and maintain a personal investment tracking & automation app focused on ma
 4. Watchlist
    - Per position/account: symbol, price thresholds, RSI, IV rank, DTE alerts, sentiment triggers
    - Watchlist page: sort by Symbol, Type·Strategy, Entry target, Current, P/L, Exp (click column header); remove duplicates within current watchlist (keeps oldest per symbol/type/strike/exp).
-   - Delivery: Slack, Twitter/X (via API), in-app notifications.
+   - Delivery: Slack, X (via API), in-app notifications.
 5. Alerts
    - ability to define alerts based on either position or watchlist items
    - provide UI preview and test to help validate configuration

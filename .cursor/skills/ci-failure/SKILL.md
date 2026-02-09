@@ -35,7 +35,7 @@ If the user only pastes an error line (e.g. "No files were found with the provid
 | Build error, Next.js, OOM | Build | Build application | Check "Build application" logs; confirm `NODE_OPTIONS=--max-old-space-size=4096` in workflow; fix build error or increase memory. |
 | No files .next, upload artifact | Build | Build application / Upload | Build didn’t produce `.next`; check "Build application" step logs. Ensure workflow has List build output, "Fail if build did not produce .next", and conditional upload (see docs/ci.md). |
 | Docker build failed | Docker Build | Build Docker image | Check Dockerfile and build-args (MONGODB_URI, MONGODB_DB). |
-| Notify Slack / health | Notify Slack | — | Check Secrets (SLACK_WEBHOOK_URL, VERCEL_TOKEN) and Variables (APP_URL, VERCEL_PROJECT_ID); see docs/ci.md and readme. |
+| Notify Slack / health | Notify Slack | — | Check Secrets (SLACK_WEBHOOK_URL) and Variables (APP_URL); see docs/ci.md and readme. |
 
 ## 4. Respond
 

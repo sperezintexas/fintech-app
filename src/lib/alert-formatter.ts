@@ -25,7 +25,7 @@ export type FormattedAlert = {
   body: string;
   sms: string;
   slack: string;
-  /** X/Twitter format (no account) */
+  /** X format (no account) */
   x: string;
 };
 

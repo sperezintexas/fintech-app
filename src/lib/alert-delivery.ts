@@ -1,6 +1,6 @@
 /**
  * Alert Delivery Service
- * Delivers scanner-generated alerts to Slack and X/Twitter per AlertConfig.
+ * Delivers scanner-generated alerts to Slack and X per AlertConfig.
  */
 
 import { ObjectId } from "mongodb";
@@ -213,7 +213,7 @@ async function deliverToSlack(
   }
 }
 
-/** Deliver alert to X/Twitter. */
+/** Deliver alert to X. */
 async function deliverToX(message: string): Promise<{ success: boolean; error?: string }> {
   try {
     await postToXTweet(message);

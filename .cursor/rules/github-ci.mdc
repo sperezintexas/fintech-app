@@ -26,7 +26,7 @@ When the user reports a **GitHub Actions / CI / remote job failure** (e.g. paste
 | Build / next build    | `build` → "Build application" | OOM, Next.js error, or missing deps; see docs/ci.md |
 | .next not found / upload artifact | `build` → "List build output" or "Upload build artifacts" | Build didn’t create `.next`; check "Build application" step for real error |
 | Docker build failed  | `docker` → "Build Docker image" | Dockerfile, build-args, or base image |
-| Notify Slack / health | `notify-slack` | SLACK_WEBHOOK_URL secret; APP_URL/health; Vercel vars |
+| Notify Slack / health | `notify-slack` | SLACK_WEBHOOK_URL secret; APP_URL/health |
 
 ## 3. Suggest Fixes
 
@@ -34,7 +34,7 @@ When the user reports a **GitHub Actions / CI / remote job failure** (e.g. paste
 - **Build (no .next):** Suggest checking "Build application" step logs for OOM or Next.js errors; confirm `NODE_OPTIONS=--max-old-space-size=4096` is set; confirm `next.config` has `output: "standalone"` and no custom `distDir` that would change path.
 - **Upload artifact "No files were found":** Explain that the build step didn’t create `.next` (or workflow is old). Suggest updating workflow to match current ci.yml (conditional upload + "Fail if build did not produce .next" + List build output).
 - **Docker:** Check Dockerfile and build-args (MONGODB_URI, MONGODB_DB).
-- **Slack/health:** Check repo Secrets (SLACK_WEBHOOK_URL, VERCEL_TOKEN) and Variables (APP_URL, VERCEL_PROJECT_ID); see readme "CI build notifications (Slack)" and "Vercel: callback and health check".
+- **Slack/health:** Check repo Secrets (SLACK_WEBHOOK_URL) and Variables (APP_URL); see readme "CI build notifications (Slack)" and callback/health check.
 
 ## 4. When User Pastes Logs
 
