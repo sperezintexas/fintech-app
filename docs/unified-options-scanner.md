@@ -159,7 +159,8 @@ type UnifiedOptionsScannerResult = {
 
 - **Job type:** `unifiedOptionsScanner`
 - **Handler:** `runUnifiedOptionsScanner(accountId?, config?)`
-- **Schedule (default):** Use `.github/workflows/cron-unified-scanner.yml` or external cron to call the cron route at desired times (e.g. 15 14-20 * * 1-5 UTC).
+- **Recommended daily jobs:** In **Setup → Scheduled Jobs**, use **Create recommended jobs** to seed the default set, including **Daily Options Scanner** (name), `jobType: "unifiedOptionsScanner"`, `scheduleCron: "15 14-20 * * 1-5"` (weekdays at :15 during market hours). All recommended jobs are created as portfolio-level (`accountId: null`) so they appear in the Scheduled Jobs list and run for all accounts where applicable.
+- **Schedule (external):** Use `.github/workflows/cron-unified-scanner.yml` or external cron to call the cron route at desired times (e.g. 15 14-20 * * 1-5 UTC).
 - **Run portfolio:** `POST /api/scheduler` with `{ action: "runPortfolio" }` runs unifiedOptionsScanner + watchlistreport + deliverAlerts
 
 ### Cron route (external or GitHub Actions)

@@ -8,9 +8,11 @@ vi.mock("@/components/AppHeader", () => ({
 }));
 
 const mockSearchParams = new URLSearchParams();
+const mockReplace = vi.fn();
 vi.mock("next/navigation", () => ({
   useSearchParams: () => mockSearchParams,
   usePathname: () => "/automation",
+  useRouter: () => ({ replace: mockReplace, push: vi.fn(), back: vi.fn(), forward: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }),
 }));
 
 const mockFetch = vi.fn();

@@ -248,6 +248,8 @@ Example: Create `coveredCallScanner-aggressive` with `handlerKey: coveredCallSca
 
 ## Recommended Setup
 
+**Creating the daily jobs:** In **Setup → Scheduled Jobs**, click **Create recommended jobs** to seed the default set (Weekly Portfolio, Daily Options Scanner, Watchlist Snapshot, Risk Scanner, Deliver Alerts, Data Cleanup). All are created as portfolio-level so they appear in the list. If you don’t see **Daily Options Scanner**, run Create recommended jobs once.
+
 | Job | Type | Schedule (cron) | Purpose |
 |-----|------|-----------------|---------|
 | Weekly Portfolio | portfoliosummary | `0 18 * * 0` (Sun 6 PM) | Multi-account overview; enable "Include AI insights" for SmartXAI sentiment |

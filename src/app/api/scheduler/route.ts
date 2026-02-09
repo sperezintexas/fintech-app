@@ -34,14 +34,12 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
   const db = await getDb();
   await ensureDefaultReportTypes(db);
 
-  const firstAccount = await db.collection("accounts").findOne({});
-  const accountId = firstAccount ? firstAccount._id.toString() : null;
-
   const now = new Date().toISOString();
+  // Portfolio-level (accountId: null) so jobs appear in Setup > Scheduled Jobs and run for all accounts where applicable
   const recommended: Array<{ name: string; jobType: string; accountId: string | null; scheduleCron: string; config?: Record<string, unknown> }> = [
     { name: "Weekly Portfolio", jobType: "portfoliosummary", accountId: null, scheduleCron: "0 18 * * 0", config: { includeAiInsights: true } },
-    { name: "Daily Options Scanner", jobType: "unifiedOptionsScanner", accountId, scheduleCron: "15 14-20 * * 1-5" },
-    { name: "Watchlist Snapshot", jobType: "watchlistreport", accountId, scheduleCron: "0 9,16 * * 1-5" },
+    { name: "Daily Options Scanner", jobType: "unifiedOptionsScanner", accountId: null, scheduleCron: "15 14-20 * * 1-5" },
+    { name: "Watchlist Snapshot", jobType: "watchlistreport", accountId: null, scheduleCron: "0 9,16 * * 1-5" },
     { name: "Risk Scanner", jobType: "riskScanner", accountId: null, scheduleCron: "0 17 * * 1-5" },
     { name: "Deliver Alerts", jobType: "deliverAlerts", accountId: null, scheduleCron: "30 16 * * 1-5" },
     { name: "Data Cleanup", jobType: "cleanup", accountId: null, scheduleCron: "0 3 * * *" },

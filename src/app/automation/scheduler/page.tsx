@@ -96,7 +96,7 @@ export default function SchedulerPage() {
   };
 
   const fetchJobs = useCallback(async () => {
-    const res = await fetch("/api/jobs");
+    const res = await fetch("/api/jobs?all=1");
     if (res.ok) {
       const data = await res.json();
       setJobs(Array.isArray(data) ? data : []);

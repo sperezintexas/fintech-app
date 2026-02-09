@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import type {
   Account,
   AlertDeliveryChannel,
@@ -24,12 +24,21 @@ type TestChannel = "slack" | "twitter" | "push";
 
 function AutomationContent() {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("__portfolio__");
 
   // Alert preferences state
   const tabParam = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<"auth-users" | "settings" | "strategy">("auth-users");
+
+  // Default Setup to Job run history when visiting /automation with no tab
+  useEffect(() => {
+    if (pathname === "/automation" && !tabParam) {
+      router.replace("/automation/job-history");
+    }
+  }, [pathname, tabParam, router]);
 
   useEffect(() => {
     if (tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users") {
@@ -502,7 +511,8 @@ function AutomationContent() {
 
   return (
     <>
-        <div className="flex items-center justify-end mb-6">
+        {activeTab !== "auth-users" && activeTab !== "settings" && (
+          <div className="flex items-center justify-end mb-6">
             <select
               value={selectedAccountId}
               onChange={(e) => setSelectedAccountId(e.target.value)}
@@ -515,7 +525,8 @@ function AutomationContent() {
                 </option>
               ))}
             </select>
-        </div>
+          </div>
+        )}
 
         {/* Auth Users Tab */}
         {activeTab === "auth-users" && (
