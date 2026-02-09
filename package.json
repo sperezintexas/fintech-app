@@ -1,6 +1,6 @@
 {
   "name": "myinvestments",
-  "version": "1.0.60",
+  "version": "1.0.61",
   "description": "Investment portfolio manager with real-time market data",
   "private": true,
   "packageManager": "pnpm@9.0.0",
