@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { getAgenda, upsertReportJobSchedule } from "@/lib/scheduler";
+import { getAgendaClient } from "@/lib/agenda-client";
+import { upsertReportJobSchedule } from "@/lib/scheduler";
 import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
 import { validateJobConfig } from "@/lib/job-config-schemas";
 import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, JobConfig } from "@/types/portfolio";
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
 
     const nextRunByJobId = new Map<string, string>();
     try {
-      const agenda = await getAgenda();
+      const agenda = await getAgendaClient();
       const scheduledReports = await agenda.jobs({ name: "scheduled-report" });
       for (const job of scheduledReports) {
         const jid = (job.attrs.data as { jobId?: string })?.jobId;

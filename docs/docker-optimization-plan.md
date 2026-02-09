@@ -1,6 +1,6 @@
 # Docker Optimization Plan (Production-Ready)
 
-Based on `.cursor/rules/docker-optimization.mdc`. Current state vs goals and a phased implementation plan.
+Based on `.cursor/rules/docker-optimization.mdc`. **Status: Phases 1–3 implemented** (pnpm, non-root, pm2 with web + smart-scheduler). Reference below.
 
 ---
 
@@ -74,7 +74,7 @@ Only if we later introduce a **separate** scheduler entry (e.g. a script that on
 - In Dockerfile final stage: install pm2 (`npm install -g pm2@5`), copy `ecosystem.config.js`, `CMD ["pm2-runtime", "start", "ecosystem.config.js"]`.
 - Then we’d need to copy `src` (and possibly a built scheduler bundle) into the image for the scheduler process.
 
-**Not needed** while Agenda starts in the same process as Next.js via instrumentation.
+**Done:** We use `ecosystem.config.js` with web + scheduler (smart-scheduler). Image includes `src`, `apps`, `config`. See `Dockerfile` and `apps/smart-scheduler/README.md`.
 
 ---
 
@@ -101,5 +101,5 @@ Only if we later introduce a **separate** scheduler entry (e.g. a script that on
 
 ## Summary
 
-- **Do now (Phase 1):** Non-root user, `NEXT_TELEMETRY_DISABLED=1`, keep standalone and single-process.
-- **Consider later:** pnpm (Phase 2), multi-process with pm2 (Phase 3) only if we split the scheduler into a separate process.
+- **Done:** Non-root user, pnpm, pm2 with web + smart-scheduler, copy-only-needed-files. See `Dockerfile` and `ecosystem.config.js`.
+- **Reference:** `.cursor/rules/docker-optimization.mdc`, `README.md`, `docs/aws-scheduler.md`.

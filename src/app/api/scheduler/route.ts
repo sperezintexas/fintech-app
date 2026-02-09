@@ -1,8 +1,12 @@
+/**
+ * Scheduler API: get status, schedule/run/cancel jobs, create recommended jobs.
+ * Uses agenda-client and scheduler helpers (web does not start Agenda; smart-scheduler runs jobs).
+ */
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
+import { getAgendaClient } from "@/lib/agenda-client";
 import {
-  getAgenda,
   scheduleJob,
   runJobNow,
   getJobStatus,
@@ -43,7 +47,7 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
     { name: "Data Cleanup", jobType: "cleanup", accountId: null, scheduleCron: "0 3 * * *" },
   ];
 
-  const agenda = await getAgenda();
+  const agenda = await getAgendaClient();
   const legacyNames = ["daily-analysis", "cleanup-alerts"];
   for (const name of legacyNames) {
     await agenda.cancel({ name });
@@ -80,12 +84,9 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
   return { created, jobs: jobNames };
 }
 
-// GET - Get job status and schedules
+// GET - Get job status and schedules (uses agenda-client; smart-scheduler runs jobs)
 export async function GET() {
   try {
-    // Initialize agenda if not already running
-    await getAgenda();
-
     const status = await getJobStatus();
     const hasRefreshPrices = status.jobs.some((j) => j.name === "refreshHoldingsPrices");
     if (!hasRefreshPrices) {
@@ -112,9 +113,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { action, jobName, schedule, data } = body;
-
-    // Initialize agenda
-    await getAgenda();
 
     switch (action) {
       case "schedule": {

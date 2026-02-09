@@ -1,8 +1,9 @@
 {
   "name": "myinvestments",
-  "version": "1.0.58",
+  "version": "1.0.59",
   "description": "Investment portfolio manager with real-time market data",
   "private": true,
+  "packageManager": "pnpm@9.0.0",
   "scripts": {
     "dev": "NODE_OPTIONS='--no-deprecation' next dev",
     "build": "NODE_OPTIONS='--no-deprecation' next build",
@@ -13,7 +14,8 @@
     "test:coverage": "vitest run --coverage",
     "test:scanner": "vitest run src/lib/__tests__/option-scanner.test.ts src/lib/__tests__/covered-call-analyzer.test.ts src/lib/__tests__/protective-put-analyzer.test.ts src/lib/__tests__/straddle-strangle-analyzer.test.ts src/lib/__tests__/unified-options-scanner.test.ts",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "start:scheduler": "TS_NODE_PROJECT=apps/smart-scheduler/tsconfig.json node -r tsconfig-paths/register -r ts-node/register apps/smart-scheduler/src/index.ts"
   },
   "keywords": [
     "investments",
@@ -46,7 +48,9 @@
     "typescript": "^5.9.3",
     "web-push": "^3.6.7",
     "yahoo-finance2": "^3.13.0",
-    "zod": "^3.25.4"
+    "zod": "^3.25.4",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",

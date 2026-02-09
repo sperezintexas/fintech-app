@@ -1,0 +1,148 @@
+---
+description: Guidelines for "smart-scheduler" - separate, robust Agenda.js scheduler service
+globs:
+  - src/lib/scheduler.ts
+  - src/lib/unified-options-scanner.ts
+  - src/lib/*.ts
+  - Dockerfile
+  - docker-compose.yml
+  - apps/web/app/automation/*
+alwaysApply: false
+---
+
+# Smart Scheduler Separation Guidelines
+
+## Goal
+Split the current monolithic scheduler (Agenda.js inside the main Next.js app) into a separate, lightweight Node.js service called **smart-scheduler**.
+
+This improves:
+- Reliability (scheduler crashes don't take down web app)
+- Scalability (independent scaling, restarts)
+- Observability (separate logs, metrics)
+- Maintainability (clearer boundaries)
+
+## Architecture Target (2026)
+
+Two independent services sharing the same codebase monorepo:
+
+1. **web** (Next.js App Router)
+   - Handles HTTP requests, UI, API routes, server actions
+   - Does **NOT** start Agenda or process jobs
+   - May still enqueue jobs (via Agenda client)
+
+2. **smart-scheduler** (standalone Node.js service)
+   - Runs Agenda instance
+   - Processes all scheduled & recurring jobs
+   - Contains job definitions, handlers, and orchestration logic
+   - Lightweight — no Next.js, no frontend bundle
+
+## Folder Structure Recommendation
+myinvestments/
+├── apps/
+│   ├── web/                    # current Next.js app
+│   └── smart-scheduler/        # new service
+│       ├── src/
+│       │   ├── index.ts        # entry point
+│       │   ├── agenda.ts       # Agenda instance + config
+│       │   ├── jobs/           # job definitions & handlers
+│       │   │   ├── unified-options-scanner.ts
+│       │   │   ├── deliver-alerts.ts
+│       │   │   ├── cleanup-alerts.ts
+│       │   │   └── ...
+│       │   └── health.ts       # optional /health endpoint
+│       ├── package.json
+│       └── tsconfig.json
+├── src/
+│   ├── lib/
+│   │   ├── agenda-client.ts    # shared Agenda client (enqueue only)
+│   │   ├── job-config-schemas.ts
+│   │   └── ...                 # shared types, utils
+└── ...
+
+
+## Key Rules to Enforce
+
+1. **Main Next.js app (web) MUST NOT start Agenda**
+   - Remove `agenda.start()`, `agenda.define()`, `agenda.every()` from web codebase
+   - Replace with `enqueueJob(name, data)` using shared Agenda client
+
+2. **smart-scheduler is the only process that defines & runs jobs**
+   - All `agenda.define(...)` calls live in `smart-scheduler/src/jobs/`
+   - All recurring schedules (`agenda.every(...)`) live there too
+
+3. **Shared Agenda Client (enqueue only)**
+   Create `src/lib/agenda-client.ts`:
+
+   ```ts
+   import Agenda from "agenda";
+
+   let agendaClient: Agenda | null = null;
+
+   export async function getAgendaClient() {
+     if (agendaClient) return agendaClient;
+     agendaClient = new Agenda({ db: { address: process.env.MONGODB_URI!, collection: "agendaJobs" } });
+     // Do NOT call agendaClient.start() here
+     return agendaClient;
+   }
+
+   export async function enqueueJob<T = any>(name: string, data?: T, options?: any) {
+     const agenda = await getAgendaClient();
+     return agenda.now(name, data, options);
+   }
+
+   // Optional: schedule, define, etc. — but only use in smart-scheduler
+   smart-scheduler entry point (index.ts)TypeScriptimport { Agenda } from "agenda";
+import "./jobs"; // imports all job definitions
+
+const mongoUri = process.env.MONGODB_URI;
+if (!mongoUri) throw new Error("MONGODB_URI required");
+
+const agenda = new Agenda({
+  db: { address: mongoUri, collection: "agendaJobs" },
+  processEvery: "30 seconds",
+  maxConcurrency: 5,
+});
+
+// Load all job handlers
+import "./jobs/unified-options-scanner";
+import "./jobs/deliver-alerts";
+// ...
+
+agenda.on("ready", () => console.log("Agenda ready"));
+agenda.on("error", (err) => console.error("Agenda error:", err));
+
+(async () => {
+  await agenda.start();
+  console.log("Smart Scheduler started");
+})();
+package.json for smart-schedulerJSON{
+  "name": "@myinvestments/smart-scheduler",
+  "private": true,
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "dev": "ts-node-dev --respawn src/index.ts"
+  },
+  "dependencies": {
+    "agenda": "^5.0.0",
+    // shared deps
+  }
+}
+Docker / Deployment
+Two Dockerfiles or one multi-stage with build arg
+Two App Runner / Railway / Render services
+smart-scheduler: no port exposed (or optional healthcheck port 3001)
+web: port 3000
+
+Migration Checklist
+Move all agenda.define and agenda.every calls to smart-scheduler
+Replace direct agenda usage in web with enqueueJob
+Keep same MongoDB collection (agendaJobs)
+Test job enqueue → execution flow
+
+
+When Reviewing / Generating Code
+
+Prefer separate smart-scheduler service over embedded scheduler
+Never suggest starting Agenda in Next.js routes or server actions
+Enforce separation of concerns: web = HTTP, smart-scheduler = background jobs
+Use shared agenda-client for enqueuing from anywhere

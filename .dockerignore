@@ -1,4 +1,4 @@
-# Dependencies
+# Dependencies (runner gets pruned node_modules from builder)
 node_modules
 .pnp
 .pnp.js
@@ -12,7 +12,7 @@ dist
 # Testing
 coverage
 
-# Environment
+# Environment (inject at runtime)
 .env
 .env.local
 .env.development.local
@@ -23,14 +23,13 @@ coverage
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
-# IDE
+# IDE / OS
 .idea
 .vscode
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 
@@ -43,10 +42,9 @@ Dockerfile*
 docker-compose*
 .dockerignore
 
-# Misc
+# Misc (keep README if needed)
 *.md
 !README.md
-# Elastic Beanstalk Files
+
+# Elastic Beanstalk
 .elasticbeanstalk/*
-.git
-.gitignore

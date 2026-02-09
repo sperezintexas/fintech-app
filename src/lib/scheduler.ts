@@ -1,7 +1,20 @@
+/**
+ * Job definitions and schedule helpers for Agenda.
+ *
+ * Architecture:
+ * - **smart-scheduler** (apps/smart-scheduler): calls defineJobs(agenda) and agenda.start().
+ *   Only this process runs job handlers.
+ * - **Web app**: does NOT start Agenda. Uses getAgendaClient() via scheduleJob, runJobNow,
+ *   getJobStatus, cancelJob, upsertReportJobSchedule, cancelReportJobSchedule (all use
+ *   agenda-client to write/read the same MongoDB collection).
+ * - getAgenda() exists for the smart-scheduler entry point only (create + define + start).
+ */
+
 import Agenda, { Job as AgendaJob } from "agenda";
 import { NextRequest } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb, getMongoUri, getMongoDbName } from "./mongodb";
+import { getAgendaClient } from "./agenda-client";
 import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, Job } from "@/types/portfolio";
 import { getReportTemplate } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
@@ -67,9 +80,13 @@ export async function withRetry<T>(
   throw lastError;
 }
 
-// Singleton agenda instance
+// Singleton agenda instance (only used when smart-scheduler calls getAgenda)
 let agenda: Agenda | null = null;
 
+/**
+ * Creates Agenda, defines all jobs, starts the worker. For use by smart-scheduler only.
+ * Web app must not call this; use agenda-client and scheduleJob/runJobNow/etc. instead.
+ */
 export async function getAgenda(): Promise<Agenda> {
   if (agenda) return agenda;
 
@@ -96,8 +113,8 @@ export async function getAgenda(): Promise<Agenda> {
   return agenda;
 }
 
-// Define all scheduled job types
-function defineJobs(agenda: Agenda) {
+/** Define all scheduled job types. Used by smart-scheduler; web only enqueues via agenda-client. */
+export function defineJobs(agenda: Agenda) {
   // Deliver Alerts job - sends pending alerts to Slack/X per AlertConfig (with retry on transient errors)
   agenda.define("deliverAlerts", async (job: AgendaJob) => {
     console.log("Running Alert Delivery...", new Date().toISOString());
@@ -1204,24 +1221,24 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
 
 /** Schedule a report job by ID (used when creating/updating jobs in reportJobs). */
 export async function upsertReportJobSchedule(jobId: string, cron: string): Promise<void> {
-  const ag = await getAgenda();
+  const ag = await getAgendaClient();
   await ag.cancel({ name: "scheduled-report", "data.jobId": jobId });
   await ag.every(cron, "scheduled-report", { jobId });
 }
 
 /** Cancel scheduled-report jobs for a given report job ID. */
 export async function cancelReportJobSchedule(jobId: string): Promise<void> {
-  const ag = await getAgenda();
+  const ag = await getAgendaClient();
   await ag.cancel({ name: "scheduled-report", "data.jobId": jobId });
 }
 
-// Schedule management functions
+/** Schedule a recurring job (cron or human interval). Uses agenda-client; safe to call from web. */
 export async function scheduleJob(
   jobName: string,
   schedule: string,
   data?: Record<string, unknown>
 ): Promise<void> {
-  const ag = await getAgenda();
+  const ag = await getAgendaClient();
 
   // Cancel existing job with same name
   await ag.cancel({ name: jobName });
@@ -1232,15 +1249,17 @@ export async function scheduleJob(
   console.log(`Scheduled job "${jobName}" with schedule "${schedule}"`);
 }
 
+/** Run a job once immediately. Uses agenda-client; safe to call from web. */
 export async function runJobNow(
   jobName: string,
   data?: Record<string, unknown>
 ): Promise<void> {
-  const ag = await getAgenda();
+  const ag = await getAgendaClient();
   await ag.now(jobName, data || {});
   console.log(`Triggered job "${jobName}" to run now`);
 }
 
+/** List job status (deduplicated by name). Uses agenda-client; safe to call from web. */
 export async function getJobStatus(): Promise<{
   jobs: Array<{
     id: string;
@@ -1252,7 +1271,7 @@ export async function getJobStatus(): Promise<{
     data: unknown;
   }>;
 }> {
-  const ag = await getAgenda();
+  const ag = await getAgendaClient();
   const jobs = await ag.jobs({});
 
   // Deduplicate by name - keep the most recent/active one
@@ -1283,14 +1302,15 @@ export async function getJobStatus(): Promise<{
   };
 }
 
+/** Cancel all recurring/one-off jobs with the given name. Uses agenda-client; safe to call from web. */
 export async function cancelJob(jobName: string): Promise<number> {
-  const ag = await getAgenda();
+  const ag = await getAgendaClient();
   const result = await ag.cancel({ name: jobName });
   console.log(`Cancelled ${result} job(s) with name "${jobName}"`);
   return result ?? 0;
 }
 
-// Graceful shutdown
+/** Graceful shutdown of the in-process Agenda (only relevant when getAgenda was used, e.g. tests). */
 export async function stopScheduler(): Promise<void> {
   if (agenda) {
     await agenda.stop();

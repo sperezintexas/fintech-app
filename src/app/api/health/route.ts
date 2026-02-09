@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
-import { getAgenda } from "@/lib/scheduler";
+import { getAgendaClient } from "@/lib/agenda-client";
 import { getDbStats } from "@/lib/cleanup-storage";
 
 export const dynamic = "force-dynamic";
@@ -81,9 +81,9 @@ export async function GET() {
     overallStatus = "error";
   }
 
-  // Scheduler (Agenda)
+  // Scheduler (Agenda jobs in DB; worker runs in smart-scheduler service)
   try {
-    const agenda = await getAgenda();
+    const agenda = await getAgendaClient();
     const jobs = await agenda.jobs({ name: "scheduled-report" });
     const nextRun = jobs
       .map((j) => j.attrs.nextRunAt)

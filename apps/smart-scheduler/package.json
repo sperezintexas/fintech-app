@@ -1,0 +1,9 @@
+{
+  "name": "@myinvestments/smart-scheduler",
+  "private": true,
+  "scripts": {
+    "start": "ts-node -r tsconfig-paths/register -P tsconfig.json src/index.ts",
+    "dev": "ts-node-dev --respawn -r tsconfig-paths/register -P tsconfig.json src/index.ts"
+  },
+  "description": "Standalone Agenda worker; defines and runs all scheduled jobs. Web app enqueues via agenda-client only."
+}

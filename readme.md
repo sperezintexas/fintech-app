@@ -19,8 +19,11 @@ Manages investment portfolios, accounts, and positions (stocks, options, cash). 
 
 ## Project Structure
 ```
+apps/
+└── smart-scheduler/          # Standalone Agenda worker (see apps/smart-scheduler/README.md)
+    └── src/index.ts
 src/
-├── app/
+├── app/                      # Next.js App Router
 │   ├── page.tsx              # Dashboard
 │   ├── accounts/             # Account management
 │   ├── holdings/             # Holdings view
@@ -31,9 +34,10 @@ src/
 │   ├── health/               # Health check
 │   └── api/                  # API routes
 ├── components/               # Dashboard, AccountForm, PositionForm, etc.
-├── lib/                      # mongodb, push-client, scheduler, etc.
+├── lib/                      # mongodb, agenda-client, scheduler (job defs), etc.
 └── types/
     └── portfolio.ts
+ecosystem.config.js           # pm2: web + scheduler (Docker)
 ```
 
 ## Documentation
@@ -45,6 +49,7 @@ src/
 - **Frontend**: Next.js App Router, React Server + Client Components
 - **API**: Next.js routes for backend logic, Yahoo integration, MongoDB
 - **Data flow**: UI → API → MongoDB; API fetches Yahoo data, computes values/recommendations
+- **Scheduler**: Two-process model. The **web** app does not start Agenda; it only enqueues/schedules jobs via `src/lib/agenda-client.ts`. The **smart-scheduler** (`apps/smart-scheduler`) is the only process that runs `agenda.start()` and job handlers. See `apps/smart-scheduler/README.md` and `.cursor/rules/smart-scheduler-separation.mdc`.
 
 ## Getting Started
 
@@ -53,8 +58,11 @@ src/
 - MongoDB (local or Atlas)
 
 ### Installation
+Package manager: **pnpm** (see `packageManager` in package.json). From repo root:
+
 ```bash
-npm install
+pnpm install
+# or: npm install (if you don't use pnpm)
 ```
 
 ### Environment Variables
@@ -71,10 +79,18 @@ MONGODB_DB=myinvestments
 **Slack build status (CI):** Build pass/fail is posted to **Slack**, not X. Use GitHub Actions secret `SLACK_WEBHOOK_URL` (see “CI build notifications (Slack)” below). X_CLIENT_* are only for app login (Sign in with X), not for CI notifications.
 
 ### Development
+**Web (Next.js):**
 ```bash
-npm run dev
+pnpm dev
+# or: npm run dev
 ```
 Open http://localhost:3000
+
+**Scheduler (Agenda worker, optional for full automation):** In a second terminal, with env set (e.g. same `.env.local`):
+```bash
+pnpm run start:scheduler
+# or: npm run start:scheduler
+```
 
 ### Build
 ```bash
@@ -90,18 +106,21 @@ GitHub Actions CI (lint, typecheck, test, build, Docker) can post pass/fail to S
 3. Push to `main` or `develop` (or open a PR); the **Notify Slack** job runs after the pipeline and posts an attachment with branch, author, commit link, and status (green/red/cancelled). If the secret is not set, the job skips posting.
 
 ## Scheduled Alerts & Options Scanner
-The watchlist alert system and **Unified Options Scanner** (Option, Covered Call, Protective Put, Straddle/Strangle) generate HOLD/CLOSE/BTC recommendations. Uses **Agenda.js** (MongoDB-backed) for persistent job scheduling on long-running hosts.
+The watchlist alert system and **Unified Options Scanner** (Option, Covered Call, Protective Put, Straddle/Strangle) generate HOLD/CLOSE/BTC recommendations. Uses **Agenda.js** (MongoDB-backed) for persistent job scheduling.
 
-**Default schedule (Unified Options Scanner):** Weekdays at :15 during market hours (9:15–3:15 ET), cron `15 14-20 * * 1-5` (UTC), to avoid :00 clashes with other jobs.
+**Architecture:** The **web** app does not run job handlers; it only enqueues/schedules via `src/lib/agenda-client.ts`. The **smart-scheduler** (`apps/smart-scheduler`) is the only process that runs Agenda and executes jobs. In **Docker**, both run in one container via **pm2** (web + scheduler); see `ecosystem.config.js`.
+
+**Default schedule (Unified Options Scanner):** Weekdays at :15 during market hours (9:15–3:15 ET), cron `15 14-20 * * 1-5` (UTC).
 
 **Setup:** Go to **Setup → Automation → Scheduler** → "Create recommended jobs" to create Daily Options Scanner, Watchlist Snapshot, Deliver Alerts, etc.
 
-**Deployment:** Production is **AWS App Runner** (see `docs/aws-app-runner-migration.md`). CI builds the Docker image, pushes to ECR, and deploys to App Runner on push to `main` when `ENABLE_AWS_DEPLOY=true` and `APP_RUNNER_SERVICE_ARN` is set. Agenda runs in the container; use GitHub Actions cron (`.github/workflows/cron-unified-scanner.yml`) to hit `GET /api/cron/unified-options-scanner`. On Docker, Railway, or a VPS use `npm run start` for Agenda.
+**Deployment:** Production is **AWS App Runner** (see `docs/aws-app-runner-migration.md`). The Docker image runs **web** and **scheduler** via pm2; no separate worker service needed. For cron triggers from outside, use GitHub Actions (`.github/workflows/cron-unified-scanner.yml`) to hit `GET /api/cron/unified-options-scanner` if desired.
 
-**Docker:**
+**Docker (single image, two processes):**
 ```bash
-docker compose up -d
-# Or with .env.local: docker compose --env-file .env.local up -d
+docker build -t myinvestments .
+docker run -e MONGODB_URI=... -e MONGODB_DB=myinvestments -p 3000:3000 myinvestments
+# Or: docker compose up -d (with .env.local)
 ```
 
 **Scheduler API:**
