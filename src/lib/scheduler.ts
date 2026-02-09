@@ -13,6 +13,11 @@ import { formatUnifiedOptionsScannerReport, formatUnifiedOptionsScannerRunNotes,
 import { shouldRunPurge, runPurge } from "./cleanup-storage";
 import { runRiskScanner } from "./risk-scanner";
 import { getHeldSymbols } from "./holdings";
+import {
+  refreshHoldingsPricesStock,
+  refreshHoldingsPricesOptions,
+  isMarketHours as getIsMarketHours,
+} from "./holdings-price-cache";
 
 // Removed - using Yahoo Finance
 // Removed - using Yahoo Finance
@@ -207,6 +212,44 @@ function defineJobs(agenda: Agenda) {
       await executeJob(tempJob._id.toString());
     } finally {
       await db.collection("reportJobs").deleteOne({ _id: tempJob._id });
+    }
+  });
+
+  // Holdings price cache refresh (Phase 1: stocks). Runs every 15 min; during market hours always runs, outside market runs at most every 1 hr.
+  agenda.define("refreshHoldingsPrices", async (job: AgendaJob) => {
+    const data = job.attrs.data as { lastRun?: string } | undefined;
+    const lastRun = data?.lastRun ? new Date(data.lastRun).getTime() : 0;
+    const now = Date.now();
+    const oneHourMs = 60 * 60 * 1000;
+    const isMarketHours = getIsMarketHours();
+
+    if (!isMarketHours && lastRun > 0 && now - lastRun < oneHourMs) {
+      return;
+    }
+
+    try {
+      const stockResult = await refreshHoldingsPricesStock();
+      const optionsResult = await refreshHoldingsPricesOptions();
+      const result = { stock: stockResult, options: optionsResult };
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        lastError: undefined,
+        result,
+      };
+      await job.save();
+      console.log(
+        `[refreshHoldingsPrices] stocks: ${stockResult.symbolsUpdated}/${stockResult.symbolsRequested}; options: ${optionsResult.optionsUpdated}/${optionsResult.optionsRequested}`
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("[refreshHoldingsPrices] failed:", error);
+      job.attrs.data = {
+        ...job.attrs.data,
+        lastRun: new Date().toISOString(),
+        lastError: msg,
+      };
+      await job.save();
     }
   });
 

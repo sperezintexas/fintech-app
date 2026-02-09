@@ -117,6 +117,32 @@ Plan covers five areas with **test/validation after each feature**. Implement in
 
 ---
 
+## 6. Holdings price refresh job (implemented)
+
+**Goal:** Update account holdings prices on a schedule so the app can serve cached prices instead of calling Yahoo on every holdings/dashboard request. Reduces latency and Yahoo API load during market hours.
+
+**Implemented:** Job `refreshHoldingsPrices`; collections `priceCache` (stocks) and `optionPriceCache` (option premiums); schedule every 15 min (throttled to 1 hr off market); [getPositionsWithMarketValues()](src/lib/holdings.ts) reads from cache when fresh (20 min / 2 hr TTL). See [docs/job.md](docs/job.md) and [holdings-price-cache](src/lib/holdings-price-cache.ts).
+
+**Previous design (reference):** [src/lib/holdings.ts](src/lib/holdings.ts) `getPositionsWithMarketValues()` calls `getMultipleTickerPrices()` (and option premiums per position) on every request. Dashboard, positions API, portfolio summary, and chat do the same or call holdings. No shared price cache across requests.
+
+**Proposed design:**
+
+- **New job:** `refreshHoldingsPrices` (or `holdingsPriceUpdate`).
+  - Collects all unique symbols from all accounts: stock tickers + option underlyings (via [getHeldSymbols](src/lib/holdings.ts) or equivalent).
+  - Calls `getMultipleTickerPrices(symbols)` once per run; optionally batch option premiums if needed for a separate cache.
+  - Writes to a **price cache collection** (e.g. `priceCache`): `{ symbol, price, change, changePercent, updatedAt }` per symbol. Use upsert by symbol so the collection stays one doc per symbol.
+- **Schedule:**
+  - **During market hours** (e.g. 9:30 AM–4:00 PM ET, weekdays): run **every 15 minutes**.
+  - **Outside market hours:** run **every 1 hour** (or once at market open to warm cache).
+- **Holdings layer:** In `getPositionsWithMarketValues()` (and any path that needs “current” prices), read from the price cache first. If cache has a recent value (e.g. &lt; 20 min during market, &lt; 2 hr otherwise), use it; otherwise fall back to live `getMultipleTickerPrices()`. Option premiums can remain live or be cached in the same job if we add option-chain snapshot to the cache.
+- **Job registration:** Add `agenda.define("refreshHoldingsPrices", ...)` in [scheduler](src/lib/scheduler.ts); add a cron schedule (e.g. `*/15 9-15 * * 1-5` for 15 min during 9–16 ET weekdays, and `0 * * * *` for hourly otherwise, or a single cron that chooses interval by current time). Alternatively two Agenda repeat jobs (one 15-min, one 1-hr) with `nextRunAt` logic so only one runs depending on market open.
+
+**Deliverables:** New job handler; `priceCache` (or similar) collection schema; `getPositionsWithMarketValues()` (and optionally dashboard/positions API) use cache when valid; doc update in [docs/job.md](docs/job.md).
+
+**Validation:** Unit test job with mocked DB + Yahoo; manual run job and confirm `priceCache` populated; load holdings page and confirm no Yahoo call when cache is fresh (or add a simple “cache hit” log to verify).
+
+---
+
 ## Implementation order and checklist
 
 | Order | Feature              | Deliverable                                      | Validation step                          |
@@ -126,5 +152,6 @@ Plan covers five areas with **test/validation after each feature**. Implement in
 | 3     | Scheduling           | Retry in deliverAlerts, unifiedOptionsScanner, scheduled-report; withRetry + isTransientError | Unit test scheduler-retry; manual fail/retry |
 | 4     | UI                   | Holdings + Alerts server/client split; data-server; audit | Build + page tests + manual flows       |
 | 5     | Database             | scripts/mongo-validators.ts + docs/database-schema.md | Unit tests pass (mocked DB); manual invalid insert fails |
+| 6     | Holdings price job   | refreshHoldingsPrices job; priceCache; holdings/dashboard use cache | Job test; cache populated; holdings page uses cache when fresh |
 
 After each feature: run `npm test`, `npm run lint`, `npx tsc --noEmit`, and the feature-specific validation above before moving to the next.

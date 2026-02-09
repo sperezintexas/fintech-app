@@ -1,11 +1,18 @@
 /**
  * Holdings / Positions with market values
  * Enriches positions with Yahoo Finance prices (stocks) and option chain premiums (options).
+ * Reads from priceCache and optionPriceCache when fresh (see refreshHoldingsPrices job); otherwise falls back to live Yahoo.
  */
 
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { getMultipleTickerPrices, getOptionPremiumForPosition } from "@/lib/yahoo";
+import {
+  getCachedStockPrices,
+  getCachedOptionPremiums,
+  isPriceCacheFresh,
+  optionCacheKey,
+} from "@/lib/holdings-price-cache";
 import type { Account, Position } from "@/types/portfolio";
 
 /** Extract underlying symbol from option ticker (e.g. TSLA250117C250 -> TSLA). */
@@ -82,39 +89,60 @@ export async function getPositionsWithMarketValues(
 
   const positions: Position[] = account.positions ?? [];
 
-  // Stock tickers for batch price fetch
+  // Stock tickers and option underlyings for price lookup
   const stockTickers = positions
     .filter((p) => p.type === "stock" && p.ticker)
     .map((p) => p.ticker!.toUpperCase());
   const uniqueStockTickers = Array.from(new Set(stockTickers));
+  const optionUnderlyingSymbols = positions
+    .filter((p) => p.type === "option" && p.ticker)
+    .map((p) => getUnderlyingFromTicker(p.ticker!));
+  const uniqueUnderlyingSymbols = Array.from(new Set(optionUnderlyingSymbols)).filter(Boolean);
+  const allSymbols = Array.from(new Set([...uniqueStockTickers, ...uniqueUnderlyingSymbols]));
 
-  // Fetch stock prices
-  let stockPrices = new Map<string, { price: number; change: number; changePercent: number }>();
-  if (uniqueStockTickers.length > 0) {
+  // Try cache first; fall back to Yahoo for missing or stale
+  const stockPrices = new Map<string, { price: number; change: number; changePercent: number }>();
+  const cachedStocks = await getCachedStockPrices(allSymbols);
+  const symbolsToFetch: string[] = [];
+  for (const sym of allSymbols) {
+    const entry = cachedStocks.get(sym);
+    if (entry && isPriceCacheFresh(entry.updatedAt)) {
+      stockPrices.set(sym, {
+        price: entry.price,
+        change: entry.change,
+        changePercent: entry.changePercent,
+      });
+    } else {
+      symbolsToFetch.push(sym);
+    }
+  }
+  if (symbolsToFetch.length > 0) {
     try {
-      stockPrices = await getMultipleTickerPrices(uniqueStockTickers);
+      const live = await getMultipleTickerPrices(symbolsToFetch);
+      for (const [sym, data] of live) {
+        stockPrices.set(sym, data);
+      }
     } catch (e) {
       console.error("holdings: getMultipleTickerPrices failed:", e);
     }
   }
 
-  // Underlying stock prices for options (symbol -> price, e.g. RDW -> 10.04)
-  const optionUnderlyingSymbols = positions
-    .filter((p) => p.type === "option" && p.ticker)
-    .map((p) => getUnderlyingFromTicker(p.ticker!));
-  const uniqueUnderlyingSymbols = Array.from(new Set(optionUnderlyingSymbols)).filter(Boolean);
   const underlyingPrices = new Map<string, number>();
-  if (uniqueUnderlyingSymbols.length > 0) {
-    try {
-      const underlyingData = await getMultipleTickerPrices(uniqueUnderlyingSymbols);
-      for (const sym of uniqueUnderlyingSymbols) {
-        const data = underlyingData.get(sym);
-        if (data) underlyingPrices.set(sym, data.price);
-      }
-    } catch (e) {
-      console.error("holdings: underlying prices for options failed:", e);
-    }
+  for (const sym of uniqueUnderlyingSymbols) {
+    const data = stockPrices.get(sym);
+    if (data) underlyingPrices.set(sym, data.price);
   }
+
+  // Option premium cache: keys for all option positions
+  const optionKeys = positions
+    .filter((p) => p.type === "option" && p.ticker && p.expiration && p.strike != null)
+    .map((p) => ({
+      symbol: getUnderlyingFromTicker(p.ticker!),
+      expiration: p.expiration!,
+      strike: p.strike!,
+      optionType: (p.optionType ?? "call") as "call" | "put",
+    }));
+  const cachedOptions = await getCachedOptionPremiums(optionKeys);
 
   const enhanced: EnhancedPosition[] = await Promise.all(
     positions.map(async (position): Promise<EnhancedPosition> => {
@@ -168,13 +196,19 @@ export async function getPositionsWithMarketValues(
         const stockPrice = underlyingPrice ?? 0;
         currentPremium = intrinsicValue(stockPrice, strike, optionType);
       } else if (underlyingSymbol && expiration && strike) {
-        const fetched = await getOptionPremiumForPosition(
-          underlyingSymbol,
-          expiration,
-          strike,
-          optionType
-        );
-        currentPremium = fetched ?? premium;
+        const cacheKey = optionCacheKey(underlyingSymbol, expiration, strike, optionType);
+        const cached = cachedOptions.get(cacheKey);
+        if (cached && isPriceCacheFresh(cached.updatedAt)) {
+          currentPremium = cached.price;
+        } else {
+          const fetched = await getOptionPremiumForPosition(
+            underlyingSymbol,
+            expiration,
+            strike,
+            optionType
+          );
+          currentPremium = fetched ?? premium;
+        }
       } else {
         currentPremium = premium;
       }

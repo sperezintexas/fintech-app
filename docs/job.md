@@ -185,6 +185,20 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 
 ---
 
+### refreshHoldingsPrices
+
+**Purpose:** Refreshes stock and option prices for all held symbols and writes to `priceCache` and `optionPriceCache`. Used by `getPositionsWithMarketValues()` (holdings page, dashboard, positions API) so they can read from cache when fresh instead of calling Yahoo on every request.
+
+**Scope:** Portfolio (all accounts). No config.
+
+**Schedule:** Agenda repeat every 15 minutes. Throttle: outside market hours (9:30–16:00 ET weekdays), the job skips unless the last run was more than 1 hour ago.
+
+**Collections:** `priceCache` (symbol, price, change, changePercent, updatedAt); `optionPriceCache` (symbol, expiration, strike, optionType, price, updatedAt).
+
+**Output:** `result.stock`: symbolsRequested, symbolsUpdated; `result.options`: optionsRequested, optionsUpdated. Run now: `POST /api/scheduler` with `{ "action": "run", "jobName": "refreshHoldingsPrices" }`.
+
+---
+
 ### cleanup
 
 **Purpose:** Deletes old reports and alerts (30+ days) when storage nears limit (75% of configured limit) or on a scheduled interval. Uses `appUtil` cleanup config (storageLimitMB, purgeThreshold, purgeIntervalDays).
@@ -240,6 +254,7 @@ Example: Create `coveredCallScanner-aggressive` with `handlerKey: coveredCallSca
 | Daily Options | unifiedOptionsScanner | `15 14-20 * * 1-5` (weekdays at :15, 9:15–3:15 ET) | All option recommendations in one run; :15 avoids :00 (e.g. 9am) clashes. **On Vercel:** cron route `GET /api/cron/unified-options-scanner` uses this schedule in vercel.json. |
 | Watchlist Snapshot | watchlistreport | `0 9,16 * * 1-5` (9 AM & 4 PM) | Market snapshot + rationale per item; also runs daily analysis and creates alerts |
 | Deliver Alerts | deliverAlerts | `30 16 * * 1-5` (4:30 PM) | **Optional** if using inline delivery (see below). Sends pending alerts to Slack/X. |
+| Refresh Holdings Prices | refreshHoldingsPrices | `15 minutes` (Agenda repeat) | Populates `priceCache` (stocks) and `optionPriceCache` (option premiums). During market hours runs every 15 min; outside market runs at most every 1 hr. Holdings/dashboard use cache when fresh (20 min / 2 hr TTL). Scheduled automatically on first GET /api/scheduler. |
 | Purge | cleanup | (existing) | Storage cleanup when nearing limit or on schedule |
 
 ---

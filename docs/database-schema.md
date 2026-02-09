@@ -97,4 +97,29 @@ MongoDB collections used by the app can enforce a minimal schema so bad or parti
 | createdAt      | string | yes      |
 | storedAt       | string | no       |
 
+### priceCache (holdings price refresh job)
+
+Populated by `refreshHoldingsPrices` job. No validator applied. One doc per stock symbol.
+
+| Field        | Type   | Required |
+|-------------|--------|----------|
+| symbol      | string | yes      |
+| price       | number | yes      |
+| change      | number | yes      |
+| changePercent | number | yes    |
+| updatedAt   | string | yes      |
+
+### optionPriceCache (holdings price refresh job)
+
+Populated by `refreshHoldingsPrices` job. No validator applied. One doc per (symbol, expiration, strike, optionType).
+
+| Field      | Type   | Required |
+|-----------|--------|----------|
+| symbol    | string | yes      |
+| expiration| string | yes      |
+| strike    | number | yes      |
+| optionType| "call" \| "put" | yes |
+| price     | number | yes      |
+| updatedAt | string | yes      |
+
 Types in application code: [src/types/portfolio.ts](../src/types/portfolio.ts) (Option, CoveredCall, ProtectivePut); [src/lib/straddle-strangle-analyzer.ts](../src/lib/straddle-strangle-analyzer.ts) (StraddleStrangle).

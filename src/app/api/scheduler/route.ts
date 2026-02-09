@@ -87,6 +87,12 @@ export async function GET() {
     await getAgenda();
 
     const status = await getJobStatus();
+    const hasRefreshPrices = status.jobs.some((j) => j.name === "refreshHoldingsPrices");
+    if (!hasRefreshPrices) {
+      await scheduleJob("refreshHoldingsPrices", "15 minutes");
+      const nextStatus = await getJobStatus();
+      return NextResponse.json({ status: "running", ...nextStatus });
+    }
 
     return NextResponse.json({
       status: "running",
