@@ -20,7 +20,10 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}  # Optional for enterprise features
+          # GITLEAKS_LICENSE required for org repos; add repo secret if Scan fails with license error.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          # Allowlist .env.example and docs (placeholder values only)
+          GITLEAKS_CONFIG: .github/.gitleaks.toml
 
   dependency-review:
     name: Dependency Review

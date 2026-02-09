@@ -1,0 +1,12 @@
+# Allowlist for Gitleaks secret scan. Excludes example env, docs, tests, and scripts (placeholder values only).
+# See https://github.com/gitleaks/gitleaks#configuration
+[allowlist]
+paths = [
+  '''\.env\.example$''',
+  '''^docs/''',
+  '''README\.md''',
+  '''readme\.md''',
+  '''(.*/)__tests__/.*''',
+  '''(.*)\.(spec|test)\.(j|t)sx?$''',
+  '''^scripts/''',
+]
