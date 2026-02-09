@@ -118,7 +118,8 @@ The watchlist alert system and **Unified Options Scanner** (Option, Covered Call
 
 **Docker (single image, two processes):**
 ```bash
-docker build -t myinvestments .
+
+
 docker run -e MONGODB_URI=... -e MONGODB_DB=myinvestments -p 3000:3000 myinvestments
 # Or: docker compose up -d (with .env.local)
 ```

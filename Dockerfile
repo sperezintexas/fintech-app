@@ -1,8 +1,8 @@
 # Multi-stage build: pnpm, non-root user, pm2 (web + smart-scheduler).
 # See .cursor/rules/docker-optimization.mdc and docs/docker-optimization-plan.md.
-# App Runner runs linux/amd64 only; platform pin avoids exec format error.
+# For local (ARM Mac): builds native arm64. For App Runner: build with --platform linux/amd64.
 # ── Builder ───────────────────────────────────────
-FROM --platform=linux/amd64 node:22-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
@@ -20,7 +20,7 @@ RUN pnpm run build
 RUN pnpm prune --prod
 
 # ── Runner ────────────────────────────────────────
-FROM --platform=linux/amd64 node:22-alpine
+FROM node:22-alpine
 WORKDIR /app
 
 # Security: non-root user (mandatory)

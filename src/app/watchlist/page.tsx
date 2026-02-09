@@ -78,6 +78,7 @@ export default function WatchlistPage() {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [removingDuplicates, setRemovingDuplicates] = useState(false);
+  const [removingAllDuplicates, setRemovingAllDuplicates] = useState(false);
 
   const [watchlistForm, setWatchlistForm] = useState({ name: "", purpose: "" });
   const [itemForm, setItemForm] = useState({
@@ -377,6 +378,30 @@ export default function WatchlistPage() {
     }
   };
 
+  const handleRemoveAllDuplicates = async () => {
+    if (!confirm("Remove duplicate items across all watchlists? Oldest entry per symbol/type/strike/exp will be kept.")) return;
+    setRemovingAllDuplicates(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/watchlist/remove-duplicates", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to remove duplicates");
+      const data = (await res.json()) as { removed: number; byWatchlist: Record<string, number> };
+      await fetchWatchlists();
+      if (selectedWatchlistId) await fetchItems();
+      if (data.removed > 0) {
+        const detail = Object.entries(data.byWatchlist).map(([k, v]) => `${k}: ${v}`).join(", ");
+        setError(null);
+        alert(`Removed ${data.removed} duplicate(s): ${detail}`);
+      } else {
+        alert("No duplicates found.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove duplicates");
+    } finally {
+      setRemovingAllDuplicates(false);
+    }
+  };
+
   const handleExportWatchlist = useCallback(() => {
     if (!selectedWatchlist || items.length === 0) return;
     const headers = [
@@ -649,6 +674,22 @@ export default function WatchlistPage() {
                             Remove duplicates ({duplicateIdsToRemove.length})
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={handleRemoveAllDuplicates}
+                          disabled={removingAllDuplicates}
+                          className="px-3 py-1.5 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                          title="Remove duplicates across all watchlists (keeps oldest per symbol/type/strike/exp)"
+                        >
+                          {removingAllDuplicates ? (
+                            <span className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                            </svg>
+                          )}
+                          Remove duplicates (all lists)
+                        </button>
                         <button
                           data-testid="watchlist-delete-btn"
                           onClick={() => handleWatchlistDelete(selectedWatchlist._id)}
