@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { getAgendaClient } from "@/lib/agenda-client";
+import { getNextRunFromCron } from "@/lib/cron-utils";
 import { upsertReportJobSchedule } from "@/lib/scheduler";
 import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
 import { validateJobConfig } from "@/lib/job-config-schemas";
@@ -49,10 +50,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       jobs.map((j) => {
         const id = j._id.toString();
+        let nextRunAt = nextRunByJobId.get(id) ?? j.nextRunAt ?? undefined;
+        if (!nextRunAt && (j.status === "active" || !j.status) && j.scheduleCron?.trim()) {
+          const fromCron = getNextRunFromCron(j.scheduleCron);
+          if (fromCron) nextRunAt = fromCron;
+        }
         return {
           ...j,
           _id: id,
-          nextRunAt: nextRunByJobId.get(id) ?? j.nextRunAt ?? undefined,
+          nextRunAt,
         };
       })
     );

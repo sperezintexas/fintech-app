@@ -62,13 +62,13 @@ describe("PositionList - Position Calculations", () => {
       />
     );
 
-    // Assert (options display Call/Put, Qty, Price, Value, Unit Cost, Cost Basis)
+    // Assert (options display Call/Put, Qty, Last/Unit cost as 4-decimal premium, Value, Cost Basis)
     expect(screen.getAllByText(/TSLA/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Call").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("2").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$6.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("-2").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$6.0000").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$1,200.00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$5.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$5.0000").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$1,000.00").length).toBeGreaterThan(0);
   });
 
@@ -280,7 +280,7 @@ describe("PositionList - Position Calculations", () => {
     );
 
     // Assert (5 contracts, market value = 5 * 12 * 100 = $6,000; Qty and Unit Cost in separate columns)
-    expect(screen.getAllByText("5").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("-5").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Put").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$6,000.00").length).toBeGreaterThan(0);
   });

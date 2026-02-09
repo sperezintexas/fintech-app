@@ -442,18 +442,18 @@ export function ContractSelector({
             <input
               id="limit"
               type="number"
-              step="0.05"
+              step="0.0001"
               min="0"
               value={limitPrice}
               onChange={(e) => onLimitPriceChange(e.target.value)}
-              placeholder={premium > 0 ? premium.toFixed(2) : '0.00'}
+              placeholder={premium > 0 ? premium.toFixed(4) : '0.0650'}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               aria-label="Limit price"
             />
           </div>
           {bid > 0 && ask > 0 && (
             <p className="text-xs text-gray-500 mt-0.5">
-              Bid ${bid.toFixed(2)} / Ask ${ask.toFixed(2)}
+              Bid ${bid.toFixed(4)} / Ask ${ask.toFixed(4)}
             </p>
           )}
         </div>

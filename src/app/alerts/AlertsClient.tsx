@@ -5,6 +5,7 @@ import { AppHeader } from "@/components/AppHeader";
 import Link from "next/link";
 import type { Account } from "@/types/portfolio";
 import type { AlertRecordServer } from "@/lib/data-server";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 
 function formatCurrency(value: number | undefined): string {
   if (value === undefined) return "—";
@@ -87,6 +88,7 @@ export type AlertsClientProps = {
 };
 
 export function AlertsClient({ initialAccounts, initialAlerts }: AlertsClientProps) {
+  const { formatDate } = useDisplayTimezone();
   const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [alerts, setAlerts] = useState<AlertRecordServer[]>(initialAlerts);
@@ -163,7 +165,7 @@ export function AlertsClient({ initialAccounts, initialAlerts }: AlertsClientPro
   const handleExportCsv = () => {
     const headers = ["Date", "Type", "Symbol", "Recommendation", "Reason", "Delivery"];
     const rows = alerts.map((a) => [
-      new Date(a.createdAt).toLocaleString(),
+      formatDate(a.createdAt),
       getAlertSourceLabel(a.type),
       a.symbol,
       a.recommendation,
@@ -339,6 +341,7 @@ export function AlertsClient({ initialAccounts, initialAlerts }: AlertsClientPro
                       getRecommendationBadge={getRecommendationBadge}
                       getAlertSourceLabel={getAlertSourceLabel}
                       getDeliveryStatusLabel={getDeliveryStatusLabel}
+                      formatDate={formatDate}
                     />
                   ))}
                 </div>
@@ -359,6 +362,7 @@ export function AlertsClient({ initialAccounts, initialAlerts }: AlertsClientPro
                       getRecommendationBadge={getRecommendationBadge}
                       getAlertSourceLabel={getAlertSourceLabel}
                       getDeliveryStatusLabel={getDeliveryStatusLabel}
+                      formatDate={formatDate}
                       isAcknowledged
                     />
                   ))}
@@ -381,6 +385,7 @@ type AlertCardProps = {
   getRecommendationBadge: (r: string) => string;
   getAlertSourceLabel: (t?: string) => string;
   getDeliveryStatusLabel: (d?: AlertRecordServer["deliveryStatus"]) => string;
+  formatDate: (date: string | Date | null | undefined, options?: Intl.DateTimeFormatOptions) => string;
   isAcknowledged?: boolean;
 };
 
@@ -393,6 +398,7 @@ function AlertCard({
   getRecommendationBadge,
   getAlertSourceLabel,
   getDeliveryStatusLabel,
+  formatDate,
   isAcknowledged = false,
 }: AlertCardProps) {
   const severity = alert.severity ?? "info";
@@ -419,7 +425,7 @@ function AlertCard({
               {getDeliveryStatusLabel(alert.deliveryStatus)}
             </span>
             <span className="text-xs text-gray-500">
-              {new Date(alert.createdAt).toLocaleString()}
+              {formatDate(alert.createdAt)}
             </span>
           </div>
           <p className="text-sm mb-2">{alert.reason}</p>

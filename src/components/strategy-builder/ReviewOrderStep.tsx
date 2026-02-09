@@ -164,7 +164,7 @@ export function ReviewOrderStep({
       const contractDetails = [
         `Added from xStrategyBuilder • ${strategyName}`,
         `Action: ${actionLabel} | Qty: ${quantity} | Exp: ${formatExpiration(expiration)} | Strike: $${strike.toFixed(2)}`,
-        `Limit: $${premium.toFixed(2)} | Bid: $${bid.toFixed(2)} | Ask: $${ask.toFixed(2)}`,
+        `Limit: $${premium.toFixed(4)} | Bid: $${bid.toFixed(4)} | Ask: $${ask.toFixed(4)}`,
         breakeven != null ? `Breakeven: $${breakeven.toFixed(2)} | Prob OTM: ${probOtm}%` : `Prob OTM: ${probOtm}%`,
         action === 'sell' && credit > 0 ? `Credit: $${credit.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : action === 'buy' ? `Debit: $${(quantity * premium * 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : null,
       ].filter(Boolean).join('\n');
@@ -277,7 +277,7 @@ export function ReviewOrderStep({
             <tr className="border-b border-gray-200 border-dashed">
               <td className="px-4 py-3 text-gray-600 font-medium">Limit price</td>
               <td className="px-4 py-3 text-right font-semibold">
-                ${(parseFloat(limitPrice) || (bid > 0 && ask > 0 ? (bid + ask) / 2 : 0)).toFixed(2)}
+                ${(parseFloat(limitPrice) || (bid > 0 && ask > 0 ? (bid + ask) / 2 : 0)).toFixed(4)}
               </td>
             </tr>
             {action === 'sell' && credit > 0 && (
@@ -328,7 +328,7 @@ export function ReviewOrderStep({
       >
         <div>
           <span className="text-xs text-gray-500 uppercase tracking-wider">Bid</span>
-          <p className="text-lg font-bold text-green-700">${bid.toFixed(2)}</p>
+          <p className="text-lg font-bold text-green-700">${bid.toFixed(4)}</p>
         </div>
         <div>
           <span className="text-xs text-gray-500 uppercase tracking-wider">Breakeven (BE)</span>

@@ -1219,11 +1219,11 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
   return { analyzed, alertsCreated, errors };
 }
 
-/** Schedule a report job by ID (used when creating/updating jobs in reportJobs). */
+/** Schedule a report job by ID (used when creating/updating jobs in reportJobs). Cron is interpreted in UTC. */
 export async function upsertReportJobSchedule(jobId: string, cron: string): Promise<void> {
   const ag = await getAgendaClient();
   await ag.cancel({ name: "scheduled-report", "data.jobId": jobId });
-  await ag.every(cron, "scheduled-report", { jobId });
+  await ag.every(cron, "scheduled-report", { jobId }, { timezone: "UTC" });
 }
 
 /** Cancel scheduled-report jobs for a given report job ID. */

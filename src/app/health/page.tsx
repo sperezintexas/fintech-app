@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AppHeader } from "@/components/AppHeader";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 
 type CheckStatus = "ok" | "degraded" | "error";
 
@@ -38,6 +39,7 @@ function StatusBadge({ status }: { status: CheckStatus }) {
 }
 
 export default function HealthPage() {
+  const { formatDate } = useDisplayTimezone();
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +102,7 @@ export default function HealthPage() {
                 {health.version && (
                   <span>Version: {health.version}</span>
                 )}
-                <span>Last checked: {new Date(health.timestamp).toLocaleString()}</span>
+                <span>Last checked: {formatDate(health.timestamp)}</span>
               </div>
             </div>
 
@@ -135,7 +137,7 @@ export default function HealthPage() {
                     <p>Scheduled jobs: {check.jobsCount}</p>
                   )}
                   {check.nextRunAt && (
-                    <p>Next run: {new Date(check.nextRunAt).toLocaleString()}</p>
+                    <p>Next run: {formatDate(check.nextRunAt)}</p>
                   )}
                 </div>
               </div>

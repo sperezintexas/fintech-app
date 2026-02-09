@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import type {
   Watchlist,
   WatchlistItem,
   WatchlistStrategy,
   WatchlistItemType,
+  SymbolDetails,
 } from "@/types/portfolio";
 import { getThemeDescription } from "@/lib/watchlist-theme-descriptions";
 
@@ -36,9 +37,38 @@ function formatCurrency(value: number | undefined) {
   }).format(value);
 }
 
-function formatPercent(value: number | undefined) {
+function _formatPercent(value: number | undefined) {
   if (value === undefined) return "—";
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatVolume(vol: number | undefined): string {
+  if (vol === undefined || vol === 0) return "";
+  if (vol >= 1_000_000) return `${(vol / 1_000_000).toFixed(1)}M`;
+  if (vol >= 1_000) return `${(vol / 1_000).toFixed(1)}K`;
+  return String(vol);
+}
+
+function SymbolDetailsLine({ d }: { d: SymbolDetails }) {
+  const rest: string[] = [];
+  if (d.volume != null && d.volume > 0) rest.push(`${formatVolume(d.volume)} vol`);
+  if (d.low != null && d.high != null) rest.push(`${formatCurrency(d.low)} – ${formatCurrency(d.high)}`);
+  const restStr = rest.join(" · ");
+  const pct = d.changePercent;
+  const hasPct = pct != null;
+  const pctStr = hasPct ? (pct >= 0 ? `+${pct.toFixed(2)}%` : `${pct.toFixed(2)}%`) : "";
+  if (!hasPct && !restStr) return null;
+  return (
+    <span className="text-xs text-gray-500 leading-tight">
+      {hasPct && (
+        <span className={pct >= 0 ? "text-green-600" : "text-red-600"}>
+          {pctStr}
+        </span>
+      )}
+      {hasPct && restStr ? " · " : null}
+      {restStr || null}
+    </span>
+  );
 }
 
 function getTypeLabel(type: WatchlistItemType): string {
@@ -69,12 +99,11 @@ export default function WatchlistPage() {
   const [removeHeldLoading, setRemoveHeldLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showWatchlistForm, setShowWatchlistForm] = useState(false);
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [showItemForm, setShowItemForm] = useState(false);
   const [editingWatchlist, setEditingWatchlist] = useState<Watchlist | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
-  type SortKey = "symbol" | "typeStrategy" | "entry" | "current" | "pl" | "exp";
+  type SortKey = "symbol" | "typeStrategy" | "entry";
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [removingDuplicates, setRemovingDuplicates] = useState(false);
@@ -201,24 +230,39 @@ export default function WatchlistPage() {
     e.preventDefault();
     setFormError("");
     if (!selectedWatchlistId) return;
-    if (!itemForm.symbol || !itemForm.quantity || !itemForm.entryPrice) {
-      setFormError("Symbol, quantity, and entry price are required");
+    if (!itemForm.symbol?.trim()) {
+      setFormError("Symbol is required");
       return;
     }
     setIsSaving(true);
     setError(null);
     try {
+      const quantity = itemForm.quantity && itemForm.quantity > 0 ? itemForm.quantity : 100;
+      let entryPrice = itemForm.entryPrice && itemForm.entryPrice > 0 ? itemForm.entryPrice : 0;
+      if (entryPrice <= 0) {
+        const symbolForQuote = (itemForm.underlyingSymbol || itemForm.symbol).trim().toUpperCase();
+        const tickerRes = await fetch(`/api/ticker/${encodeURIComponent(symbolForQuote)}`);
+        if (tickerRes.ok) {
+          const data = (await tickerRes.json()) as { price?: number };
+          entryPrice = typeof data.price === "number" && data.price > 0 ? data.price : 0;
+        }
+        if (entryPrice <= 0) {
+          setFormError("Could not fetch current price for symbol. Enter an entry price manually.");
+          setIsSaving(false);
+          return;
+        }
+      }
       const res = await fetch("/api/watchlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           watchlistId: selectedWatchlistId,
-          symbol: itemForm.symbol,
-          underlyingSymbol: itemForm.underlyingSymbol || itemForm.symbol,
+          symbol: itemForm.symbol.trim(),
+          underlyingSymbol: (itemForm.underlyingSymbol || itemForm.symbol).trim(),
           type: itemForm.type,
           strategy: itemForm.strategy,
-          quantity: itemForm.quantity,
-          entryPrice: itemForm.entryPrice,
+          quantity,
+          entryPrice,
           strikePrice: itemForm.strikePrice,
           expirationDate: itemForm.expirationDate || undefined,
           entryPremium: itemForm.entryPremium,
@@ -313,18 +357,6 @@ export default function WatchlistPage() {
           cmp = va - vb;
           break;
         }
-        case "current":
-          cmp = (a.currentPrice ?? 0) - (b.currentPrice ?? 0);
-          break;
-        case "pl":
-          cmp = (a.profitLossPercent ?? 0) - (b.profitLossPercent ?? 0);
-          break;
-        case "exp": {
-          const da = a.expirationDate ? new Date(a.expirationDate).getTime() : 0;
-          const db = b.expirationDate ? new Date(b.expirationDate).getTime() : 0;
-          cmp = da - db;
-          break;
-        }
         default:
           return 0;
       }
@@ -411,10 +443,8 @@ export default function WatchlistPage() {
       "Strategy",
       "Quantity",
       "Entry Price",
-      "Current Price",
       "P/L %",
       "Strike",
-      "Expiration",
       "Entry Premium",
       "Notes",
     ];
@@ -425,10 +455,8 @@ export default function WatchlistPage() {
       getStrategyLabel(item.strategy),
       item.quantity,
       item.entryPrice,
-      item.currentPrice ?? "",
       item.profitLossPercent != null ? `${item.profitLossPercent.toFixed(2)}%` : "",
       item.strikePrice ?? "",
-      item.expirationDate ?? "",
       item.entryPremium ?? "",
       (item.notes ?? "").replace(/"/g, '""'),
     ]);
@@ -778,57 +806,49 @@ export default function WatchlistPage() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
                                 <input
                                   type="number"
-                                  required
                                   min={1}
-                                  value={itemForm.quantity}
-                                  onChange={(e) => setItemForm((f) => ({ ...f, quantity: parseInt(e.target.value) || 0 }))}
+                                  value={itemForm.quantity || ""}
+                                  onChange={(e) => setItemForm((f) => ({ ...f, quantity: parseInt(e.target.value, 10) || 0 }))}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                  placeholder="100"
                                 />
+                                <p className="text-xs text-gray-500 mt-0.5">Default: 100</p>
                               </div>
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Entry Price *</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Entry Price</label>
                                 <input
                                   type="number"
-                                  required
                                   step={0.01}
                                   min={0}
                                   value={itemForm.entryPrice || ""}
                                   onChange={(e) => setItemForm((f) => ({ ...f, entryPrice: parseFloat(e.target.value) || 0 }))}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                  placeholder="Current price"
                                 />
+                                <p className="text-xs text-gray-500 mt-0.5">Default: current market price</p>
                               </div>
                             </div>
                             {itemForm.type !== "stock" && (
                               <>
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Strike Price</label>
-                                    <input
-                                      type="number"
-                                      step={0.5}
-                                      value={itemForm.strikePrice ?? ""}
-                                      onChange={(e) => setItemForm((f) => ({ ...f, strikePrice: parseFloat(e.target.value) || undefined }))}
-                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Expiration</label>
-                                    <input
-                                      type="date"
-                                      value={itemForm.expirationDate}
-                                      onChange={(e) => setItemForm((f) => ({ ...f, expirationDate: e.target.value }))}
-                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    />
-                                  </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Strike Price</label>
+                                  <input
+                                    type="number"
+                                    step={0.5}
+                                    value={itemForm.strikePrice ?? ""}
+                                    onChange={(e) => setItemForm((f) => ({ ...f, strikePrice: parseFloat(e.target.value) || undefined }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                  />
                                 </div>
                                 <div>
                                   <label className="block text-sm font-medium text-gray-700 mb-1">Entry Premium</label>
                                   <input
                                     type="number"
-                                    step={0.01}
+                                    step="0.0001"
+                                    placeholder="0.0650"
                                     value={itemForm.entryPremium ?? ""}
                                     onChange={(e) => setItemForm((f) => ({ ...f, entryPremium: parseFloat(e.target.value) || undefined }))}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -897,26 +917,8 @@ export default function WatchlistPage() {
                               >
                                 Entry target {sortKey === "entry" && (sortDir === "asc" ? "↑" : "↓")}
                               </th>
-                              <th
-                                className="text-right py-2 px-1.5 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
-                                onClick={() => handleSort("current")}
-                                title="Sort by current"
-                              >
-                                Current {sortKey === "current" && (sortDir === "asc" ? "↑" : "↓")}
-                              </th>
-                              <th
-                                className="text-right py-2 px-1.5 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
-                                onClick={() => handleSort("pl")}
-                                title="Sort by P/L"
-                              >
-                                P/L {sortKey === "pl" && (sortDir === "asc" ? "↑" : "↓")}
-                              </th>
-                              <th
-                                className="text-center py-2 px-1.5 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
-                                onClick={() => handleSort("exp")}
-                                title="Sort by expiration"
-                              >
-                                Exp {sortKey === "exp" && (sortDir === "asc" ? "↑" : "↓")}
+                              <th className="text-left py-2 px-1.5 font-medium text-gray-600">
+                                Rationale / Notes
                               </th>
                               <th className="text-center py-2 px-1.5 font-medium text-gray-600 w-10"></th>
                             </tr>
@@ -925,22 +927,22 @@ export default function WatchlistPage() {
                             {sortedItems.map((item) => {
                               const themeSymbol = item.type !== "stock" ? item.underlyingSymbol : item.symbol;
                               const theme = getThemeDescription(themeSymbol);
+                              const rationaleNotes = [item.rationale, item.notes].filter(Boolean).join(" · ") || "—";
                               return (
-                              <Fragment key={item._id}>
                                 <tr
                                   key={item._id}
-                                  onClick={() => setSelectedItemId((id) => (id === item._id ? null : item._id))}
-                                  className={`border-b border-gray-100 cursor-pointer transition-colors ${
-                                    selectedItemId === item._id ? "bg-indigo-50" : "hover:bg-gray-50"
-                                  }`}
+                                  className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                                 >
                                   <td className="py-2 px-1.5 align-top w-[1%]">
-                                    <div className="flex flex-col gap-0.5 min-w-0 max-w-[100px] sm:max-w-[160px]">
+                                    <div className="flex flex-col gap-0.5 min-w-0 max-w-[100px] sm:max-w-[200px]">
                                       <span className="font-medium truncate" title={item.symbol}>{item.symbol}</span>
                                       {item.companyDescription && (
                                         <span className="text-xs text-gray-500 leading-tight truncate" title={item.companyDescription}>
                                           {item.companyDescription}
                                         </span>
+                                      )}
+                                      {item.symbolDetails && (
+                                        <SymbolDetailsLine d={item.symbolDetails} />
                                       )}
                                       {theme && (
                                         <span className="text-xs text-blue-600 leading-tight truncate" title={theme}>
@@ -955,16 +957,10 @@ export default function WatchlistPage() {
                                   <td className="py-2 px-1.5 text-right">
                                     {formatCurrency(item.type === "stock" ? item.quantity * item.entryPrice : item.quantity * 100 * item.entryPrice)}
                                   </td>
-                                  <td className="py-2 px-1.5 text-right">{formatCurrency(item.currentPrice)}</td>
-                                  <td className={`py-2 px-1.5 text-right font-medium ${
-                                    (item.profitLossPercent ?? 0) >= 0 ? "text-green-600" : "text-red-600"
-                                  }`}>
-                                    {formatPercent(item.profitLossPercent)}
+                                  <td className="py-2 px-1.5 text-gray-600 max-w-[200px] sm:max-w-[280px]" title={rationaleNotes}>
+                                    <span className="line-clamp-2 text-sm">{rationaleNotes}</span>
                                   </td>
-                                  <td className="py-2 px-1.5 text-center text-gray-600">
-                                    {item.expirationDate ? new Date(item.expirationDate).toLocaleDateString() : "—"}
-                                  </td>
-                                  <td className="py-2 px-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                                  <td className="py-2 px-1.5 text-center">
                                     <button
                                       type="button"
                                       onClick={() => handleItemDelete(item._id)}
@@ -978,26 +974,7 @@ export default function WatchlistPage() {
                                     </button>
                                   </td>
                                 </tr>
-                                {selectedItemId === item._id && (
-                                  <tr className="border-b border-gray-100 bg-indigo-50/50">
-                                    <td colSpan={8} className="py-1.5 px-1.5">
-                                      <div className="pl-1 space-y-1 text-xs text-gray-600">
-                                        {item.rationale && (
-                                          <p className="whitespace-pre-wrap">
-                                            <span className="font-medium text-gray-700">Rationale: </span>
-                                            {item.rationale}
-                                          </p>
-                                        )}
-                                        <p className="whitespace-pre-wrap">
-                                          <span className="font-medium text-gray-700">Notes: </span>
-                                          {item.notes || "—"}
-                                        </p>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                              </Fragment>
-                            );
+                              );
                             })}
                           </tbody>
                         </table>

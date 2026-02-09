@@ -1,6 +1,6 @@
 {
   "name": "myinvestments",
-  "version": "1.0.61",
+  "version": "1.0.63",
   "description": "Investment portfolio manager with real-time market data",
   "private": true,
   "packageManager": "pnpm@9.0.0",
@@ -33,6 +33,7 @@
     "@types/react": "^19.2.9",
     "agenda": "^5.0.0",
     "autoprefixer": "^10.4.23",
+    "cron-parser": "^5.5.0",
     "cronstrue": "^3.11.0",
     "mongodb": "^7.0.0",
     "next": "^16.1.4",
@@ -44,13 +45,13 @@
     "recharts": "^3.7.0",
     "serpapi": "^2.2.1",
     "tailwindcss": "^4.1.18",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "twitter-api-v2": "^1.29.0",
     "typescript": "^5.9.3",
     "web-push": "^3.6.7",
     "yahoo-finance2": "^3.13.0",
-    "zod": "^3.25.4",
-    "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0"
+    "zod": "^3.25.4"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",

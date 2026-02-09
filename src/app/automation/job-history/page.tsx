@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { AppHeader } from "@/components/AppHeader";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 
 type JobRun = {
   id: string;
@@ -15,21 +15,13 @@ type JobRun = {
   notes: string | null;
 };
 
-function formatDateLocal(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    dateStyle: "short",
-    timeStyle: "medium",
-  });
-}
-
 function todayISO(): string {
   const d = new Date();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
 export default function JobHistoryPage() {
+  const { formatDate } = useDisplayTimezone();
   const [date, setDate] = useState<string>(todayISO());
   const [showAll, setShowAll] = useState(false);
   const [runs, setRuns] = useState<JobRun[]>([]);
@@ -51,18 +43,8 @@ export default function JobHistoryPage() {
   }, [date, showAll]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
-      <AppHeader />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
-          <Link
-            href="/automation"
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-          >
-            ← Back to Setup
-          </Link>
-        </div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h2 className="text-3xl font-bold text-gray-900">Job run history</h2>
             <p className="text-gray-600 mt-1">
@@ -144,7 +126,7 @@ export default function JobHistoryPage() {
                   {runs.map((run) => (
                     <tr key={run.id} className="hover:bg-gray-50/50">
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
-                        {formatDateLocal(run.lastRunAt)}
+                        {formatDate(run.lastRunAt, { dateStyle: "short", timeStyle: "medium" })}
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">
                         {run.name}
@@ -178,7 +160,6 @@ export default function JobHistoryPage() {
             </div>
           )}
         </div>
-      </main>
     </div>
   );
 }

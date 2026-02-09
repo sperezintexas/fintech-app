@@ -73,6 +73,44 @@ export async function setCleanupConfig(config: Partial<CleanupConfig>): Promise<
   return { ...merged, updatedAt: now };
 }
 
+export type ProfileConfig = {
+  displayTimezone: string;
+  updatedAt?: string;
+};
+
+const DEFAULT_DISPLAY_TIMEZONE = "America/Chicago";
+
+/** Get profile/preferences (e.g. display timezone) from DB */
+export async function getProfileConfig(): Promise<ProfileConfig> {
+  const db = await getDb();
+  const doc = await db.collection(COLLECTION).findOne({ key: "profile" });
+  if (doc?.value && typeof doc.value === "object") {
+    const v = doc.value as Record<string, unknown>;
+    return {
+      displayTimezone: (v.displayTimezone as string) ?? DEFAULT_DISPLAY_TIMEZONE,
+      updatedAt: doc.updatedAt as string | undefined,
+    };
+  }
+  return { displayTimezone: DEFAULT_DISPLAY_TIMEZONE };
+}
+
+/** Save profile config (e.g. display timezone) */
+export async function setProfileConfig(config: Partial<ProfileConfig>): Promise<ProfileConfig> {
+  const db = await getDb();
+  const existing = await getProfileConfig();
+  const displayTimezone =
+    typeof config.displayTimezone === "string" && config.displayTimezone.trim()
+      ? config.displayTimezone.trim()
+      : existing.displayTimezone;
+  const now = new Date().toISOString();
+  await db.collection(COLLECTION).updateOne(
+    { key: "profile" },
+    { $set: { key: "profile", value: { displayTimezone }, updatedAt: now } },
+    { upsert: true }
+  );
+  return { displayTimezone, updatedAt: now };
+}
+
 /** Update last cleanup timestamp */
 export async function setLastCleanupAt(): Promise<void> {
   const db = await getDb();

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import type { SmartXAIReport, MarketSentiment, MarketIndex, PositionAnalysis } from "@/types/portfolio";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 
 type PortfolioSummaryReport = {
   reportType: "portfoliosummary";
@@ -46,6 +47,7 @@ type PortfolioSummaryReport = {
 type ReportState = (SmartXAIReport & { reportType?: string }) | PortfolioSummaryReport | null;
 
 export default function ReportPage() {
+  const { formatDate } = useDisplayTimezone();
   const params = useParams();
   const reportId = params.id as string;
   const [report, setReport] = useState<ReportState>(null);
@@ -170,7 +172,7 @@ export default function ReportPage() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-6">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">{portfolioReport.title}</h2>
             <p className="text-gray-600 mb-6">
-              Generated: {new Date(portfolioReport.reportDateTime).toLocaleString()}
+              Generated: {formatDate(portfolioReport.reportDateTime)}
             </p>
 
             <div className="space-y-6">
@@ -254,7 +256,7 @@ export default function ReportPage() {
             <div>
               <h2 className="text-3xl font-bold text-indigo-900 mb-2">{smartReport.title}</h2>
               <p className="text-indigo-700">
-                Generated: {new Date(smartReport.reportDateTime).toLocaleString()}
+                Generated: {formatDate(smartReport.reportDateTime)}
               </p>
             </div>
             <div className={`px-4 py-2 rounded-full border-2 ${getSentimentColor(smartReport.marketOverview.overallSentiment)}`}>

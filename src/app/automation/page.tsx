@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AppHeader } from "@/components/AppHeader";
 import type {
   Account,
   AlertDeliveryChannel,
@@ -18,6 +16,8 @@ import {
   registerPushSubscription,
   showDirectNotification,
 } from "@/lib/push-client";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
+import { TIMEZONE_OPTIONS } from "@/lib/date-format";
 
 type TestChannel = "slack" | "twitter" | "push";
 
@@ -25,14 +25,14 @@ type TestChannel = "slack" | "twitter" | "push";
 function AutomationContent() {
   const searchParams = useSearchParams();
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("__portfolio__");
 
   // Alert preferences state
   const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState<"auth-users" | "settings" | "strategy" | "jobs">("auth-users");
+  const [activeTab, setActiveTab] = useState<"auth-users" | "settings" | "strategy">("auth-users");
 
   useEffect(() => {
-    if (tabParam === "jobs" || tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users") {
+    if (tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users") {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
@@ -75,6 +75,14 @@ function AutomationContent() {
   const [authUsersNewUsername, setAuthUsersNewUsername] = useState("");
   const [authUsersAdding, setAuthUsersAdding] = useState(false);
   const [authUsersSeedResult, setAuthUsersSeedResult] = useState<string | null>(null);
+
+  const { timezone: displayTimezone, formatDate, setTimezone: setDisplayTimezone } = useDisplayTimezone();
+  const [profileTimezone, setProfileTimezone] = useState(displayTimezone);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMessage, setProfileMessage] = useState("");
+  useEffect(() => {
+    setProfileTimezone(displayTimezone);
+  }, [displayTimezone]);
 
   // App config (cleanup settings in appUtil collection)
   const [appConfig, setAppConfig] = useState<{
@@ -493,17 +501,8 @@ function AutomationContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
-      <AppHeader />
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-3xl font-bold text-gray-900">Setup</h2>
-            <p className="text-gray-600 mt-1">Manage alerts, report schedules, and automation</p>
-          </div>
-          <div className="flex items-center gap-4">
+    <>
+        <div className="flex items-center justify-end mb-6">
             <select
               value={selectedAccountId}
               onChange={(e) => setSelectedAccountId(e.target.value)}
@@ -516,65 +515,6 @@ function AutomationContent() {
                 </option>
               ))}
             </select>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="border-b border-gray-200 mb-6">
-          <nav className="flex gap-4">
-            <button
-              onClick={() => setActiveTab("auth-users")}
-              className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "auth-users"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Auth Users
-            </button>
-            <button
-              onClick={() => setActiveTab("settings")}
-              className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "settings"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Alert Settings
-            </button>
-            <button
-              onClick={() => setActiveTab("strategy")}
-              className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "strategy"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Strategy
-            </button>
-            <button
-              onClick={() => setActiveTab("jobs")}
-              className={`py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "jobs"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Scheduled Jobs
-            </button>
-            <Link
-              href="/automation/job-history"
-              className="py-3 px-1 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700"
-            >
-              Job run history
-            </Link>
-            <Link
-              href="/job-types"
-              className="py-3 px-1 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700"
-            >
-              Job types
-            </Link>
-          </nav>
         </div>
 
         {/* Auth Users Tab */}
@@ -711,6 +651,44 @@ function AutomationContent() {
               </div>
             ) : (
             <>
+            {/* Profile: Display timezone */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Profile</h3>
+              <p className="text-sm text-gray-600 mb-4">Dates and times across the app (scheduler, alerts, reports) use this timezone.</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="font-medium text-gray-700">Display timezone</label>
+                <select
+                  value={profileTimezone}
+                  onChange={(e) => setProfileTimezone(e.target.value)}
+                  className="px-3 py-2 border border-gray-200 rounded-lg bg-white text-sm"
+                >
+                  {TIMEZONE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setProfileSaving(true);
+                    setProfileMessage("");
+                    try {
+                      await setDisplayTimezone(profileTimezone);
+                      setProfileMessage("Timezone saved.");
+                    } catch {
+                      setProfileMessage("Failed to save.");
+                    } finally {
+                      setProfileSaving(false);
+                    }
+                  }}
+                  disabled={profileSaving || profileTimezone === displayTimezone}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {profileSaving ? "Saving..." : "Save"}
+                </button>
+                {profileMessage && <span className="text-sm text-gray-600">{profileMessage}</span>}
+              </div>
+            </div>
+
             {/* Alert Delivery Channels */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Alert Delivery Channels</h3>
@@ -1084,7 +1062,7 @@ function AutomationContent() {
                   </div>
                   {appConfig.cleanup.lastDataCleanup && (
                     <p className="text-xs text-gray-500">
-                      Last cleanup: {new Date(appConfig.cleanup.lastDataCleanup).toLocaleString()}
+                      Last cleanup: {formatDate(appConfig.cleanup.lastDataCleanup)}
                     </p>
                   )}
                   {appConfigError && <p className="text-sm text-red-600">{appConfigError}</p>}
@@ -1425,28 +1403,6 @@ function AutomationContent() {
           </div>
         )}
 
-        {/* Scheduled Jobs Tab */}
-        {activeTab === "jobs" && (
-          <div className="space-y-6">
-            <p className="text-gray-600 mb-4">Manage scheduler, view run history, or define job types.</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Link href="/automation/scheduler" className="p-6 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-blue-200 transition-colors">
-                <h3 className="font-semibold text-gray-900 mb-1">Scheduler</h3>
-                <p className="text-sm text-gray-600">Agenda status, run now, manage report jobs.</p>
-              </Link>
-              <Link href="/automation/job-history" className="p-6 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-blue-200 transition-colors">
-                <h3 className="font-semibold text-gray-900 mb-1">Job run history</h3>
-                <p className="text-sm text-gray-600">View jobs run by date and status.</p>
-              </Link>
-              <Link href="/job-types" className="p-6 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-blue-200 transition-colors">
-                <h3 className="font-semibold text-gray-900 mb-1">Job types</h3>
-                <p className="text-sm text-gray-600">Define report/job types for scheduled jobs.</p>
-              </Link>
-            </div>
-          </div>
-        )}
-
-
         {/* Risk Disclosure */}
         <div className="mt-8 p-4 bg-amber-50 rounded-xl border border-amber-200">
           <h4 className="font-medium text-amber-900 mb-2">Risk Disclosure</h4>
@@ -1457,8 +1413,7 @@ function AutomationContent() {
             Consider your risk tolerance, investment objectives, and financial situation before making any investment decisions.
           </p>
         </div>
-      </main>
-    </div>
+    </>
   );
 }
 

@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import AutomationPage from "./page";
+import AutomationLayout from "./layout";
 
 vi.mock("@/components/AppHeader", () => ({
   AppHeader: () => <header data-testid="app-header">AppHeader</header>,
 }));
 
+const mockSearchParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => mockSearchParams,
+  usePathname: () => "/automation",
 }));
 
 const mockFetch = vi.fn();
@@ -44,8 +47,12 @@ describe("Automation Page", () => {
     });
   });
 
-  it("renders page with main tabs", async () => {
-    render(<AutomationPage />);
+  it("renders page with main tabs when rendered with layout", async () => {
+    render(
+      <AutomationLayout>
+        <AutomationPage />
+      </AutomationLayout>
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Auth Users")).toBeInTheDocument();
@@ -56,7 +63,11 @@ describe("Automation Page", () => {
   });
 
   it("renders Auth Users tab content by default", async () => {
-    render(<AutomationPage />);
+    render(
+      <AutomationLayout>
+        <AutomationPage />
+      </AutomationLayout>
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Setup")).toBeInTheDocument();
@@ -67,35 +78,29 @@ describe("Automation Page", () => {
     });
   });
 
-  it("renders Alert Settings tab content when Alert Settings tab is clicked", async () => {
-    render(<AutomationPage />);
+  it("renders Alert Settings tab content when tab=settings in URL", async () => {
+    mockSearchParams.set("tab", "settings");
+    render(
+      <AutomationLayout>
+        <AutomationPage />
+      </AutomationLayout>
+    );
 
-    await waitFor(() => {
-      expect(screen.getByText("Auth Users")).toBeInTheDocument();
-    });
-    const alertSettingsTab = screen.getByText("Alert Settings");
-    await act(async () => {
-      alertSettingsTab.click();
-    });
     await waitFor(() => {
       expect(screen.getByText("Alert Delivery Channels")).toBeInTheDocument();
     });
+    mockSearchParams.delete("tab");
   });
 
-  it("renders Scheduler, Job run history, Job types links when Scheduled Jobs tab is active", async () => {
-    render(<AutomationPage />);
+  it("renders Job run history and Job types links in nav", async () => {
+    render(
+      <AutomationLayout>
+        <AutomationPage />
+      </AutomationLayout>
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Scheduled Jobs")).toBeInTheDocument();
-    });
-
-    const scheduledJobsTab = screen.getByText("Scheduled Jobs");
-    await act(async () => {
-      scheduledJobsTab.click();
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("Scheduler")).toBeInTheDocument();
     });
     expect(screen.getAllByRole("link", { name: /Job run history/ }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole("link", { name: /Job types/ }).length).toBeGreaterThanOrEqual(1);

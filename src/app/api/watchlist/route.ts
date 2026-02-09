@@ -9,15 +9,41 @@ export const dynamic = "force-dynamic";
 
 const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
-async function getCompanyNames(symbols: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
+export type SymbolDetails = {
+  name?: string;
+  price?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  volume?: number;
+  change?: number;
+  changePercent?: number;
+};
+
+async function getSymbolDetails(symbols: string[]): Promise<Map<string, SymbolDetails>> {
+  const map = new Map<string, SymbolDetails>();
   const unique = [...new Set(symbols.map((s) => s.toUpperCase()).filter(Boolean))];
   await Promise.all(
     unique.map(async (symbol) => {
       try {
         const quote = await yahooFinance.quote(symbol);
-        const name = quote?.longName ?? quote?.shortName ?? null;
-        if (name) map.set(symbol, name);
+        if (!quote) return;
+        const price = quote.regularMarketPrice ?? undefined;
+        const open = quote.regularMarketOpen ?? undefined;
+        const prev = quote.regularMarketPreviousClose ?? quote.regularMarketPrice;
+        const change = price != null && prev != null ? price - prev : undefined;
+        const changePercent =
+          change != null && prev != null && prev > 0 ? (change / prev) * 100 : undefined;
+        map.set(symbol, {
+          name: quote.longName ?? quote.shortName ?? undefined,
+          price,
+          open,
+          high: quote.regularMarketDayHigh ?? undefined,
+          low: quote.regularMarketDayLow ?? undefined,
+          volume: quote.regularMarketVolume ?? undefined,
+          change,
+          changePercent,
+        });
       } catch {
         // ignore per-symbol failures
       }
@@ -59,19 +85,20 @@ export async function GET(request: NextRequest) {
         : String(doc.symbol ?? "")
       ).toUpperCase();
     });
-    const companyNames = await getCompanyNames(symbolsToResolve);
+    const symbolDetailsMap = await getSymbolDetails(symbolsToResolve);
 
-    // Transform MongoDB _id to string and attach companyDescription
+    // Transform MongoDB _id to string and attach companyDescription + symbolDetails
     const watchlistItems = items.map((item: Record<string, unknown>) => {
       const symbolKey =
         item.type !== "stock" && item.underlyingSymbol
           ? String(item.underlyingSymbol).toUpperCase()
           : String(item.symbol ?? "").toUpperCase();
-      const companyDescription = companyNames.get(symbolKey) ?? undefined;
+      const details = symbolDetailsMap.get(symbolKey);
       return {
         ...item,
         _id: (item._id as ObjectId).toString(),
-        companyDescription,
+        companyDescription: details?.name,
+        symbolDetails: details ?? undefined,
       };
     });
 

@@ -25,7 +25,7 @@ test.describe("Smoke tests", () => {
     await expect(page).toHaveURL(/\/automation/);
 
     await page.getByRole("link", { name: /Job Types/i }).click();
-    await expect(page).toHaveURL(/\/job-types/);
+    await expect(page).toHaveURL(/\/automation\/job-types/);
 
     await page.getByRole("link", { name: /Smart Grok/i }).click();
     await expect(page).toHaveURL(/\/chat/);
@@ -52,8 +52,8 @@ test.describe("Smoke tests", () => {
     await expect(page.getByText(/Alerts|Alert Settings|Strategy|Scheduled Jobs/i).first()).toBeVisible();
 
     await page.getByRole("link", { name: /Job Types/i }).click();
-    await expect(page).toHaveURL(/\/job-types/);
-    await expect(page.getByRole("heading", { name: /Job Types/i })).toBeVisible();
+    await expect(page).toHaveURL(/\/automation\/job-types/);
+    await expect(page.getByRole("heading", { name: /Job types/i })).toBeVisible();
   });
 
   test("Automation page loads and shows tabs", async ({ page }) => {
@@ -62,7 +62,7 @@ test.describe("Smoke tests", () => {
     await expect(page.getByText("Alert Settings").first()).toBeVisible();
     await expect(page.getByText("Strategy").first()).toBeVisible();
     await expect(page.getByText("Scheduled Jobs").first()).toBeVisible();
-    await expect(page.getByText(/Setup|Manage Jobs|Manage job types/i).first()).toBeVisible();
+    await expect(page.getByText("Setup").first()).toBeVisible();
   });
 
   test("Automation page: Alert Settings tab shows delivery channels", async ({ page }) => {
@@ -77,13 +77,12 @@ test.describe("Smoke tests", () => {
     await expect(page.getByRole("heading", { name: "Strategy Settings" })).toBeVisible({ timeout: 5000 });
   });
 
-  test("Automation page: Scheduled Jobs tab shows create job form", async ({ page }) => {
+  test("Automation: Scheduled Jobs shows scheduler and job table", async ({ page }) => {
     await page.goto("/automation");
     await page.getByText("Scheduled Jobs").first().click();
+    await expect(page).toHaveURL(/\/automation\/scheduler/);
     await expect(page.getByRole("heading", { name: "Manage Jobs" })).toBeVisible();
-    await expect(page.getByText("Manage job types")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Create Job" })).toBeVisible();
-    await expect(page.getByPlaceholder(/e\.g\. Daily close report/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "New Job" })).toBeVisible();
   });
 
   test("Alerts page loads", async ({ page }) => {
@@ -156,8 +155,8 @@ test.describe("Smoke tests", () => {
   });
 
   test("Job Types page loads", async ({ page }) => {
-    await page.goto("/job-types");
-    await expect(page.getByRole("heading", { name: /Job Types/i })).toBeVisible();
+    await page.goto("/automation/job-types");
+    await expect(page.getByRole("heading", { name: /Job types/i })).toBeVisible();
   });
 
   test("Watchlist page loads", async ({ page }) => {

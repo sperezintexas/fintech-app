@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Position } from "@/types/portfolio";
+import { formatOptionPremium } from "@/lib/format-currency";
 
 export type BtcOrderType = "market" | "limit";
 
@@ -34,7 +35,7 @@ export function BuyToCloseModal({
   const [quantity, setQuantity] = useState<number>(contracts);
   const [orderType, setOrderType] = useState<BtcOrderType>("market");
   const [limitPrice, setLimitPrice] = useState<string>(
-    currentPremium > 0 ? currentPremium.toFixed(2) : ""
+    currentPremium > 0 ? currentPremium.toFixed(4) : ""
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +94,7 @@ export function BuyToCloseModal({
             {formatOptionLabel(position)}
           </p>
           <p className="text-xs text-gray-500 mt-0.5">
-            Position: {contracts} contract{contracts !== 1 ? "s" : ""} · Last: {formatCurrency(currentPremium)}/contract
+            Position: {contracts} contract{contracts !== 1 ? "s" : ""} · Last: {formatOptionPremium(currentPremium)}/contract
           </p>
         </div>
 
@@ -148,9 +149,9 @@ export function BuyToCloseModal({
                 <input
                   id="btc-limit-price"
                   type="number"
-                  step="0.01"
+                  step="0.0001"
                   min="0"
-                  placeholder="Limit price"
+                  placeholder="0.0650"
                   value={limitPrice}
                   onChange={(e) => setLimitPrice(e.target.value)}
                   className="w-full max-w-[140px] px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -164,7 +165,7 @@ export function BuyToCloseModal({
             <div className="p-3 bg-gray-50 rounded-lg text-sm text-gray-700">
               <strong>Est. cost to close:</strong> {formatCurrency(estimatedCost)}
               <span className="text-gray-500 ml-1">
-                ({quantity} × {formatCurrency(currentPremium)} × 100)
+                ({quantity} × {formatOptionPremium(currentPremium)} × 100)
               </span>
             </div>
           )}

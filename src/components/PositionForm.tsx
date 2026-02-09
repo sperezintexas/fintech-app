@@ -418,8 +418,8 @@ export function PositionForm({
               value={premium}
               onChange={(e) => setPremium(e.target.value)}
               className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="e.g., 2.50"
-              step="0.01"
+              placeholder="e.g. 0.0650"
+              step="0.0001"
               required
             />
           </div>

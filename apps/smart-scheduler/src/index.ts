@@ -2,6 +2,7 @@
  * Smart Scheduler entry point.
  * Only process that starts Agenda and runs job handlers.
  * Web app must not start Agenda; it uses agenda-client to enqueue/schedule.
+ * Set JOB_RUNNER=false to skip starting (e.g. local testing); default runs.
  * Run from repo root with env set (e.g. node --env-file=.env.local or export MONGODB_URI).
  */
 
@@ -12,6 +13,10 @@ import { defineJobs, scheduleJob } from "@/lib/scheduler";
 const COLLECTION = "scheduledJobs";
 
 async function main() {
+  if (process.env.JOB_RUNNER === "false") {
+    console.log("[smart-scheduler] JOB_RUNNER=false, exiting without starting");
+    process.exit(0);
+  }
   const mongoUri = getMongoUri();
   const dbName = getMongoDbName();
   if (!mongoUri) throw new Error("MONGODB_URI required");

@@ -167,8 +167,21 @@ export type WatchlistItem = {
   rationale?: string;
   /** Company name (e.g. longName from quote); enriched by API when loading watchlist */
   companyDescription?: string;
+  /** Live quote details (price, day change, volume, range); enriched by API when loading watchlist */
+  symbolDetails?: SymbolDetails;
   addedAt: string;
   updatedAt: string;
+};
+
+export type SymbolDetails = {
+  name?: string;
+  price?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  volume?: number;
+  change?: number;
+  changePercent?: number;
 };
 
 export type AlertRecommendation = "HOLD" | "CLOSE" | "ROLL" | "BTC" | "STC" | "WATCH";

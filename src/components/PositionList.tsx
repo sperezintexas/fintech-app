@@ -1,6 +1,7 @@
 "use client";
 
 import { Position } from "@/types/portfolio";
+import { formatOptionPremium } from "@/lib/format-currency";
 
 type PositionListProps = {
   positions: Position[];
@@ -18,6 +19,18 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
       style: "currency",
       currency: "USD",
     }).format(value);
+
+  /** Format cost basis without rounding up: truncate to 2 decimals then display. */
+  const formatCostBasis = (value: number) => {
+    const truncated =
+      value >= 0 ? Math.floor(value * 100) / 100 : Math.ceil(value * 100) / 100;
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(truncated);
+  };
 
   const formatNumber = (value: number, decimals: number = 2) => {
     return new Intl.NumberFormat("en-US", {
@@ -144,7 +157,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
       };
     }
 
-    // Option position
+    // Option position (short: display negative qty e.g. -1; closed: 0)
     const contracts = position.contracts || 0;
     const premium = position.premium || 0;
     const currentPremium = position.currentPrice || premium;
@@ -154,12 +167,13 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
     const unrealizedPLPercent =
       position.unrealizedPLPercent ?? (totalCost > 0 ? (unrealizedPL / totalCost) * 100 : 0);
     const typeLabel = position.optionType === "put" ? "Put" : "Call";
+    const displayQty = contracts === 0 ? 0 : -contracts;
 
     return {
       type: typeLabel as "Call" | "Put",
       symbol: formatOptionName(position),
-      quantity: contracts,
-      quantityLabel: String(contracts),
+      quantity: displayQty,
+      quantityLabel: String(displayQty),
       lastPrice: currentPremium,
       avgCost: premium,
       totalCost,
@@ -196,12 +210,11 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
     );
   }
 
-  // Qty display: shares or contracts (can be negative for short options)
+  // Qty display: shares or contracts; options show negative when open (-1), 0 when closed
   const formatQty = (position: Position, values: ReturnType<typeof calculatePositionValues>): string => {
     if (position.type === "cash") return values.quantityLabel;
     if (position.type === "stock") return values.quantityLabel;
-    const contracts = position.contracts ?? 0;
-    return String(contracts);
+    return values.quantityLabel;
   };
 
   return (
@@ -219,6 +232,9 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
                 Last
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
+                Unit cost
               </th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
                 Cost basis
@@ -313,7 +329,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                           </span>
                         )}
                         <span className="font-medium text-gray-900" title="Option last">
-                          {formatCurrency(values.lastPrice)}
+                          {formatOptionPremium(values.lastPrice)}
                         </span>
                       </div>
                     ) : (
@@ -321,7 +337,16 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                     )}
                   </td>
                   <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
-                    {formatCurrency(values.totalCost)}
+                    {position.type === "cash" ? (
+                      "—"
+                    ) : position.type === "option" ? (
+                      formatOptionPremium(values.avgCost)
+                    ) : (
+                      formatCurrency(values.avgCost)
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700 whitespace-nowrap tabular-nums">
+                    {formatCostBasis(values.totalCost)}
                   </td>
                   <td className="px-3 py-2 text-right font-medium text-gray-900 whitespace-nowrap tabular-nums">
                     {formatCurrency(values.marketValue)}
@@ -570,7 +595,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                     )}
                     <span>
                       {isOption && position.underlyingPrice != null ? "Option " : ""}
-                      {formatCurrency(values.lastPrice)}
+                      {isOption ? formatOptionPremium(values.lastPrice) : formatCurrency(values.lastPrice)}
                     </span>
                     {hasChange && (
                       <span className={isPositive ? "text-green-600 ml-1" : "text-red-600 ml-1"}>
@@ -602,11 +627,13 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 mb-0.5">Unit Cost</div>
-                  <div className="text-gray-900 font-medium tabular-nums">{formatCurrency(values.avgCost)}</div>
+                  <div className="text-gray-900 font-medium tabular-nums">
+                    {isOption ? formatOptionPremium(values.avgCost) : formatCurrency(values.avgCost)}
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 mb-0.5">Cost Basis</div>
-                  <div className="text-gray-900 font-medium tabular-nums">{formatCurrency(values.totalCost)}</div>
+                  <div className="text-gray-900 font-medium tabular-nums">{formatCostBasis(values.totalCost)}</div>
                 </div>
                 <div className="col-span-2">
                   <div className="text-xs text-gray-500 mb-0.5">Unrealized P/L</div>

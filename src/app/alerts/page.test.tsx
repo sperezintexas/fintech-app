@@ -63,6 +63,16 @@ describe("Alerts Page", () => {
 
   beforeEach(() => {
     mockFetch.mockReset();
+    mockFetch.mockImplementation((url: string | URL) => {
+      const u = typeof url === "string" ? url : url.toString();
+      if (u.includes("/api/profile")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ displayTimezone: "America/Chicago" }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: false } as Response);
+    });
     vi.mocked(getAccountsServer).mockResolvedValue(mockAccounts);
   });
 
