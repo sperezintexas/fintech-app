@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
 
     const newAccount: Omit<Account, "_id"> = {
       name: body.name,
+      ...(body.accountRef != null && body.accountRef !== "" && { accountRef: String(body.accountRef).trim() }),
       balance: body.balance || 0,
       riskLevel: body.riskLevel || "medium",
       strategy: body.strategy || "balanced",

@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { AccountList } from "@/components/AccountList";
 import { AccountForm } from "@/components/AccountForm";
 import { MyHoldingsTable } from "@/components/MyHoldingsTable";
-import type { Account, RiskLevel, Strategy } from "@/types/portfolio";
+import type { Account, Activity, RiskLevel, Strategy } from "@/types/portfolio";
 
-type AccountsTab = "portfolios" | "holdings";
+type AccountsTab = "portfolios" | "holdings" | "activity";
 
 type FormData = {
   name: string;
+  accountRef: string;
   balance: number;
   riskLevel: RiskLevel;
   strategy: Strategy;
@@ -25,6 +26,9 @@ export default function AccountsPage() {
   const [editingAccount, setEditingAccount] = useState<Account | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AccountsTab>("portfolios");
+  const [activityAccountId, setActivityAccountId] = useState<string>("");
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
 
   // Fetch accounts
   const fetchAccounts = async () => {
@@ -43,6 +47,32 @@ export default function AccountsPage() {
   useEffect(() => {
     fetchAccounts();
   }, []);
+
+  const fetchActivities = useCallback(async (accountId: string) => {
+    if (!accountId) return;
+    setActivitiesLoading(true);
+    try {
+      const res = await fetch(`/api/activities?accountId=${accountId}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setActivities(data);
+      } else {
+        setActivities([]);
+      }
+    } catch {
+      setActivities([]);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "activity" && activityAccountId) fetchActivities(activityAccountId);
+  }, [activeTab, activityAccountId, fetchActivities]);
+
+  useEffect(() => {
+    if (accounts.length > 0 && !activityAccountId) setActivityAccountId(accounts[0]._id);
+  }, [accounts, activityAccountId]);
 
   // Create or update account
   const handleSubmit = async (data: FormData) => {
@@ -117,7 +147,7 @@ export default function AccountsPage() {
               Manage your investment accounts and strategies.
             </p>
           </div>
-          {!showForm && activeTab === "portfolios" && (
+          {!showForm && (activeTab === "portfolios" || activeTab === "activity") && (
             <button
               onClick={() => setShowForm(true)}
               className="px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2"
@@ -177,6 +207,17 @@ export default function AccountsPage() {
             >
               My Holdings
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("activity")}
+              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+                activeTab === "activity"
+                  ? "bg-white border border-b-0 border-gray-200 text-gray-900 -mb-px"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              My Activity
+            </button>
           </div>
         )}
 
@@ -188,6 +229,73 @@ export default function AccountsPage() {
           </div>
         ) : activeTab === "holdings" ? (
           <MyHoldingsTable accounts={accounts} />
+        ) : activeTab === "activity" ? (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <label htmlFor="activity-account" className="block text-sm font-medium text-gray-700 mb-2">
+                View activity for account
+              </label>
+              <select
+                id="activity-account"
+                value={activityAccountId}
+                onChange={(e) => setActivityAccountId(e.target.value)}
+                className="w-full max-w-md px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              >
+                {accounts.map((a) => (
+                  <option key={a._id} value={a._id}>
+                    {a.name}
+                    {a.accountRef ? ` (${a.accountRef})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              {activitiesLoading ? (
+                <div className="p-8 flex justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600" />
+                </div>
+              ) : activities.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  No activities yet. Import trades (Merrill CSV or API) to see history.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Unit price</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Fee</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Comment</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {activities.map((a) => (
+                        <tr key={a._id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{a.date}</td>
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{a.symbol}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{a.type}</td>
+                          <td className="px-4 py-3 text-sm text-right text-gray-900">{a.quantity}</td>
+                          <td className="px-4 py-3 text-sm text-right text-gray-900">
+                            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(a.unitPrice)}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right text-gray-600">
+                            {a.fee != null
+                              ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(a.fee)
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{a.comment ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
           <AccountList
             accounts={accounts}

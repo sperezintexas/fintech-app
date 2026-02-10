@@ -18,6 +18,7 @@ import {
 } from "@/lib/push-client";
 import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 import { TIMEZONE_OPTIONS } from "@/lib/date-format";
+import { ImportFromCsvPanel } from "@/components/ImportFromCsvPanel";
 
 type TestChannel = "slack" | "twitter" | "push";
 
@@ -31,7 +32,7 @@ function AutomationContent() {
 
   // Alert preferences state
   const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState<"auth-users" | "settings" | "strategy">("auth-users");
+  const [activeTab, setActiveTab] = useState<"separation" | "auth-users" | "settings" | "strategy">("auth-users");
 
   // Default Setup to Job run history when visiting /automation with no tab
   useEffect(() => {
@@ -41,7 +42,7 @@ function AutomationContent() {
   }, [pathname, tabParam, router]);
 
   useEffect(() => {
-    if (tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users") {
+    if (tabParam === "separation" || tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users") {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
@@ -525,6 +526,13 @@ function AutomationContent() {
                 </option>
               ))}
             </select>
+          </div>
+        )}
+
+        {/* Separation Tab — Import from CSV */}
+        {activeTab === "separation" && (
+          <div className="space-y-6">
+            <ImportFromCsvPanel accounts={accounts} />
           </div>
         )}
 

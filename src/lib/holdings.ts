@@ -13,6 +13,10 @@ import {
   isPriceCacheFresh,
   optionCacheKey,
 } from "@/lib/holdings-price-cache";
+import {
+  hasActivitiesForAccount,
+  recomputePositionsFromActivities,
+} from "@/lib/activities";
 import type { Account, Position } from "@/types/portfolio";
 
 /** Extract underlying symbol from option ticker (e.g. TSLA250117C250 -> TSLA). */
@@ -87,7 +91,17 @@ export async function getPositionsWithMarketValues(
     throw new Error("Account not found");
   }
 
-  const positions: Position[] = account.positions ?? [];
+  const storedPositions: Position[] = account.positions ?? [];
+  let positions: Position[];
+
+  const useActivities = await hasActivitiesForAccount(accountId);
+  if (useActivities) {
+    const derived = await recomputePositionsFromActivities(accountId);
+    const cashPositions = storedPositions.filter((p) => p.type === "cash");
+    positions = [...derived, ...cashPositions];
+  } else {
+    positions = storedPositions;
+  }
 
   // Stock tickers and option underlyings for price lookup
   const stockTickers = positions

@@ -62,8 +62,3 @@ playwright/.cache/
 
 # Misc
 *.log
-
-# AWS Elastic Beanstalk
-.elasticbeanstalk/
-!.elasticbeanstalk/*.cfg.yml
-!.elasticbeanstalk/*.global.yml

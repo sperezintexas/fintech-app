@@ -61,10 +61,10 @@ Keep your stack (Next.js, MongoDB) and options/scanner features; add **Ghostfoli
 
 Format can align with [Ghostfolio’s Import API](https://github.com/ghostfolio/ghostfolio) (e.g. `type`: BUY | SELL | DIVIDEND | FEE, etc.) so you can reuse docs or scripts.
 
-### 3. UI (later)
+### 3. UI
 
-- **Setup → Import** (or **Holdings → Import**): file upload or paste CSV; map columns; preview; import.
-- **Activity history** (per account): table of activities (date, symbol, type, qty, price, fee) for audit and edit.
+- **Setup → Import** (or **Holdings → Import**): file upload or paste CSV; map columns; preview; import. (API available: `POST /api/import/activities`, `POST /api/import/csv`.)
+- **Activity history** (per account): table of activities (date, symbol, type, qty, price, fee) on the **Holdings** page under the "Activity history" tab.
 
 ### 4. Backward compatibility
 
@@ -79,7 +79,7 @@ Format can align with [Ghostfolio’s Import API](https://github.com/ghostfolio/
 |------|--------|
 | **1** | Add `activities` collection and types; `POST /api/import/activities` (body similar to Ghostfolio); on import, append activities and optionally recompute/update `account.positions` for that account so Holdings view stays correct. |
 | **2** | CSV import: parse broker-style CSV → activity list → call same import logic. |
-| **3** | (Optional) Derive positions from activities in `getPositionsWithMarketValues` and stop writing to `positions` for new data; or keep dual-write and add “Activity history” tab. |
+| **3** | ✅ **Done.** Derive positions from activities in `getPositionsWithMarketValues` when account has activities; merge cash from stored positions. Dual-write kept. “Activity history” tab on Holdings (date, symbol, type, qty, price, fee). |
 | **4** | (Optional) Sync from Ghostfolio: if you use Ghostfolio, call their API and map their activities to yours (same activity shape). |
 
 ---
@@ -94,4 +94,4 @@ Format can align with [Ghostfolio’s Import API](https://github.com/ghostfolio/
 ## Summary
 
 - **Comparison:** Your app leads on options (scanners, xStrategyBuilder, alerts); Ghostfolio leads on **activity-based portfolio and import**.
-- **Ghostbranch:** Add **activities + import API** (and later CSV import + UI) to this repo so you can **sync by importing trades** instead of only manual position entry, while keeping your stack and all options features.
+- **Ghostbranch:** Add **activities + import API**, CSV import, and **derive positions from activities** in this repo so you can **sync by importing trades** instead of only manual position entry, while keeping your stack and all options features. Holdings can show activity-derived positions and an Activity history tab per account.

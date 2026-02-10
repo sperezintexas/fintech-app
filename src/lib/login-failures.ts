@@ -93,7 +93,7 @@ export async function recordLoginFailure(ip: string, userAgent?: string): Promis
   };
 }
 
-/** Get client IP from request headers (Next.js / Vercel). */
+/** Get client IP from request headers (Next.js). */
 export function getClientIp(headers: Headers): string {
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) {

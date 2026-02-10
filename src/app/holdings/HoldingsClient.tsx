@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Account, Position } from "@/types/portfolio";
+import { Account, Activity, Position } from "@/types/portfolio";
 import { AppHeader } from "@/components/AppHeader";
 import { BuyToCloseModal } from "@/components/BuyToCloseModal";
 import { PositionForm } from "@/components/PositionForm";
@@ -34,6 +34,10 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
   const [addToWatchlistLoading, setAddToWatchlistLoading] = useState<string | null>(null);
   const [addToWatchlistMessage, setAddToWatchlistMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [btcPosition, setBtcPosition] = useState<Position | null>(null);
+  type HoldingsTab = "positions" | "activity-history";
+  const [holdingsTab, setHoldingsTab] = useState<HoldingsTab>("positions");
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -78,6 +82,27 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
     }
   }, [selectedAccountId]);
 
+  const fetchActivities = useCallback(async () => {
+    if (!selectedAccountId) return;
+    setActivitiesLoading(true);
+    try {
+      const res = await fetch(`/api/activities?accountId=${selectedAccountId}`, {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActivities(data);
+      } else {
+        setActivities([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch activities:", err);
+      setActivities([]);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  }, [selectedAccountId]);
+
   useEffect(() => {
     if (initialAccounts.length === 0) fetchAccounts();
   }, [initialAccounts.length, fetchAccounts]);
@@ -85,6 +110,10 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
   useEffect(() => {
     fetchHoldings();
   }, [fetchHoldings]);
+
+  useEffect(() => {
+    if (holdingsTab === "activity-history") fetchActivities();
+  }, [holdingsTab, selectedAccountId, fetchActivities]);
 
   useEffect(() => {
     if (!selectedAccountId) return;
@@ -369,6 +398,31 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
               </div>
             </div>
 
+            <div className="flex gap-2 border-b border-gray-200 mb-4">
+              <button
+                type="button"
+                onClick={() => setHoldingsTab("positions")}
+                className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                  holdingsTab === "positions"
+                    ? "bg-white border border-b-0 border-gray-200 text-blue-600 -mb-px"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Positions
+              </button>
+              <button
+                type="button"
+                onClick={() => setHoldingsTab("activity-history")}
+                className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                  holdingsTab === "activity-history"
+                    ? "bg-white border border-b-0 border-gray-200 text-blue-600 -mb-px"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Activity history
+              </button>
+            </div>
+
             {addToWatchlistMessage && (
               <div
                 className={`mb-4 p-3 rounded-lg flex items-center justify-between gap-4 ${
@@ -412,7 +466,52 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
               </div>
             )}
 
-            {showForm ? (
+            {holdingsTab === "activity-history" ? (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                {activitiesLoading ? (
+                  <div className="p-8 flex justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600" />
+                  </div>
+                ) : activities.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    No activities yet. Import trades via API or CSV to see history.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Unit price</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Fee</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Comment</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {activities.map((a) => (
+                          <tr key={a._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{a.date}</td>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">{a.symbol}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{a.type}</td>
+                            <td className="px-4 py-3 text-sm text-right text-gray-900">{a.quantity}</td>
+                            <td className="px-4 py-3 text-sm text-right text-gray-900">
+                              {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(a.unitPrice)}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-gray-600">
+                              {a.fee != null ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(a.fee) : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{a.comment ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : showForm ? (
               <PositionForm
                 position={editingPosition}
                 accountId={selectedAccountId}

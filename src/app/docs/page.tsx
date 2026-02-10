@@ -16,7 +16,7 @@ const SECTIONS = [
     cards: [
       {
         title: "Accounts & holdings",
-        body: "Add your brokerage accounts and sync positions (stocks, options, cash). The app uses real-time data from Yahoo Finance for market values and P/L.",
+        body: "Add your brokerage accounts and sync positions (stocks, options, cash). You can import trades (API or CSV) so positions are derived from activity history. Holdings shows live market data and an Activity history tab per account.",
         links: [{ label: "Go to Accounts", href: "/accounts" }, { label: "Holdings", href: "/holdings" }],
       },
       {

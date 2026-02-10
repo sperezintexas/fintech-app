@@ -20,12 +20,11 @@ function verifyCronRequest(request: NextRequest): boolean {
 /**
  * GET /api/cron/unified-options-scanner
  *
- * Triggered by Vercel Cron (or external cron) to run the Unified Options Scanner every weekday
- * at :15 during market hours (e.g. 9:15–3:15 ET), avoiding :00 to not clash with other jobs.
- * On Vercel, Agenda does not run (no long-running process), so this route is required for scheduled runs.
+ * Triggered by external cron (e.g. GitHub Actions) or by the in-app Agenda scheduler to run the
+ * Unified Options Scanner every weekday at :15 during market hours (e.g. 9:15–3:15 ET).
  * Runs portfolio-level scan (first account or null), then delivers alerts.
  *
- * Schedule in UTC. Example: 15 14-20 * * 1-5 (14:15–20:15 UTC ≈ 9:15–3:15 ET). Use GitHub Actions cron workflow or external cron to call this endpoint.
+ * Schedule in UTC. Example: 15 14-20 * * 1-5 (14:15–20:15 UTC ≈ 9:15–3:15 ET). Use GitHub Actions cron workflow or CRON_SECRET when calling from outside.
  */
 export async function GET(request: NextRequest) {
   if (!verifyCronRequest(request)) {

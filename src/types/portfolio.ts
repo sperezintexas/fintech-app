@@ -110,6 +110,8 @@ export type Recommendation = {
 export type Account = {
   _id: string;
   name: string;
+  /** Broker/source account ref for import mapping (e.g. Merrill "51X-98940"). Not the MongoDB _id. */
+  accountRef?: string;
   balance: number;
   riskLevel: RiskLevel;
   strategy: Strategy;

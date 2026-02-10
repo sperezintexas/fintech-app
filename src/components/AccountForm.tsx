@@ -5,6 +5,7 @@ import type { Account, RiskLevel, Strategy } from "@/types/portfolio";
 
 type AccountFormData = {
   name: string;
+  accountRef: string;
   balance: number;
   riskLevel: RiskLevel;
   strategy: Strategy;
@@ -33,6 +34,7 @@ const STRATEGIES: { value: Strategy; label: string; description: string }[] = [
 export function AccountForm({ account, onSubmit, onCancel, isLoading }: AccountFormProps) {
   const [formData, setFormData] = useState<AccountFormData>({
     name: account?.name || "",
+    accountRef: account?.accountRef ?? "",
     balance: account?.balance || 0,
     riskLevel: account?.riskLevel || "medium",
     strategy: account?.strategy || "balanced",
@@ -59,6 +61,22 @@ export function AccountForm({ account, onSubmit, onCancel, isLoading }: AccountF
           placeholder="e.g., Growth Portfolio"
           required
         />
+      </div>
+
+      {/* Account ref (for import mapping) */}
+      <div>
+        <label htmlFor="accountRef" className="block text-sm font-medium text-gray-700 mb-2">
+          Account ref
+        </label>
+        <input
+          type="text"
+          id="accountRef"
+          value={formData.accountRef}
+          onChange={(e) => setFormData({ ...formData, accountRef: e.target.value })}
+          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+          placeholder="e.g. 51X-98940 (for import mapping)"
+        />
+        <p className="mt-1 text-xs text-gray-500">Match broker account ID for CSV/API imports.</p>
       </div>
 
       {/* Initial Balance */}

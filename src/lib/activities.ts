@@ -135,6 +135,29 @@ export type ImportActivitiesResult = {
   positionsUpdated: boolean;
 };
 
+/** Whether the account has any activities (used to choose positions source in getPositionsWithMarketValues). */
+export async function hasActivitiesForAccount(accountId: string): Promise<boolean> {
+  const db = await getDb();
+  const count = await db.collection(COLLECTION).countDocuments({ accountId }, { limit: 1 });
+  return count > 0;
+}
+
+/** List activities for an account, newest first. _id returned as string for API. */
+export async function getActivitiesForAccount(accountId: string): Promise<Array<Omit<Activity, "_id"> & { _id: string }>> {
+  const db = await getDb();
+  const list = await db
+    .collection<Activity & { _id?: ObjectId }>(COLLECTION)
+    .find({ accountId })
+    .sort({ date: -1, createdAt: -1 })
+    .toArray();
+  return list.map((a) => {
+    const { _id, ...rest } = a;
+    const rawId: unknown = _id;
+    const idStr = rawId instanceof ObjectId ? rawId.toString() : String(rawId ?? "");
+    return { _id: idStr, ...rest };
+  });
+}
+
 /**
  * Validate account exists, insert activities, optionally recompute and set account.positions.
  * Returns null if account not found; otherwise { imported, positionsUpdated }.

@@ -15,7 +15,7 @@ You are an expert in writing end-to-end (E2E) UI tests using Playwright for Next
 - Favor **data-testid** or role-based selectors over brittle CSS; avoid XPath.
 - Handle async: Use `await page.waitForSelector()`, `expect.poll()`, timeouts wisely.
 - Clean up: Use fixtures for setup/teardown; reset DB/state between tests if needed.
-- Run in CI: Configure for GitHub Actions/Vercel; include screenshots on failure.
+- Run in CI: Configure for GitHub Actions; include screenshots on failure.
 
 ## Test Structure
 - Use `test.describe()` for grouping related tests.

@@ -148,6 +148,9 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
               <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                 Account
               </th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-28">
+                Account ref
+              </th>
               <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">
                 Positions
               </th>
@@ -203,6 +206,13 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
                       </span>
                     </div>
                   </td>
+                  <td className="px-3 py-2.5 text-left text-gray-600 text-xs">
+                    {account.accountRef ? (
+                      <span className="font-mono">{account.accountRef}</span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 text-right text-gray-600 tabular-nums">
                     {account.positions?.length ?? 0}
                   </td>
@@ -243,19 +253,33 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex justify-end gap-1.5">
+                    <div className="flex justify-end gap-1">
                       <button
+                        type="button"
                         onClick={() => onEdit(account)}
-                        className="px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                        className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Edit"
+                        aria-label="Edit account"
                       >
-                        Edit
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
                       </button>
                       <button
+                        type="button"
                         onClick={() => onDelete(account._id)}
                         disabled={isDeleting === account._id}
-                        className="px-2.5 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+                        className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete"
+                        aria-label="Delete account"
                       >
-                        {isDeleting === account._id ? "…" : "Delete"}
+                        {isDeleting === account._id ? (
+                          <span className="inline-block w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" aria-hidden />
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        )}
                       </button>
                     </div>
                   </td>
