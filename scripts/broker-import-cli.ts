@@ -27,7 +27,8 @@ import * as path from "path";
 import { ObjectId } from "mongodb";
 import { parseMerrillHoldingsCsv } from "../src/lib/merrill-holdings-csv";
 import { parseMerrillCsv } from "../src/lib/merrill-csv";
-import { parseBrokerCsv } from "../src/lib/csv-import";
+import { parseFidelityHoldingsCsv } from "../src/lib/fidelity-holdings-csv";
+import { parseFidelityActivitiesCsv } from "../src/lib/fidelity-csv";
 import { setAccountPositions, importActivitiesForAccount, deleteActivitiesForAccount } from "../src/lib/activities";
 import { getDb } from "../src/lib/mongodb";
 import type { Position, ActivityImportItem } from "../src/types/portfolio";
@@ -35,7 +36,8 @@ import type { Position, ActivityImportItem } from "../src/types/portfolio";
 type Broker = "merrill" | "fidelity";
 
 type ImportConfig = {
-  holdings: {
+  /** Optional. Omit for Fidelity activities-only import (positions recomputed from activities). */
+  holdings?: {
     path: string;
     broker?: Broker;
   };
@@ -44,6 +46,10 @@ type ImportConfig = {
     broker?: Broker;
     recomputePositions?: boolean;
     replaceExisting?: boolean;
+  };
+  /** When broker is Fidelity, holdings file has no Account column; use this to map to one app account. */
+  fidelity?: {
+    holdingsDefaultAccountRef?: string;
   };
 };
 
@@ -77,8 +83,8 @@ function loadConfig(configPath: string): { config: ImportConfig; configDir: stri
   }
   const raw = fs.readFileSync(abs, "utf-8");
   const config = JSON.parse(raw) as ImportConfig;
-  if (!config.holdings?.path || !config.activities?.path) {
-    console.error("Config must have holdings.path and activities.path");
+  if (!config.activities?.path) {
+    console.error("Config must have activities.path");
     process.exit(1);
   }
   return { config, configDir: path.dirname(abs) };
@@ -93,8 +99,14 @@ function resolvePath(configDir: string, filePath: string): string {
   return p;
 }
 
-function parseHoldings(csv: string, broker: Broker): ParsedAccount[] {
-  if (broker === "fidelity") return [];
+function parseHoldings(csv: string, broker: Broker, fidelityDefaultAccountRef: string = ""): ParsedAccount[] {
+  if (broker === "fidelity") {
+    const result = parseFidelityHoldingsCsv(csv, fidelityDefaultAccountRef);
+    if (result.parseError && result.positions.length === 0) {
+      throw new Error(result.parseError);
+    }
+    return [{ accountRef: result.accountRef, label: result.label, positions: result.positions }];
+  }
   const result = parseMerrillHoldingsCsv(csv);
   if (result.accounts.length === 0 && result.parseError) {
     throw new Error(result.parseError);
@@ -115,32 +127,36 @@ function parseActivities(csv: string, broker: Broker): ParsedAccount[] {
       activities: a.activities,
     }));
   }
-  const { activities, errors } = parseBrokerCsv(csv, "fidelity");
-  if (activities.length === 0 && errors.length > 0) {
-    throw new Error(`Parse failed: ${errors.join("; ")}`);
+  if (broker === "fidelity") {
+    const result = parseFidelityActivitiesCsv(csv);
+    if (result.parseError && result.accounts.length === 0) {
+      throw new Error(result.parseError);
+    }
+    return result.accounts.map((a) => ({
+      accountRef: a.accountRef,
+      label: a.label,
+      activities: a.activities,
+    }));
   }
-  return [{ accountRef: "", label: "Fidelity", activities }];
+  return [];
 }
 
 function runPreview(configPath: string, previewOutPath: string | null): void {
   loadEnvLocal();
   const { config, configDir } = loadConfig(configPath);
-  const brokerH = (config.holdings.broker ?? "merrill") as Broker;
   const brokerA = (config.activities.broker ?? "merrill") as Broker;
-
-  const holdingsPath = resolvePath(configDir, config.holdings.path);
   const activitiesPath = resolvePath(configDir, config.activities.path);
-
-  const holdingsCsv = fs.readFileSync(holdingsPath, "utf-8");
   const activitiesCsv = fs.readFileSync(activitiesPath, "utf-8");
-
-  const holdingsAccounts = brokerH === "fidelity" ? [] : parseHoldings(holdingsCsv, brokerH);
   const activitiesAccounts = parseActivities(activitiesCsv, brokerA);
 
-  const preview = {
-    configPath,
-    mappingNote: "Import matches broker accountRef to accounts.accountRef in DB",
-    holdings: {
+  let holdingsSection: { path: string; broker: Broker; accounts: Array<{ accountRef: string; label: string; positionCount: number; positions?: unknown[] }> } | null = null;
+  if (config.holdings?.path) {
+    const brokerH = (config.holdings.broker ?? "merrill") as Broker;
+    const holdingsPath = resolvePath(configDir, config.holdings.path);
+    const holdingsCsv = fs.readFileSync(holdingsPath, "utf-8");
+    const fidelityDefaultRef = config.fidelity?.holdingsDefaultAccountRef ?? "";
+    const holdingsAccounts = parseHoldings(holdingsCsv, brokerH, fidelityDefaultRef);
+    holdingsSection = {
       path: config.holdings.path,
       broker: brokerH,
       accounts: holdingsAccounts.map((a) => ({
@@ -149,7 +165,13 @@ function runPreview(configPath: string, previewOutPath: string | null): void {
         positionCount: a.positions?.length ?? 0,
         positions: a.positions,
       })),
-    },
+    };
+  }
+
+  const preview = {
+    configPath,
+    mappingNote: "Import matches broker accountRef to accounts.accountRef in DB",
+    ...(holdingsSection ? { holdings: holdingsSection } : { holdings: null, holdingsNote: "No holdings file; positions will be recomputed from activities." }),
     activities: {
       path: config.activities.path,
       broker: brokerA,
@@ -177,18 +199,20 @@ async function runImport(configPath: string): Promise<void> {
   console.error("Broker import: loading config and files...");
   const { config, configDir } = loadConfig(configPath);
 
-  const brokerH = (config.holdings.broker ?? "merrill") as Broker;
   const brokerA = (config.activities.broker ?? "merrill") as Broker;
   const recomputePositions = config.activities.recomputePositions !== false;
-
-  const holdingsPath = resolvePath(configDir, config.holdings.path);
   const activitiesPath = resolvePath(configDir, config.activities.path);
-
-  const holdingsCsv = fs.readFileSync(holdingsPath, "utf-8");
   const activitiesCsv = fs.readFileSync(activitiesPath, "utf-8");
-
-  const holdingsAccounts = brokerH === "fidelity" ? [] : parseHoldings(holdingsCsv, brokerH);
   const activitiesAccounts = parseActivities(activitiesCsv, brokerA);
+
+  let holdingsAccounts: ParsedAccount[] = [];
+  if (config.holdings?.path) {
+    const brokerH = (config.holdings.broker ?? "merrill") as Broker;
+    const holdingsPath = resolvePath(configDir, config.holdings.path);
+    const holdingsCsv = fs.readFileSync(holdingsPath, "utf-8");
+    const fidelityDefaultRef = config.fidelity?.holdingsDefaultAccountRef ?? "";
+    holdingsAccounts = parseHoldings(holdingsCsv, brokerH, fidelityDefaultRef);
+  }
 
   console.error("Connecting to DB and resolving accountRef mapping...");
   const db = await getDb();

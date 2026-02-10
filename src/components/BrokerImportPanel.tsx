@@ -68,16 +68,27 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
     f.text().then((text) => setHoldingsCsv(text)).catch(() => setHoldingsParseError("Could not read file"));
   }, []);
 
+  const selectedAccount = accounts.find((a) => a._id === selectedAccountId);
+  const fidelityHoldingsDefaultAccountRef = broker === "fidelity" ? (selectedAccount?.accountRef ?? "") : undefined;
+
   const handleHoldingsParse = useCallback(async () => {
     if (!holdingsCsv?.trim()) return;
     setHoldingsLoading(true);
     setHoldingsParseError(null);
     setHoldingsResult(null);
     try {
+      const body: { broker: Broker; exportType: "holdings"; csv: string; fidelityHoldingsDefaultAccountRef?: string } = {
+        broker,
+        exportType: "holdings",
+        csv: holdingsCsv,
+      };
+      if (broker === "fidelity" && fidelityHoldingsDefaultAccountRef !== undefined) {
+        body.fidelityHoldingsDefaultAccountRef = fidelityHoldingsDefaultAccountRef;
+      }
       const res = await fetch("/api/import/parse-broker", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ broker, exportType: "holdings" as const, csv: holdingsCsv }),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -98,23 +109,27 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
     } finally {
       setHoldingsLoading(false);
     }
-  }, [broker, holdingsCsv]);
+  }, [broker, holdingsCsv, fidelityHoldingsDefaultAccountRef]);
 
   const handleHoldingsImport = useCallback(async () => {
     if (!holdingsCsv || !holdingsParsed?.length || !selectedAccountId) return;
     setHoldingsLoading(true);
     setHoldingsResult(null);
     const mappings = buildMappings(holdingsParsed);
+    const importBody: Record<string, unknown> = {
+      broker,
+      exportType: "holdings" as const,
+      csv: holdingsCsv,
+      mappings,
+    };
+    if (broker === "fidelity" && fidelityHoldingsDefaultAccountRef !== undefined) {
+      importBody.fidelityHoldingsDefaultAccountRef = fidelityHoldingsDefaultAccountRef;
+    }
     try {
       const res = await fetch("/api/import/broker", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          broker,
-          exportType: "holdings" as const,
-          csv: holdingsCsv,
-          mappings,
-        }),
+        body: JSON.stringify(importBody),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -137,7 +152,7 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
     } finally {
       setHoldingsLoading(false);
     }
-  }, [broker, holdingsCsv, holdingsParsed, selectedAccountId, buildMappings, onSuccess]);
+  }, [broker, holdingsCsv, holdingsParsed, selectedAccountId, fidelityHoldingsDefaultAccountRef, buildMappings, onSuccess]);
 
   const handleActivitiesFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
@@ -238,8 +253,6 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
     );
   }
 
-  const selectedAccount = accounts.find((a) => a._id === selectedAccountId);
-
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
       <h3 className="text-sm font-semibold text-gray-900 mb-2">Import from broker</h3>
@@ -298,7 +311,9 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
       <div className="mb-6 pb-6 border-b border-gray-100">
         <h4 className="text-xs font-semibold text-gray-700 mb-2">2. Import Holdings (optional)</h4>
         {broker === "fidelity" && (
-          <p className="text-xs text-amber-600 mb-2">Fidelity: Holdings not supported; use Activities only.</p>
+          <p className="text-xs text-amber-600 mb-2">
+            Fidelity: Positions file has no account column. Set the selected account&apos;s <strong>Account ref</strong> (e.g. 0196) so holdings map to it.
+          </p>
         )}
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <div className="min-w-0 flex-1">
@@ -311,14 +326,13 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
               type="file"
               accept=".csv"
               onChange={handleHoldingsFileChange}
-              disabled={broker === "fidelity"}
               className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-60"
             />
           </div>
           <button
             type="button"
             onClick={handleHoldingsParse}
-            disabled={!holdingsCsv || holdingsLoading || broker === "fidelity"}
+            disabled={!holdingsCsv || holdingsLoading}
             className="px-4 py-2 bg-gray-100 text-gray-800 text-sm font-medium rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {holdingsLoading ? "Parsing…" : "Parse & preview"}

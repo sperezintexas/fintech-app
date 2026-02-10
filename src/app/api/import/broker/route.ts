@@ -7,9 +7,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { importActivitiesForAccount, setAccountPositions } from "@/lib/activities";
-import { parseBrokerCsv } from "@/lib/csv-import";
 import { parseMerrillHoldingsCsv } from "@/lib/merrill-holdings-csv";
 import { parseMerrillCsv } from "@/lib/merrill-csv";
+import { parseFidelityHoldingsCsv } from "@/lib/fidelity-holdings-csv";
+import { parseFidelityActivitiesCsv } from "@/lib/fidelity-csv";
 import { ObjectId } from "mongodb";
 import type { ActivityImportItem, Position } from "@/types/portfolio";
 
@@ -45,16 +46,11 @@ export async function POST(request: NextRequest) {
     const exportType = isExportType(body?.exportType) ? body.exportType : "activities";
     const mappings = isMappings(body?.mappings) ? body.mappings : {};
     const recomputePositions = body?.recomputePositions !== false;
+    const fidelityHoldingsDefaultAccountRef =
+      typeof body?.fidelityHoldingsDefaultAccountRef === "string" ? body.fidelityHoldingsDefaultAccountRef : "";
 
     if (!csv || !csv.trim()) {
       return NextResponse.json({ error: "csv is required" }, { status: 400 });
-    }
-
-    if (broker === "fidelity" && exportType === "holdings") {
-      return NextResponse.json(
-        { error: "Fidelity Holdings is not supported." },
-        { status: 400 }
-      );
     }
 
     type AccountEntry = {
@@ -89,14 +85,29 @@ export async function POST(request: NextRequest) {
         }));
       }
     } else {
-      const { activities, errors } = parseBrokerCsv(csv, "fidelity");
-      if (activities.length === 0 && errors.length > 0) {
-        return NextResponse.json(
-          { error: "Parse failed", details: errors },
-          { status: 400 }
-        );
+      if (exportType === "holdings") {
+        const result = parseFidelityHoldingsCsv(csv, fidelityHoldingsDefaultAccountRef);
+        if (result.parseError && result.positions.length === 0) {
+          return NextResponse.json(
+            { error: result.parseError ?? "No positions parsed from Fidelity Holdings CSV." },
+            { status: 400 }
+          );
+        }
+        accounts = [{ accountRef: result.accountRef, label: result.label, positions: result.positions }];
+      } else {
+        const result = parseFidelityActivitiesCsv(csv);
+        if (result.parseError && result.accounts.length === 0) {
+          return NextResponse.json(
+            { error: result.parseError ?? "No accounts parsed from Fidelity Activity CSV." },
+            { status: 400 }
+          );
+        }
+        accounts = result.accounts.map((a) => ({
+          accountRef: a.accountRef,
+          label: a.label,
+          activities: a.activities,
+        }));
       }
-      accounts = [{ accountRef: "", label: "Fidelity", activities }];
     }
 
     const results: Array<{ accountRef: string; label: string; imported: number; positionsCount?: number; error?: string }> = [];
