@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import type { Account } from "@/types/portfolio";
 
-// GET /api/accounts - List all accounts
+// GET /api/accounts - List all accounts (_id normalized to string for client)
 export async function GET() {
   try {
     const db = await getDb();
-    const accounts = await db.collection("accounts").find({}).toArray();
+    const raw = await db.collection("accounts").find({}).toArray();
+    const accounts = raw.map((a: { _id?: unknown; [k: string]: unknown }) => ({
+      ...a,
+      _id: a._id?.toString?.() ?? String(a._id),
+    }));
     return NextResponse.json(accounts);
   } catch (error) {
     console.error("Failed to fetch accounts:", error);
@@ -22,8 +26,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    const brokerType =
+      body.brokerType === "Merrill" || body.brokerType === "Fidelity" ? body.brokerType : undefined;
     const newAccount: Omit<Account, "_id"> = {
       name: body.name,
+      ...(body.accountRef != null && body.accountRef !== "" && { accountRef: String(body.accountRef).trim() }),
+      ...(brokerType && { brokerType }),
       balance: body.balance || 0,
       riskLevel: body.riskLevel || "medium",
       strategy: body.strategy || "balanced",

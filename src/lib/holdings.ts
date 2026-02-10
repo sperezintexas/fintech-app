@@ -13,6 +13,10 @@ import {
   isPriceCacheFresh,
   optionCacheKey,
 } from "@/lib/holdings-price-cache";
+import {
+  hasActivitiesForAccount,
+  recomputePositionsFromActivities,
+} from "@/lib/activities";
 import type { Account, Position } from "@/types/portfolio";
 
 /** Extract underlying symbol from option ticker (e.g. TSLA250117C250 -> TSLA). */
@@ -76,7 +80,7 @@ function intrinsicValue(
 
 export async function getPositionsWithMarketValues(
   accountId: string
-): Promise<{ account: Account; positions: EnhancedPosition[] }> {
+): Promise<{ account: Account; positions: EnhancedPosition[]; hasActivities: boolean }> {
   const db = await getDb();
   type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
   const account = await db
@@ -87,7 +91,19 @@ export async function getPositionsWithMarketValues(
     throw new Error("Account not found");
   }
 
-  const positions: Position[] = account.positions ?? [];
+  const storedPositions: Position[] = account.positions ?? [];
+  let positions: Position[];
+
+  const useActivities = await hasActivitiesForAccount(accountId);
+  if (storedPositions.length > 0) {
+    positions = storedPositions;
+  } else if (useActivities) {
+    const derived = await recomputePositionsFromActivities(accountId);
+    const cashPositions = storedPositions.filter((p) => p.type === "cash");
+    positions = [...derived, ...cashPositions];
+  } else {
+    positions = storedPositions;
+  }
 
   // Stock tickers and option underlyings for price lookup
   const stockTickers = positions
@@ -236,5 +252,5 @@ export async function getPositionsWithMarketValues(
     _id: account._id.toString(),
   };
 
-  return { account: accountWithId, positions: enhanced };
+  return { account: accountWithId, positions: enhanced, hasActivities: useActivities };
 }

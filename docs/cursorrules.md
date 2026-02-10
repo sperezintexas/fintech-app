@@ -61,8 +61,8 @@ Build and maintain a personal investment tracking & automation app focused on ma
 - **8. Automation**
   - xStrategyBuilder: from accounts, watchlist item, or position; user chooses strategy (Covered Call, CSP, etc.)
 
-- **9. Scheduled Jobs (Agenda.js / Vercel Cron)**
-   - Unified Options Scanner: weekdays at :15 during market hours (9:15–3:15 ET), cron `15 14-20 * * 1-5`; on Vercel use `GET /api/cron/unified-options-scanner`
+- **9. Scheduled Jobs (Agenda.js)**
+   - Unified Options Scanner: weekdays at :15 during market hours (9:15–3:15 ET), cron `15 14-20 * * 1-5`; for external trigger use `GET /api/cron/unified-options-scanner` (e.g. GitHub Actions cron)
    - daily-analysis: 4:00 PM Mon–Fri → evaluate positions, generate HOLD/CLOSE/BTC
    - cleanup-alerts: Sunday 2:00 AM → prune old alerts
    - earnings-check: pre/post earnings for TSLA/NVDA proxies

@@ -1,0 +1,7 @@
+"COB Date","Security #","Symbol","CUSIP #","Security Description","Account Nickname","Account Registration","Account #","Quantity","Price ($)","Value ($)","Unrealized Gain/Loss ($)","Unrealized Gain/Loss (%)","Cumulative Investment Return ($)","Cumulative Investment Return (%)","Accrued Interest ($)"
+"2/9/2026","977G3","IIAXX","55499U915","BANK OF AMERICA, NA RASP","--","IRA-Edge","AA-11111","2,486.98","1.00","2,486.98","--","--","--","--","--"
+"2/9/2026","OLTK2","XYZ#B1326C425000","--","CALL XYZ   425.00 EXP 02-13-26","--","IRA-Edge","AA-11111","(3)","4.55","(1,365.00)","202.05","12.89","--","--","--"
+"2/9/2026","V1VI9","ABC#N1326D130000","--","PUT  ABC   13.00 EXP 02-13-26","--","IRA-Edge","AA-11111","(1)","0.06","(6.00)","93.35","93.96","--","--","--"
+"2/9/2026","UMPV9","DEF#N2026D190000","--","PUT  DEF   19.00 EXP 02-20-26","--","IRA-Edge","AA-11111","(1)","1.32","(132.00)","(2.65)","(2.05)","--","--","--"
+"2/9/2026","74K38","XYZ","88160R101","SAMPLE INC","--","IRA-Edge","AA-11111","500","417.32","208,660.00","96,347.46","85.79","--","--","--"
+"2/9/2026","977G3","IIAXX","55499U915","BANK OF AMERICA, NA RASP","--","Roth IRA-Edge","BB-22222","1,258.53","1.00","1,258.53","--","--","--","--","--"

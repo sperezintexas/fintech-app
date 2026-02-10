@@ -31,6 +31,45 @@ export type PositionType = "stock" | "option" | "cash";
 
 export type OptionType = "call" | "put";
 
+/** Activity type for import/sync (Ghostfolio-style). Used by activities collection and POST /api/import/activities. */
+export type ActivityType = "BUY" | "SELL" | "DIVIDEND" | "FEE" | "INTEREST" | "LIABILITY";
+
+export type ActivityDataSource = "MANUAL" | "YAHOO" | "IMPORT";
+
+export type Activity = {
+  _id: string;
+  accountId: string;
+  symbol: string;
+  type: ActivityType;
+  date: string;
+  quantity: number;
+  unitPrice: number;
+  fee?: number;
+  dataSource?: ActivityDataSource;
+  comment?: string;
+  /** Option-specific (for options activities). */
+  optionType?: "call" | "put";
+  strike?: number;
+  expiration?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Payload item for POST /api/import/activities (same shape as Ghostfolio import, plus optional option fields). */
+export type ActivityImportItem = {
+  symbol: string;
+  date: string;
+  type: ActivityType;
+  quantity: number;
+  unitPrice: number;
+  fee?: number;
+  dataSource?: ActivityDataSource;
+  comment?: string;
+  optionType?: "call" | "put";
+  strike?: number;
+  expiration?: string;
+};
+
 export type Position = {
   _id: string;
   type: PositionType;
@@ -68,9 +107,16 @@ export type Recommendation = {
   createdAt: string;
 };
 
+/** Broker type for import/export format (Merrill = generic/Merrill CSV; Fidelity = Fidelity CSV). */
+export type BrokerType = "Merrill" | "Fidelity";
+
 export type Account = {
   _id: string;
   name: string;
+  /** Broker/source account ref for import mapping (e.g. Merrill "51X-98940"). Not the MongoDB _id. */
+  accountRef?: string;
+  /** Broker type so import/export uses the right CSV format. */
+  brokerType?: BrokerType;
   balance: number;
   riskLevel: RiskLevel;
   strategy: Strategy;

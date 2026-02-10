@@ -19,8 +19,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { positions } = await getPositionsWithMarketValues(accountId);
-    return NextResponse.json(positions);
+    const { positions, hasActivities } = await getPositionsWithMarketValues(accountId);
+    return NextResponse.json({ positions, hasActivities });
   } catch (error) {
     console.error("Error fetching positions:", error);
     return NextResponse.json(

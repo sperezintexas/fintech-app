@@ -5,6 +5,11 @@
 
 import { getDb } from "@/lib/mongodb";
 
+/** Country for IP. geoip-lite removed due to ENOENT on its data file in some environments (e.g. Docker/pnpm). */
+function getCountryForIp(_ip: string): string {
+  return "—";
+}
+
 const SUCCESS_COLLECTION = "login_successes";
 const FAILURE_COLLECTION = "login_failures";
 
@@ -39,6 +44,7 @@ export type LoginAttemptItem = {
   ip: string;
   userAgent?: string;
   createdAt: string;
+  country?: string;
 };
 
 export type LoginHistoryResult = {
@@ -80,12 +86,14 @@ export async function getLoginHistory(
     ip: d.ip,
     userAgent: d.userAgent,
     createdAt: d.createdAt,
+    country: getCountryForIp(d.ip),
   }));
   const failureItems: LoginAttemptItem[] = (failureDocs as unknown as Doc[]).map((d) => ({
     success: false,
     ip: d.ip,
     userAgent: d.userAgent,
     createdAt: d.createdAt,
+    country: getCountryForIp(d.ip),
   }));
 
   const attempts = [...successItems, ...failureItems]
