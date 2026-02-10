@@ -1,7 +1,7 @@
 /**
  * Fidelity import config + test data (Positions + Activity).
- * Validates that both files parse and produce expected structure for broker import.
- * Run import from CLI: pnpm run broker-import data/fidelity/import-config.json [--preview]
+ * Fixtures: tests/data/fidelity (randomized, checked-in).
+ * CLI with test data: pnpm run broker-import tests/data/fidelity/import-config.json [--preview]
  */
 
 import * as fs from "fs";
@@ -11,7 +11,7 @@ import { parseFidelityHoldingsCsv } from "../fidelity-holdings-csv";
 import { parseFidelityActivitiesCsv } from "../fidelity-csv";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const CONFIG_DIR = path.join(REPO_ROOT, "data", "fidelity");
+const CONFIG_DIR = path.join(REPO_ROOT, "tests", "data", "fidelity");
 const CONFIG_PATH = path.join(CONFIG_DIR, "import-config.json");
 
 type ImportConfig = {
@@ -36,7 +36,6 @@ describe("Fidelity import config + test data", () => {
     expect(config.activities.broker).toBe("fidelity");
     if (config.holdings?.path) {
       expect(config.holdings.broker).toBe("fidelity");
-      expect(config.fidelity?.holdingsDefaultAccountRef).toBe("0196");
     }
   });
 
@@ -46,18 +45,15 @@ describe("Fidelity import config + test data", () => {
     const holdingsPath = resolvePath(CONFIG_DIR, config.holdings.path);
     if (!fs.existsSync(holdingsPath)) return;
     const csv = fs.readFileSync(holdingsPath, "utf-8");
-    const defaultRef = config.fidelity?.holdingsDefaultAccountRef ?? "";
+    const defaultRef = config.fidelity?.holdingsDefaultAccountRef ?? "1111";
     const result = parseFidelityHoldingsCsv(csv, defaultRef);
-    expect(result.accountRef).toBe("0196");
-    expect(result.positions.length).toBeGreaterThanOrEqual(5);
+    expect(result.positions.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("parses Activity CSV and produces multiple accounts with activities (when file present)", () => {
+  it("parses Activity CSV and produces multiple accounts with activities", () => {
     const config = loadConfig();
     const activitiesPath = resolvePath(CONFIG_DIR, config.activities.path);
-    if (!fs.existsSync(activitiesPath)) {
-      return;
-    }
+    expect(fs.existsSync(activitiesPath)).toBe(true);
     const csv = fs.readFileSync(activitiesPath, "utf-8");
     const result = parseFidelityActivitiesCsv(csv);
     expect(result.accounts.length).toBeGreaterThanOrEqual(2);

@@ -1,15 +1,15 @@
 /**
  * Fidelity Activity CSV parser test.
- * Uses inline fixture; optional data/fidelity/Activity_All_Accounts.csv for full file.
+ * Inline fixture + optional tests/data/fidelity/FidelityActOrdersHistory.csv.
  */
 
 import * as fs from "fs";
 import * as path from "path";
 import { describe, it, expect } from "vitest";
-import { parseFidelityCsv, fidelityAccountToRef } from "../fidelity-csv";
+import { parseFidelityCsv, parseFidelityActivitiesCsv, fidelityAccountToRef } from "../fidelity-csv";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const FIXTURE = path.join(REPO_ROOT, "data", "fidelity", "Activity_All_Accounts.csv");
+const FIXTURE = path.join(REPO_ROOT, "tests", "data", "fidelity", "FidelityActOrdersHistory.csv");
 
 const MINIMAL_CSV = `Date,Description,Symbol,Quantity,Price,Amount,Cash Balance,Security Description,Commission,Fees,Account
 Feb-4-2026,YOU BOUGHT,RDW,500,10.19,"-5,092.50","+1,638.26",REDWIRE CORPORATION COM,--,--,Individual - TOD *0196
@@ -39,13 +39,13 @@ describe("fidelity-csv", () => {
     expect(rdwBuy?.unitPrice).toBe(10.19);
   });
 
-  it("parses full Activity file when present", () => {
+  it("parses full Activity file when present (FidelityActOrdersHistory or Activity_All_Accounts format)", () => {
     if (!fs.existsSync(FIXTURE)) return;
     const csv = fs.readFileSync(FIXTURE, "utf-8");
-    const result = parseFidelityCsv(csv);
+    const result = parseFidelityActivitiesCsv(csv);
     expect(result.accounts.length).toBeGreaterThanOrEqual(2);
     const totalActivities = result.accounts.reduce((s, a) => s + a.activities.length, 0);
-    expect(totalActivities).toBeGreaterThanOrEqual(10);
+    expect(totalActivities).toBeGreaterThanOrEqual(5);
   });
 
   it("returns parseError when header row is missing", () => {

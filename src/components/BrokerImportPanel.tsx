@@ -257,7 +257,7 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
       <h3 className="text-sm font-semibold text-gray-900 mb-2">Import from broker</h3>
       <p className="text-sm text-gray-500 mb-4">
-        Select the account to import into, then import <strong>Holdings</strong> (optional), then <strong>Activities</strong> with sync/recompute. Merrill test files: <code className="bg-gray-100 px-1 rounded text-xs">Holdings_02092026.csv</code>, <code className="bg-gray-100 px-1 rounded text-xs">MerrillEdgeActivities.csv</code>.
+        Select the account to import into, then import <strong>Holdings</strong> (optional), then <strong>Activities</strong> with sync/recompute. Merrill test files: <code className="bg-gray-100 px-1 rounded text-xs">Holdings.csv</code>, <code className="bg-gray-100 px-1 rounded text-xs">Activities.csv</code>.
       </p>
 
       {/* Step 1: Select account */}

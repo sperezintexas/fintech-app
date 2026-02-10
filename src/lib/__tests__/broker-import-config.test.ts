@@ -1,7 +1,7 @@
 /**
  * E2E-style test: import config + Merrill test data (Holdings + Activities).
- * Validates that the two required files parse and produce expected structure for broker import.
- * Run import from CLI: pnpm run broker-import data/merrill-test/import-config.json [--preview]
+ * Fixtures: tests/data/merrill (randomized, checked-in).
+ * CLI with test data: pnpm run broker-import tests/data/merrill/import-config.json [--preview]
  */
 
 import * as fs from "fs";
@@ -11,7 +11,7 @@ import { parseMerrillHoldingsCsv } from "../merrill-holdings-csv";
 import { parseMerrillCsv } from "../merrill-csv";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const CONFIG_DIR = path.join(REPO_ROOT, "data", "merrill-test");
+const CONFIG_DIR = path.join(REPO_ROOT, "tests", "data", "merrill");
 const CONFIG_PATH = path.join(CONFIG_DIR, "import-config.json");
 
 type ImportConfig = {
@@ -47,7 +47,7 @@ describe("broker import config + Merrill test data", () => {
     const totalPositions = result.accounts.reduce((s, a) => s + a.positions.length, 0);
     expect(totalPositions).toBeGreaterThanOrEqual(5);
     const accountRefs = result.accounts.map((a) => a.accountRef);
-    expect(accountRefs).toContain("51X-98940");
+    expect(accountRefs).toContain("AA-11111");
   });
 
   it("parses Activities CSV and produces accounts with activities", () => {

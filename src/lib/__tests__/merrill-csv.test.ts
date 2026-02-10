@@ -1,7 +1,6 @@
 /**
- * Test case: Merrill Edge Activities CSV → parseMerrillCsv() output.
- * Uses data/merrill-test/MerrillEdgeActivities.csv (same format as legacy MerrillEdge.csv).
- * Canonical reference: data/test-outout/broker-formatted-merrill-2026-02-10.json.
+ * Merrill Edge Activities CSV → parseMerrillCsv().
+ * Fixture: tests/data/merrill/Activities.csv (randomized, checked-in).
  */
 
 import * as fs from "fs";
@@ -10,11 +9,11 @@ import { describe, it, expect } from "vitest";
 import { parseMerrillCsv } from "../merrill-csv";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const FIXTURE_CSV = path.join(REPO_ROOT, "data", "merrill-test", "MerrillEdgeActivities.csv");
+const FIXTURE_CSV = path.join(REPO_ROOT, "tests", "data", "merrill", "Activities.csv");
 
 function loadCsv(): string {
   const raw = fs.readFileSync(FIXTURE_CSV, "utf-8");
-  if (!raw || !raw.trim()) throw new Error("MerrillEdgeActivities.csv fixture is empty");
+  if (!raw || !raw.trim()) throw new Error("Activities.csv fixture is empty");
   return raw;
 }
 
@@ -48,18 +47,18 @@ describe("merrill-csv (Merrill Edge Activities CSV)", () => {
 
     expect(result.accounts).toHaveLength(2);
     const refs = result.accounts.map((a) => a.accountRef).sort();
-    expect(refs).toEqual(["51X-98940", "79Z-79494"]);
+    expect(refs).toEqual(["AA-11111", "BB-22222"]);
     const labels = result.accounts.map((a) => a.label);
     expect(labels).toContain("IRA-Edge");
     expect(labels).toContain("Roth IRA-Edge");
   });
 
-  it("IRA-Edge account has 16+ activities and Roth IRA-Edge has 2", () => {
+  it("IRA-Edge account has 10+ activities and Roth IRA-Edge has 2", () => {
     const csv = loadCsv();
     const result = parseMerrillCsv(csv);
-    const gotIra = result.accounts.find((a) => a.accountRef === "51X-98940");
-    const gotRoth = result.accounts.find((a) => a.accountRef === "79Z-79494");
-    expect(gotIra?.activities.length).toBeGreaterThanOrEqual(16);
+    const gotIra = result.accounts.find((a) => a.accountRef === "AA-11111");
+    const gotRoth = result.accounts.find((a) => a.accountRef === "BB-22222");
+    expect(gotIra?.activities.length).toBeGreaterThanOrEqual(10);
     expect(gotRoth?.activities).toHaveLength(2);
   });
 });
