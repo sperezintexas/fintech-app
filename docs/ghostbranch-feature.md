@@ -95,3 +95,8 @@ Format can align with [Ghostfolio’s Import API](https://github.com/ghostfolio/
 
 - **Comparison:** Your app leads on options (scanners, xStrategyBuilder, alerts); Ghostfolio leads on **activity-based portfolio and import**.
 - **Ghostbranch:** Add **activities + import API**, CSV import, and **derive positions from activities** in this repo so you can **sync by importing trades** instead of only manual position entry, while keeping your stack and all options features. Holdings can show activity-derived positions and an Activity history tab per account.
+
+## Brokers Supported
+The following brokers should be supported.  Three Steps to Sync accounts with myInvestments portfolio is login into your broker and 1) export Activities , 2) then convert to json (ghostfolio) activities format.  3) Then import output json into myInvestments.
+Merrill
+Fidelity

@@ -16,7 +16,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "start:scheduler": "TS_NODE_PROJECT=apps/smart-scheduler/tsconfig.json node -r tsconfig-paths/register -r ts-node/register apps/smart-scheduler/src/index.ts",
-    "merrill-to-activities": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/merrill-edge-to-activities.ts"
+    "merrill-to-activities": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"CommonJS\",\"moduleResolution\":\"node\"}' node -r tsconfig-paths/register -r ts-node/register scripts/merrill-edge-to-activities.ts"
   },
   "keywords": [
     "investments",
