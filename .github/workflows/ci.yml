@@ -1,10 +1,9 @@
 name: CI
 
+# Run on every push and PR (all branches). Deploy (Build & Deploy to App Runner) runs only on main.
 on:
   push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
 
 env:
   NODE_VERSION: "22"
