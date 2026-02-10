@@ -207,4 +207,29 @@ test.describe("Smoke tests", () => {
     await expect(page.getByText(/Web Search/i)).toBeVisible();
     await expect(page.getByText(/Risk profile/i)).toBeVisible();
   });
+
+  test("Accounts page loads", async ({ page }) => {
+    await page.goto("/accounts");
+    await expect(page.getByRole("heading", { name: /Accounts|Portfolios/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "New Account" })).toBeVisible();
+  });
+
+  test("Accounts page: add account form shows Broker type", async ({ page }) => {
+    await page.goto("/accounts");
+    await page.getByRole("button", { name: "New Account" }).click();
+    await expect(page.getByLabel(/Account Name/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByLabel(/Broker type/i)).toBeVisible();
+    const brokerSelect = page.getByRole("combobox", { name: /Broker type/i });
+    await expect(brokerSelect).toBeVisible();
+    await expect(brokerSelect.locator("option", { hasText: "Merrill" })).toBeVisible();
+    await expect(brokerSelect.locator("option", { hasText: "Fidelity" })).toBeVisible();
+  });
+
+  test("Automation: Import From Broker tab shows three-step and import panels", async ({ page }) => {
+    await page.goto("/automation?tab=separation");
+    await expect(page.getByRole("heading", { name: /Three-step process/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: /Format only/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Import$/i })).toBeVisible();
+    await expect(page.getByText(/CSV or JSON|raw broker CSV/i).first()).toBeVisible();
+  });
 });

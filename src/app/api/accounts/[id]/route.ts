@@ -56,13 +56,24 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       strategy: body.strategy,
     };
     const updateOps: Record<string, unknown> = { $set: updateData };
+    const unset: Record<string, number> = {};
     if (body.accountRef !== undefined) {
       const ref = body.accountRef === "" ? "" : String(body.accountRef).trim();
       if (ref) {
         updateData.accountRef = ref;
       } else {
-        (updateOps as Record<string, unknown>).$unset = { accountRef: 1 };
+        unset.accountRef = 1;
       }
+    }
+    if (body.brokerType !== undefined) {
+      if (body.brokerType === "Merrill" || body.brokerType === "Fidelity") {
+        updateData.brokerType = body.brokerType;
+      } else {
+        unset.brokerType = 1;
+      }
+    }
+    if (Object.keys(unset).length > 0) {
+      (updateOps as Record<string, unknown>).$unset = unset;
     }
 
     const result = await db.collection("accounts").updateOne({ _id: accountId }, updateOps);

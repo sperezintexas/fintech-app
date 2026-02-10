@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { Account, RiskLevel, Strategy } from "@/types/portfolio";
+import type { Account, BrokerType, RiskLevel, Strategy } from "@/types/portfolio";
 
 type AccountFormData = {
   name: string;
   accountRef: string;
+  brokerType: BrokerType | "";
   balance: number;
   riskLevel: RiskLevel;
   strategy: Strategy;
@@ -35,6 +36,7 @@ export function AccountForm({ account, onSubmit, onCancel, isLoading }: AccountF
   const [formData, setFormData] = useState<AccountFormData>({
     name: account?.name || "",
     accountRef: account?.accountRef ?? "",
+    brokerType: account?.brokerType ?? "",
     balance: account?.balance || 0,
     riskLevel: account?.riskLevel || "medium",
     strategy: account?.strategy || "balanced",
@@ -77,6 +79,26 @@ export function AccountForm({ account, onSubmit, onCancel, isLoading }: AccountF
           placeholder="e.g. 51X-98940 (for import mapping)"
         />
         <p className="mt-1 text-xs text-gray-500">Match broker account ID for CSV/API imports.</p>
+      </div>
+
+      {/* Broker type (for import/export format) */}
+      <div>
+        <label htmlFor="brokerType" className="block text-sm font-medium text-gray-700 mb-2">
+          Broker type
+        </label>
+        <select
+          id="brokerType"
+          value={formData.brokerType}
+          onChange={(e) =>
+            setFormData({ ...formData, brokerType: (e.target.value || "") as BrokerType | "" })
+          }
+          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white"
+        >
+          <option value="">—</option>
+          <option value="Merrill">Merrill</option>
+          <option value="Fidelity">Fidelity</option>
+        </select>
+        <p className="mt-1 text-xs text-gray-500">Used by Import from Broker to pick CSV format.</p>
       </div>
 
       {/* Initial Balance */}

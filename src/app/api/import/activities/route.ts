@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       imported: result.imported,
       positionsUpdated: result.positionsUpdated,
+      positionsCount: result.positionsCount,
     });
   } catch (error) {
     console.error("[import/activities]", error);

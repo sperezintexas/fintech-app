@@ -128,7 +128,7 @@ docker run -e MONGODB_URI=... -e MONGODB_DB=myinvestments -p 3000:3000 myinvestm
 
 - **docs/** — Job types (`job.md`), Smart Grok Chat (`chat.md`), scanners, goal progress (`goal-progress.md`), CI pipeline (`ci.md`), Ghostbranch (`ghostbranch-feature.md`), Cursor rules (`cursorrules.md`).
 - **.cursor/rules/** — Page structure, API routes, alerts, strategy builders, Grok config, GitHub CI (`github-ci.mdc`).
-- **.cursor/skills/** — ci-failure, test-lint, test-commit-push, docker-setup, fix-current-file.
+- **.cursor/skills/** — ci-failure, test-lint, test-commit-push (tests, typecheck, lint, gitleaks), docker-setup, fix-current-file.
 
 ## Version
 

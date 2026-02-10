@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       imported: result.imported,
       positionsUpdated: result.positionsUpdated,
+      positionsCount: result.positionsCount,
       parseErrors: errors.length > 0 ? errors : undefined,
     });
   } catch (error) {

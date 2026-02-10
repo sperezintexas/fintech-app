@@ -80,7 +80,7 @@ function intrinsicValue(
 
 export async function getPositionsWithMarketValues(
   accountId: string
-): Promise<{ account: Account; positions: EnhancedPosition[] }> {
+): Promise<{ account: Account; positions: EnhancedPosition[]; hasActivities: boolean }> {
   const db = await getDb();
   type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
   const account = await db
@@ -95,7 +95,9 @@ export async function getPositionsWithMarketValues(
   let positions: Position[];
 
   const useActivities = await hasActivitiesForAccount(accountId);
-  if (useActivities) {
+  if (storedPositions.length > 0) {
+    positions = storedPositions;
+  } else if (useActivities) {
     const derived = await recomputePositionsFromActivities(accountId);
     const cashPositions = storedPositions.filter((p) => p.type === "cash");
     positions = [...derived, ...cashPositions];
@@ -250,5 +252,5 @@ export async function getPositionsWithMarketValues(
     _id: account._id.toString(),
   };
 
-  return { account: accountWithId, positions: enhanced };
+  return { account: accountWithId, positions: enhanced, hasActivities: useActivities };
 }

@@ -96,7 +96,24 @@ Format can align with [Ghostfolio’s Import API](https://github.com/ghostfolio/
 - **Comparison:** Your app leads on options (scanners, xStrategyBuilder, alerts); Ghostfolio leads on **activity-based portfolio and import**.
 - **Ghostbranch:** Add **activities + import API**, CSV import, and **derive positions from activities** in this repo so you can **sync by importing trades** instead of only manual position entry, while keeping your stack and all options features. Holdings can show activity-derived positions and an Activity history tab per account.
 
-## Brokers Supported
-The following brokers should be supported.  Three Steps to Sync accounts with myInvestments portfolio is login into your broker and 1) export Activities , 2) then convert to json (ghostfolio) activities format.  3) Then import output json into myInvestments.
-Merrill
-Fidelity
+## Brokers supported
+
+**Merrill** and **Fidelity** only. **Builder workflow** (no intermediate JSON).
+
+### Mapping: accountRef
+
+Broker exports contain multiple accounts (e.g. IRA-Edge `51X-98940`, Roth IRA-Edge `79Z-79494`). Create app accounts with **accountRef** set to the broker account number; import matches by `accountRef` (and by account name). Broker accounts with no matching app account are skipped.
+
+### UI flow (Setup → Broker import)
+
+1. **Select account** — Choose the app account to import into (or create accounts with matching `accountRef` first).
+2. **Holdings (optional)** — Upload Holdings CSV (Merrill only), Parse & preview, Import holdings. Positions are set from the CSV.
+3. **Activities & sync** — Upload Activities CSV, Parse & preview, optionally **Recompute positions** (off when Holdings were imported so positions stay from Holdings). Import activities into the selected account.
+
+### CLI flow (config-driven)
+
+1. **Config** — `data/merrill-test/import-config.json` (or custom path): `holdings.path`, `activities.path`, broker options. Paths relative to config directory. No `accountId` in config; mapping is from the **accounts** table by `accountRef`.
+2. **Preview** — `pnpm run broker-import <config> --preview` parses both files and outputs JSON (no DB).
+3. **Import** — `pnpm run broker-import <config>`: loads accounts with `accountRef`, imports Holdings (positions from CSV) then Activities (sync only when Holdings were imported). Exits with summary and `process.exit(0)`.
+
+APIs: `POST /api/import/parse-broker`, `POST /api/import/broker`. Legacy `POST /api/import/format` for `pnpm run merrill-to-activities`.

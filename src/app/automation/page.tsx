@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import type {
   Account,
@@ -18,8 +18,7 @@ import {
 } from "@/lib/push-client";
 import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 import { TIMEZONE_OPTIONS } from "@/lib/date-format";
-import { ImportFromCsvPanel } from "@/components/ImportFromCsvPanel";
-import { ImportFromJsonPanel } from "@/components/ImportFromJsonPanel";
+import { BrokerImportPanel } from "@/components/BrokerImportPanel";
 
 type TestChannel = "slack" | "twitter" | "push";
 
@@ -39,6 +38,11 @@ function AutomationContent() {
   useEffect(() => {
     if (pathname === "/automation" && !tabParam) {
       router.replace("/automation/job-history");
+    }
+  }, [pathname, tabParam, router]);
+  useEffect(() => {
+    if (pathname === "/automation" && tabParam === "xtools") {
+      router.replace("/automation/xtools");
     }
   }, [pathname, tabParam, router]);
 
@@ -87,12 +91,6 @@ function AutomationContent() {
   const [authUsersAdding, setAuthUsersAdding] = useState(false);
   const [authUsersSeedResult, setAuthUsersSeedResult] = useState<string | null>(null);
 
-  // Format Merrill (raw CSV → JSON, no import)
-  const [formatMerrillFile, setFormatMerrillFile] = useState<File | null>(null);
-  const [formatMerrillLoading, setFormatMerrillLoading] = useState(false);
-  const [formatMerrillMessage, setFormatMerrillMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const formatMerrillInputRef = useRef<HTMLInputElement>(null);
-
   const { timezone: displayTimezone, formatDate, setTimezone: setDisplayTimezone } = useDisplayTimezone();
   const [profileTimezone, setProfileTimezone] = useState(displayTimezone);
   const [profileSaving, setProfileSaving] = useState(false);
@@ -130,48 +128,6 @@ function AutomationContent() {
       setAuthUsersLoading(false);
     }
   }, []);
-
-  const handleFormatMerrill = useCallback(async () => {
-    if (!formatMerrillFile) return;
-    setFormatMerrillLoading(true);
-    setFormatMerrillMessage(null);
-    try {
-      const csv = await formatMerrillFile.text();
-      const res = await fetch("/api/import/format-merrill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ csv }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setFormatMerrillMessage({ type: "error", text: (data as { error?: string }).error ?? "Format failed" });
-        return;
-      }
-      const payload = data as { accounts?: unknown[] };
-      const blob = new Blob([JSON.stringify({ accounts: payload.accounts ?? [] }, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `merrill-formatted-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setFormatMerrillMessage({
-        type: "success",
-        text: `Downloaded JSON (${payload.accounts?.length ?? 0} account(s)). Use Import or POST /api/import/activities to load.`,
-      });
-      setFormatMerrillFile(null);
-      if (formatMerrillInputRef.current) formatMerrillInputRef.current.value = "";
-    } catch (err) {
-      setFormatMerrillMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Format failed",
-      });
-    } finally {
-      setFormatMerrillLoading(false);
-    }
-  }, [formatMerrillFile]);
 
   useEffect(() => {
     if (activeTab === "auth-users") fetchAuthUsers();
@@ -561,7 +517,7 @@ function AutomationContent() {
 
   return (
     <>
-        {activeTab !== "auth-users" && activeTab !== "settings" && (
+        {activeTab !== "auth-users" && activeTab !== "settings" && activeTab !== "separation" && (
           <div className="flex items-center justify-end mb-6">
             <select
               value={selectedAccountId}
@@ -578,62 +534,18 @@ function AutomationContent() {
           </div>
         )}
 
-        {/* Separation Tab — Import from CSV */}
+        {/* Separation Tab — Broker import (Merrill + Fidelity) */}
         {activeTab === "separation" && (
           <div className="space-y-6">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Three-step process</h3>
-              <ol className="list-decimal list-inside text-sm text-gray-700 space-y-2 mb-2">
-                <li><strong>Export</strong> — Download raw CSV from your broker (e.g. Merrill Edge transaction history).</li>
-                <li><strong>Format (optional)</strong> — Convert broker CSV to activities JSON. Use &quot;Format only (Merrill)&quot; below to upload CSV and download JSON, or from the command line: <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs break-all">pnpm run merrill-to-activities -- --output=out.json</code> (default input: <code className="bg-gray-100 px-1 rounded text-xs">data/MerrillEdge.csv</code>). For a specific file: <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs break-all">pnpm run merrill-to-activities path/to/export.csv --output=out.json</code>.</li>
-                <li><strong>Import</strong> — Upload JSON in the panel below (or use POST /api/import/activities with the formatted JSON). Choose account and CSV format; activities are appended and positions can be recomputed.</li>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Broker import workflow</h3>
+              <ol className="list-decimal list-inside text-sm text-gray-700 space-y-1 mb-2">
+                <li><strong>Export</strong> — From Merrill Edge or Fidelity, export Activities (transactions) or Holdings (positions) as CSV.</li>
+                <li><strong>Parse &amp; preview</strong> — Choose broker and export type, upload CSV, then Parse to see accounts and counts.</li>
+                <li><strong>Import</strong> — Map each broker account to an app account and click Import. No intermediate JSON file.</li>
               </ol>
             </div>
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Format only (Merrill)</h3>
-              <p className="text-sm text-gray-500 mb-4">
-                Upload raw Merrill Edge CSV to convert to activities JSON (same as <code className="bg-gray-100 px-1 rounded text-xs">pnpm run merrill-to-activities -- --output=out.json</code>). Download the JSON; import later via this page or API.
-              </p>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
-                <div className="min-w-0 flex-1">
-                  <label htmlFor="format-merrill-file" className="block text-xs font-medium text-gray-500 mb-1">
-                    Raw broker CSV
-                  </label>
-                  <input
-                    ref={formatMerrillInputRef}
-                    id="format-merrill-file"
-                    type="file"
-                    accept=".csv"
-                    onChange={(e) => {
-                      setFormatMerrillFile(e.target.files?.[0] ?? null);
-                      setFormatMerrillMessage(null);
-                    }}
-                    className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleFormatMerrill}
-                  disabled={!formatMerrillFile || formatMerrillLoading}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {formatMerrillLoading ? "Formatting…" : "Format & download JSON"}
-                </button>
-              </div>
-              {formatMerrillMessage && (
-                <div
-                  className={`mt-3 p-3 rounded-lg text-sm ${
-                    formatMerrillMessage.type === "success"
-                      ? "bg-green-50 border border-green-200 text-green-800"
-                      : "bg-red-50 border border-red-200 text-red-800"
-                  }`}
-                >
-                  {formatMerrillMessage.text}
-                </div>
-              )}
-            </div>
-            <ImportFromCsvPanel accounts={accounts} />
-            <ImportFromJsonPanel accounts={accounts} />
+            <BrokerImportPanel accounts={accounts} />
           </div>
         )}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import type { Account, Position } from "@/types/portfolio";
+import type { Account, BrokerType, Position } from "@/types/portfolio";
 import { useRouter } from "next/navigation";
 
 type AccountListProps = {
@@ -114,6 +114,18 @@ function getStrategyBadge(strategy: Account["strategy"]): { bg: string; text: st
   }
 }
 
+function getBrokerStyle(broker: BrokerType | undefined): { dot: string; label: string } | null {
+  if (!broker) return null;
+  switch (broker) {
+    case "Merrill":
+      return { dot: "bg-blue-600", label: "Merrill" };
+    case "Fidelity":
+      return { dot: "bg-emerald-600", label: "Fidelity" };
+    default:
+      return null;
+  }
+}
+
 export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountListProps) {
   const router = useRouter();
 
@@ -148,8 +160,8 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
               <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                 Account
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-28">
-                Account ref
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-36">
+                Broker / Ref
               </th>
               <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">
                 Positions
@@ -174,6 +186,7 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
           <tbody className="divide-y divide-gray-100">
             {accounts.map((account) => {
               const strategyStyle = getStrategyBadge(account.strategy);
+              const brokerStyle = getBrokerStyle(account.brokerType);
               const metrics = computeAccountMetrics(account);
 
               return (
@@ -207,11 +220,24 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
                     </div>
                   </td>
                   <td className="px-3 py-2.5 text-left text-gray-600 text-xs">
-                    {account.accountRef ? (
-                      <span className="font-mono">{account.accountRef}</span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
+                    <div className="flex items-center gap-2 min-w-0">
+                      {brokerStyle ? (
+                        <span
+                          className={`shrink-0 w-2.5 h-2.5 rounded-full ${brokerStyle.dot}`}
+                          title={brokerStyle.label}
+                          aria-label={brokerStyle.label}
+                        />
+                      ) : (
+                        <span className="shrink-0 w-2.5 h-2.5 rounded-full bg-gray-300" title="No broker" aria-hidden />
+                      )}
+                      {account.accountRef ? (
+                        <span className="font-mono truncate" title={account.accountRef}>
+                          {account.accountRef}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5 text-right text-gray-600 tabular-nums">
                     {account.positions?.length ?? 0}

@@ -8,7 +8,13 @@ type LoginAttemptItem = {
   ip: string;
   userAgent?: string;
   createdAt: string;
+  country?: string;
 };
+
+function displayIp(ip: string): string {
+  if (ip === "::1" || ip === "127.0.0.1") return "localhost";
+  return ip;
+}
 
 type LoginHistoryData = {
   successCount: number;
@@ -96,13 +102,14 @@ export default function LoginHistoryPage() {
                     <th className="text-left py-2 px-3 font-medium text-gray-600">Result</th>
                     <th className="text-left py-2 px-3 font-medium text-gray-600">Time (your timezone)</th>
                     <th className="text-left py-2 px-3 font-medium text-gray-600">IP</th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-600">Country</th>
                     <th className="text-left py-2 px-3 font-medium text-gray-600">User-Agent</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.attempts.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="py-6 text-center text-gray-500">
+                      <td colSpan={5} className="py-6 text-center text-gray-500">
                         No attempts in the selected window.
                       </td>
                     </tr>
@@ -119,7 +126,8 @@ export default function LoginHistoryPage() {
                           </span>
                         </td>
                         <td className="py-2 px-3 text-gray-700">{formatDate(a.createdAt)}</td>
-                        <td className="py-2 px-3 font-mono text-gray-600">{a.ip}</td>
+                        <td className="py-2 px-3 font-mono text-gray-600">{displayIp(a.ip)}</td>
+                        <td className="py-2 px-3 text-gray-600">{a.country ?? "—"}</td>
                         <td className="py-2 px-3 text-gray-500 max-w-[200px] truncate" title={a.userAgent ?? ""}>
                           {a.userAgent ?? "—"}
                         </td>

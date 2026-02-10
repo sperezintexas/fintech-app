@@ -21,6 +21,7 @@ paths = [
   '''\.env\.sample''',
   '''\.env\.template''',
   '''src/lib/__tests__/env\.test\.ts''',
+  '''scripts/seed-local-db\.ts''',
 ]
 
 # Additional rules for common secrets in this project

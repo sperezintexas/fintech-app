@@ -71,6 +71,41 @@ function underlyingFromSymbol(symbolCusip: string): string {
   return s.toUpperCase();
 }
 
+/**
+ * Parse OCC-style option suffix after # (e.g. B1326C425000 from TSLA#B1326C425000).
+ * Merrill format: [Call/Put letter][DD][M][Y][C/D][Strike*1000]
+ * - First letter: B = Call, N = Put (Merrill)
+ * - Next 4 digits: DD=day (13), M=month (2), Y=year digit (6 → 2026) → 2026-02-13
+ * - C = Credit (long/positive qty), D = Debit (short/negative qty)
+ * - Then strike*1000 (425000 → 425). So B1326C425000 = Call, 2026-02-13, 425. N1326D130000 = Put, debit, 13.
+ */
+function parseOccOptionSuffix(
+  suffix: string,
+  underlying: string
+): { optionType: "call" | "put"; symbol: string; strike: number; expiration: string; isDebit: boolean } | null {
+  const t = suffix.trim();
+  if (!t || t.length < 8) return null;
+  const callPutChar = t[0];
+  const optionType = callPutChar === "N" || callPutChar === "P" ? "put" : "call";
+  const dd = t.slice(1, 3);
+  const m = t.slice(3, 4);
+  const y = t.slice(4, 5);
+  const creditDebit = t.slice(5, 6).toUpperCase();
+  const isDebit = creditDebit === "D";
+  const ddNum = parseInt(dd, 10);
+  const mNum = parseInt(m, 10);
+  const yNum = parseInt(y, 10);
+  if (Number.isNaN(ddNum) || Number.isNaN(mNum) || Number.isNaN(yNum)) return null;
+  if (ddNum < 1 || ddNum > 31 || mNum < 1 || mNum > 12) return null;
+  const year = 2000 + yNum;
+  const expiration = `${year}-${String(mNum).padStart(2, "0")}-${String(ddNum).padStart(2, "0")}`;
+  const strikePart = t.slice(6).replace(/^[A-Z]/i, "");
+  const strikeNum = parseInt(strikePart, 10);
+  if (Number.isNaN(strikeNum) || strikeNum < 0) return null;
+  const strike = strikeNum >= 100000 ? strikeNum / 10000 : strikeNum / 1000;
+  return { optionType, symbol: underlying, strike, expiration, isDebit };
+}
+
 function parseOptionFromDescription(
   desc2: string
 ): { optionType: "call" | "put"; symbol: string; strike: number; expiration: string } | null {
@@ -138,6 +173,15 @@ export function parseMerrillCsv(csv: string): MerrillFormatResult {
     return { accounts: [] };
   }
 
+  /** Skip rows where accountRef/label look like numbers (misaligned columns). */
+  function looksLikeAccountRef(s: string): boolean {
+    const t = (s ?? "").replace(/,/g, "").trim();
+    if (!t) return false;
+    if (/^\d+\.?\d*$/.test(t)) return false;
+    if (/^[\d,]+\.?\d*$/.test(t)) return false;
+    return true;
+  }
+
   const byAccount = new Map<string, { label: string; activities: ActivityImportItem[] }>();
 
   for (let r = 1; r < lines.length; r++) {
@@ -162,6 +206,7 @@ export function parseMerrillCsv(csv: string): MerrillFormatResult {
 
     const accountRef = (row[iAccountNum] ?? "").trim() || (row[iAccountReg] ?? "").trim();
     const label = (row[iAccountReg] ?? "").trim() || accountRef;
+    if (!looksLikeAccountRef(accountRef) && !looksLikeAccountRef(label)) continue;
     const key = accountRef || label || "default";
     if (!byAccount.has(key)) {
       byAccount.set(key, { label, activities: [] });
@@ -194,12 +239,19 @@ export function parseMerrillCsv(csv: string): MerrillFormatResult {
       unitPrice,
     };
 
-    const optionInfo = parseOptionFromDescription(desc2);
+    let optionInfo = parseOptionFromDescription(desc2);
+    if (!optionInfo && symbolCusip.includes("#")) {
+      const suffix = symbolCusip.slice(symbolCusip.indexOf("#") + 1);
+      optionInfo = parseOccOptionSuffix(suffix, symbol || underlyingFromSymbol(symbolCusip));
+    }
     if (optionInfo && (symbolCusip.includes("#") || optionInfo.symbol)) {
       activity.symbol = optionInfo.symbol;
       activity.optionType = optionInfo.optionType;
       activity.strike = optionInfo.strike;
       activity.expiration = optionInfo.expiration;
+      if ("isDebit" in optionInfo && optionInfo.isDebit && activity.quantity > 0) {
+        activity.quantity = -activity.quantity;
+      }
     }
 
     if (desc2) activity.comment = desc2.slice(0, 200);

@@ -12,6 +12,7 @@ type AccountsTab = "portfolios" | "holdings" | "activity";
 type FormData = {
   name: string;
   accountRef: string;
+  brokerType: "" | "Merrill" | "Fidelity";
   balance: number;
   riskLevel: RiskLevel;
   strategy: Strategy;

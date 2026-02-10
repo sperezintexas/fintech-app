@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { Account } from "@/types/portfolio";
 
@@ -32,7 +33,12 @@ export function ImportFromJsonPanel({ accounts, onSuccess }: ImportFromJsonPanel
   const [accountMap, setAccountMap] = useState<Record<string, string>>({});
   const [recomputePositions, setRecomputePositions] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [result, setResult] = useState<{
+    type: "success" | "error";
+    message: string;
+    linkAccountId?: string;
+    positionsCount?: number;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -81,6 +87,8 @@ export function ImportFromJsonPanel({ accounts, onSuccess }: ImportFromJsonPanel
     setResult(null);
     const messages: string[] = [];
     let hadError = false;
+    let totalPositions = 0;
+    let firstAccountId: string | null = null;
     for (const group of parsed) {
       const key = group.accountRef || group.label || "default";
       const accountId = accountMap[key];
@@ -99,15 +107,23 @@ export function ImportFromJsonPanel({ accounts, onSuccess }: ImportFromJsonPanel
             recomputePositions,
           }),
         });
-        const data = (await res.json()) as { error?: string; imported?: number; positionsUpdated?: boolean };
+        const data = (await res.json()) as {
+          error?: string;
+          imported?: number;
+          positionsUpdated?: boolean;
+          positionsCount?: number;
+        };
         if (!res.ok) {
           messages.push(`${group.label || group.accountRef}: ${data.error ?? "Import failed"}`);
           hadError = true;
           continue;
         }
+        const posCount = data.positionsCount ?? 0;
         messages.push(
-          `${group.label || group.accountRef}: imported ${data.imported ?? 0} activities${data.positionsUpdated ? ", positions updated" : ""}.`
+          `${group.label || group.accountRef}: imported ${data.imported ?? 0} activities, ${posCount} position(s).`
         );
+        totalPositions += posCount;
+        firstAccountId = firstAccountId ?? accountId;
       } catch {
         messages.push(`${group.label || group.accountRef}: request failed`);
         hadError = true;
@@ -116,6 +132,10 @@ export function ImportFromJsonPanel({ accounts, onSuccess }: ImportFromJsonPanel
     setResult({
       type: hadError ? "error" : "success",
       message: messages.join(" "),
+      ...(!hadError && {
+        linkAccountId: firstAccountId ?? undefined,
+        positionsCount: totalPositions,
+      }),
     });
     if (!hadError) {
       setParsed(null);
@@ -158,6 +178,22 @@ export function ImportFromJsonPanel({ accounts, onSuccess }: ImportFromJsonPanel
       </div>
       {parsed && parsed.length > 0 && (
         <div className="mt-4 space-y-3">
+          <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 text-sm">
+            <p className="font-medium text-gray-700 mb-1">Import file summary</p>
+            <p className="text-gray-600">
+              <span className="font-medium">Accounts:</span>{" "}
+              {parsed.map((g) => `${g.label || g.accountRef} (${g.accountRef})`).join("; ")}
+            </p>
+            <p className="text-gray-600">
+              <span className="font-medium">Activities:</span>{" "}
+              {parsed.reduce((s, g) => s + g.activities.length, 0)} total
+              {parsed.length > 1 &&
+                ` (${parsed.map((g) => `${g.label || g.accountRef}: ${g.activities.length}`).join(", ")})`}
+            </p>
+            <p className="text-gray-600">
+              <span className="font-medium">Potential positions:</span> Computed after import
+            </p>
+          </div>
           <p className="text-xs font-medium text-gray-600">Map each group to an app account:</p>
           <ul className="space-y-2">
             {parsed.map((g) => {
@@ -213,7 +249,17 @@ export function ImportFromJsonPanel({ accounts, onSuccess }: ImportFromJsonPanel
               : "bg-red-50 border border-red-200 text-red-800"
           }`}
         >
-          {result.message}
+          <p>{result.message}</p>
+          {result.type === "success" && result.linkAccountId && (
+            <p className="mt-2">
+              <Link
+                href={`/holdings?accountId=${encodeURIComponent(result.linkAccountId)}`}
+                className="font-medium underline hover:no-underline"
+              >
+                View in Holdings →
+              </Link>
+            </p>
+          )}
         </div>
       )}
     </div>

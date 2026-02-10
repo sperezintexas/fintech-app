@@ -107,11 +107,16 @@ export type Recommendation = {
   createdAt: string;
 };
 
+/** Broker type for import/export format (Merrill = generic/Merrill CSV; Fidelity = Fidelity CSV). */
+export type BrokerType = "Merrill" | "Fidelity";
+
 export type Account = {
   _id: string;
   name: string;
   /** Broker/source account ref for import mapping (e.g. Merrill "51X-98940"). Not the MongoDB _id. */
   accountRef?: string;
+  /** Broker type so import/export uses the right CSV format. */
+  brokerType?: BrokerType;
   balance: number;
   riskLevel: RiskLevel;
   strategy: Strategy;
