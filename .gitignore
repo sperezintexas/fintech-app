@@ -60,5 +60,8 @@ test-results/
 playwright-report/
 playwright/.cache/
 
+# Local-only broker CSV / account data (do not commit)
+data/
+
 # Misc
 *.log
