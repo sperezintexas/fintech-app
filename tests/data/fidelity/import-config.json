@@ -1,8 +1,0 @@
-{
-  "activities": {
-    "path": "FidelityActOrdersHistory.csv",
-    "broker": "fidelity",
-    "recomputePositions": true,
-    "replaceExisting": true
-  }
-}

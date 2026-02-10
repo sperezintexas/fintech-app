@@ -1,6 +1,6 @@
 /**
  * Fidelity Activity CSV parser test.
- * Inline fixture + optional tests/data/fidelity/FidelityActOrdersHistory.csv.
+ * Inline fixture + tests/data/fidelity/importActOrders/FidelityActOrdersHistory.csv.
  */
 
 import * as fs from "fs";
@@ -9,7 +9,7 @@ import { describe, it, expect } from "vitest";
 import { parseFidelityCsv, parseFidelityActivitiesCsv, fidelityAccountToRef } from "../fidelity-csv";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const FIXTURE = path.join(REPO_ROOT, "tests", "data", "fidelity", "FidelityActOrdersHistory.csv");
+const FIXTURE = path.join(REPO_ROOT, "tests", "data", "fidelity", "importActOrders", "FidelityActOrdersHistory.csv");
 
 const MINIMAL_CSV = `Date,Description,Symbol,Quantity,Price,Amount,Cash Balance,Security Description,Commission,Fees,Account
 Feb-4-2026,YOU BOUGHT,RDW,500,10.19,"-5,092.50","+1,638.26",REDWIRE CORPORATION COM,--,--,Individual - TOD *0196

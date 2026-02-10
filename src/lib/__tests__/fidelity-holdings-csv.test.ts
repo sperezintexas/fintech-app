@@ -1,6 +1,6 @@
 /**
  * Fidelity Positions CSV parser test.
- * Inline fixture + optional tests/data/fidelity/Positions_All_Accounts.csv.
+ * Inline fixture + optional tests/data/fidelity/importActOrders/Positions_All_Accounts.csv (not present; inline only).
  */
 
 import * as fs from "fs";
@@ -9,7 +9,7 @@ import { describe, it, expect } from "vitest";
 import { parseFidelityHoldingsCsv } from "../fidelity-holdings-csv";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const FIXTURE = path.join(REPO_ROOT, "tests", "data", "fidelity", "Positions_All_Accounts.csv");
+const FIXTURE = path.join(REPO_ROOT, "tests", "data", "fidelity", "importActOrders", "Positions_All_Accounts.csv");
 
 const MINIMAL_CSV = `Symbol,Quantity,Last,$ Avg Cost,Value
 Cash (FCASH),"1,638.26",1.00,1,1638.26

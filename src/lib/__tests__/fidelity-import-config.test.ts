@@ -1,7 +1,7 @@
 /**
- * Fidelity import config + test data (Positions + Activity).
- * Fixtures: tests/data/fidelity (randomized, checked-in).
- * CLI with test data: pnpm run broker-import tests/data/fidelity/import-config.json [--preview]
+ * Fidelity import config + test data (activities in importActOrders).
+ * Fixtures: tests/data/fidelity/importActOrders (randomized, checked-in).
+ * CLI with test data: pnpm run broker-import tests/data/fidelity/importActOrders/import-config.json [--preview]
  */
 
 import * as fs from "fs";
@@ -11,7 +11,7 @@ import { parseFidelityHoldingsCsv } from "../fidelity-holdings-csv";
 import { parseFidelityActivitiesCsv } from "../fidelity-csv";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const CONFIG_DIR = path.join(REPO_ROOT, "tests", "data", "fidelity");
+const CONFIG_DIR = path.join(REPO_ROOT, "tests", "data", "fidelity", "importActOrders");
 const CONFIG_PATH = path.join(CONFIG_DIR, "import-config.json");
 
 type ImportConfig = {
