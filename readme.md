@@ -41,7 +41,7 @@ ecosystem.config.js           # pm2: web + scheduler (Docker)
 ```
 
 ## Documentation
-- **docs/** — Job types (`job.md`), Smart Grok Chat (`chat.md`), scanners (covered call, protective put, unified options), goal progress (`goal-progress.md`), CI pipeline (`ci.md`), Cursor rules (`cursorrules.md`)
+- **docs/** — Job types (`job.md`), Smart Grok Chat (`chat.md`), scanners (covered call, protective put, unified options), goal progress (`goal-progress.md`), CI pipeline (`ci.md`), Cursor rules (`cursorrules.md`). **Ghostbranch** (`ghostbranch-feature.md`): feature comparison with [Ghostfolio](https://github.com/ghostfolio/ghostfolio) and plan for activity-based portfolio sync (import trades).
 - **.cursor/rules/** — Page structure, API routes, alerts, strategy builders, Grok config, GitHub CI (`github-ci.mdc` for debugging Actions failures)
 - **.cursor/skills/** — `ci-failure` (diagnose GitHub Actions failures using workflow + docs/ci.md), test-lint, test-commit-push, docker-setup, fix-current-file
 
