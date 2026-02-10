@@ -36,6 +36,9 @@ const PROTECTED_API_ROUTES = [
   "/api/access-keys",
   "/api/auth-users",
   "/api/reports",
+  "/api/activities",
+  "/api/import",
+  "/api/xtools",
 ];
 
 // Public routes that don't need authentication

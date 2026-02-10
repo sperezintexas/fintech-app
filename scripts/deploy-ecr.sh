@@ -1,15 +1,13 @@
 #!/bin/bash
-# Build Docker image locally and push to ECR, then deploy to EB
-# This avoids building on the small t3.micro instance
+# Build Docker image locally and push to ECR (for AWS App Runner to pull)
 
 set -e
 
 REGION="${AWS_REGION:-us-east-1}"
 APP_NAME="myinvestments"
-ENV_NAME="${1:-myinvestments-prod}"
 
 echo "=========================================="
-echo "ECR Build & Deploy"
+echo "ECR Build & Push"
 echo "=========================================="
 
 # Get AWS account ID
@@ -45,36 +43,10 @@ echo ""
 echo "Step 4: Pushing to ECR..."
 docker push "$ECR_REPO:latest"
 
-# Step 5: Update Dockerrun.aws.json with ECR image
-echo ""
-echo "Step 5: Updating Dockerrun.aws.json..."
-cat > Dockerrun.aws.json << EOF
-{
-  "AWSEBDockerrunVersion": "1",
-  "Image": {
-    "Name": "$ECR_REPO:latest",
-    "Update": "true"
-  },
-  "Ports": [
-    {
-      "ContainerPort": 3000,
-      "HostPort": 3000
-    }
-  ],
-  "Logging": "/var/log/nodejs"
-}
-EOF
-
-# Step 6: Deploy to EB
-echo ""
-echo "Step 6: Deploying to Elastic Beanstalk..."
-eb deploy "$ENV_NAME" --timeout 10
-
 echo ""
 echo "=========================================="
-echo "Deployment Complete!"
+echo "ECR push complete"
 echo "=========================================="
 echo ""
-echo "ECR Image: $ECR_REPO:latest"
-echo ""
-eb status
+echo "Image: $ECR_REPO:latest"
+echo "App Runner will pull this image on next deployment (CI or aws apprunner start-deployment)."

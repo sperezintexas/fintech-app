@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Account, Position } from "@/types/portfolio";
+import { Account, Activity, Position } from "@/types/portfolio";
 import { AppHeader } from "@/components/AppHeader";
 import { BuyToCloseModal } from "@/components/BuyToCloseModal";
 import { PositionForm } from "@/components/PositionForm";
@@ -26,6 +26,7 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
     return initialAccounts.length > 0 ? initialAccounts[0]._id : "";
   });
   const [holdings, setHoldings] = useState<Position[]>([]);
+  const [hasActivities, setHasActivities] = useState(false);
   const [accountsLoading, setAccountsLoading] = useState(initialAccounts.length === 0);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -34,6 +35,10 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
   const [addToWatchlistLoading, setAddToWatchlistLoading] = useState<string | null>(null);
   const [addToWatchlistMessage, setAddToWatchlistMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [btcPosition, setBtcPosition] = useState<Position | null>(null);
+  type HoldingsTab = "positions" | "activity-history";
+  const [holdingsTab, setHoldingsTab] = useState<HoldingsTab>("positions");
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -65,7 +70,9 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
       });
       if (res.ok) {
         const data = await res.json();
-        setHoldings(data);
+        const list = Array.isArray(data) ? data : data?.positions ?? [];
+        setHoldings(list);
+        setHasActivities(data?.hasActivities === true);
       } else {
         const err = await res.json().catch(() => ({}));
         setError(err.error ?? "Failed to fetch holdings");
@@ -78,6 +85,27 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
     }
   }, [selectedAccountId]);
 
+  const fetchActivities = useCallback(async () => {
+    if (!selectedAccountId) return;
+    setActivitiesLoading(true);
+    try {
+      const res = await fetch(`/api/activities?accountId=${selectedAccountId}`, {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActivities(data);
+      } else {
+        setActivities([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch activities:", err);
+      setActivities([]);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  }, [selectedAccountId]);
+
   useEffect(() => {
     if (initialAccounts.length === 0) fetchAccounts();
   }, [initialAccounts.length, fetchAccounts]);
@@ -85,6 +113,10 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
   useEffect(() => {
     fetchHoldings();
   }, [fetchHoldings]);
+
+  useEffect(() => {
+    if (holdingsTab === "activity-history") fetchActivities();
+  }, [holdingsTab, selectedAccountId, fetchActivities]);
 
   useEffect(() => {
     if (!selectedAccountId) return;
@@ -349,11 +381,15 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
                   onChange={(e) => setSelectedAccountId(e.target.value)}
                   className="flex-1 max-w-md px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                 >
-                  {accounts.map((account) => (
-                    <option key={account._id} value={account._id}>
-                      {account.name} — {account.strategy} ({account.riskLevel} risk)
-                    </option>
-                  ))}
+                  {accounts.map((account) => {
+                    const last4 = account.accountRef?.slice(-4);
+                    const refSuffix = last4 ? ` ···${last4}` : "";
+                    return (
+                      <option key={account._id} value={account._id}>
+                        {account.name}{refSuffix} — {account.strategy} ({account.riskLevel} risk)
+                      </option>
+                    );
+                  })}
                 </select>
                 {selectedAccount && (
                   <div className="text-sm text-gray-500">
@@ -367,6 +403,31 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
                   </div>
                 )}
               </div>
+            </div>
+
+            <div className="flex gap-2 border-b border-gray-200 mb-4">
+              <button
+                type="button"
+                onClick={() => setHoldingsTab("positions")}
+                className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                  holdingsTab === "positions"
+                    ? "bg-white border border-b-0 border-gray-200 text-blue-600 -mb-px"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Positions
+              </button>
+              <button
+                type="button"
+                onClick={() => setHoldingsTab("activity-history")}
+                className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                  holdingsTab === "activity-history"
+                    ? "bg-white border border-b-0 border-gray-200 text-blue-600 -mb-px"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Activity history
+              </button>
             </div>
 
             {addToWatchlistMessage && (
@@ -412,7 +473,54 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
               </div>
             )}
 
-            {showForm ? (
+            {holdingsTab === "activity-history" ? (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                {activitiesLoading ? (
+                  <div className="p-8 flex justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600" />
+                  </div>
+                ) : activities.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    No activities yet. Import trades via API or CSV to see history.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Unit price</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Fee</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Comment</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {activities.map((a) => (
+                          <tr key={a._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{a.date}</td>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">{a.symbol}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{a.type}</td>
+                            <td className={`px-4 py-3 text-sm text-right ${a.quantity < 0 ? "text-red-600 font-medium" : "text-gray-900"}`}>
+                              {a.quantity < 0 ? `${a.quantity}` : a.quantity}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-gray-900">
+                              {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(a.unitPrice)}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-gray-600">
+                              {a.fee != null ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(a.fee) : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{a.comment ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : showForm ? (
               <PositionForm
                 position={editingPosition}
                 accountId={selectedAccountId}
@@ -422,6 +530,46 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
                   setShowForm(false);
                 }}
               />
+            ) : holdings.length === 0 ? (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg
+                    className="w-8 h-8 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                    />
+                  </svg>
+                </div>
+                {hasActivities ? (
+                  <>
+                    <p className="text-gray-700 font-medium">No open positions</p>
+                    <p className="text-gray-500 text-sm mt-1">
+                      Positions are derived from your activity history. Zero open positions means all trades are closed or net flat.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setHoldingsTab("activity-history")}
+                      className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 underline"
+                    >
+                      View Activity history →
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-gray-500">No holdings yet</p>
+                    <p className="text-gray-400 text-sm mt-1">
+                      Add a stock, option, or cash holding to get started — or import activities from CSV/JSON.
+                    </p>
+                  </>
+                )}
+              </div>
             ) : (
               <>
                 <PositionList

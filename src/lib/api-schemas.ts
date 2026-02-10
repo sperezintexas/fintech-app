@@ -84,12 +84,20 @@ export const strategySchema = z.enum([
   "aggressive",
 ]);
 
+export const brokerTypeSchema = z.enum(["Merrill", "Fidelity"]);
+
 export const createAccountSchema = z.object({
   name: z
     .string()
     .min(1, "Name is required")
     .max(100, "Name too long")
     .transform((s) => s.trim()),
+  accountRef: z
+    .string()
+    .max(50)
+    .transform((s) => s.trim())
+    .optional(),
+  brokerType: brokerTypeSchema.optional(),
   balance: z.coerce.number().min(0).default(0),
   riskLevel: riskLevelSchema.default("medium"),
   strategy: strategySchema.default("balanced"),
@@ -309,6 +317,61 @@ export const createReportTypeSchema = z.object({
 });
 
 export type CreateReportTypeInput = z.infer<typeof createReportTypeSchema>;
+
+// ============================================================================
+// Import Schemas
+// ============================================================================
+
+export const brokerImportSchema = z.object({
+  broker: z.enum(["merrill", "fidelity"]).default("merrill"),
+  exportType: z.enum(["activities", "holdings"]).default("activities"),
+  csv: z.string().min(1, "CSV data is required").max(10_000_000, "CSV too large (max 10MB)"),
+  mappings: z.record(z.string()).optional(),
+  recomputePositions: z.boolean().default(true),
+  fidelityHoldingsDefaultAccountRef: z.string().max(50).optional(),
+});
+
+export const csvImportSchema = z.object({
+  accountId: objectIdSchema,
+  csv: z.string().min(1, "CSV data is required").max(10_000_000, "CSV too large (max 10MB)"),
+  format: z.enum(["generic", "fidelity", "schwab"]).default("generic"),
+  recomputePositions: z.boolean().default(true),
+});
+
+export type BrokerImportInput = z.infer<typeof brokerImportSchema>;
+export type CsvImportInput = z.infer<typeof csvImportSchema>;
+
+// ============================================================================
+// Console/XTools Schemas (Admin operations)
+// ============================================================================
+
+export const consoleOpSchema = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("listCollections") }),
+  z.object({
+    op: z.literal("find"),
+    collection: z.string().min(1),
+    filter: z.record(z.unknown()).optional(),
+    limit: z.number().int().min(1).max(500).optional(),
+  }),
+  z.object({
+    op: z.literal("count"),
+    collection: z.string().min(1),
+    filter: z.record(z.unknown()).optional(),
+  }),
+  z.object({
+    op: z.literal("deleteMany"),
+    collection: z.string().min(1),
+    filter: z.record(z.unknown()),
+  }),
+  z.object({
+    op: z.literal("updateMany"),
+    collection: z.string().min(1),
+    filter: z.record(z.unknown()),
+    update: z.record(z.unknown()),
+  }),
+]);
+
+export type ConsoleOpInput = z.infer<typeof consoleOpSchema>;
 
 // ============================================================================
 // Query Parameter Schemas

@@ -18,6 +18,7 @@ import {
 } from "@/lib/push-client";
 import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 import { TIMEZONE_OPTIONS } from "@/lib/date-format";
+import { BrokerImportPanel } from "@/components/BrokerImportPanel";
 
 type TestChannel = "slack" | "twitter" | "push";
 
@@ -31,7 +32,7 @@ function AutomationContent() {
 
   // Alert preferences state
   const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState<"auth-users" | "settings" | "strategy">("auth-users");
+  const [activeTab, setActiveTab] = useState<"separation" | "auth-users" | "settings" | "strategy">("auth-users");
 
   // Default Setup to Job run history when visiting /automation with no tab
   useEffect(() => {
@@ -39,9 +40,14 @@ function AutomationContent() {
       router.replace("/automation/job-history");
     }
   }, [pathname, tabParam, router]);
+  useEffect(() => {
+    if (pathname === "/automation" && tabParam === "xtools") {
+      router.replace("/automation/xtools");
+    }
+  }, [pathname, tabParam, router]);
 
   useEffect(() => {
-    if (tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users") {
+    if (tabParam === "separation" || tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users") {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
@@ -511,7 +517,7 @@ function AutomationContent() {
 
   return (
     <>
-        {activeTab !== "auth-users" && activeTab !== "settings" && (
+        {activeTab !== "auth-users" && activeTab !== "settings" && activeTab !== "separation" && (
           <div className="flex items-center justify-end mb-6">
             <select
               value={selectedAccountId}
@@ -525,6 +531,21 @@ function AutomationContent() {
                 </option>
               ))}
             </select>
+          </div>
+        )}
+
+        {/* Separation Tab — Broker import (Merrill + Fidelity) */}
+        {activeTab === "separation" && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Broker import workflow</h3>
+              <ol className="list-decimal list-inside text-sm text-gray-700 space-y-1 mb-2">
+                <li><strong>Export</strong> — From Merrill Edge or Fidelity, export Activities (transactions) or Holdings (positions) as CSV.</li>
+                <li><strong>Parse &amp; preview</strong> — Choose broker and export type, upload CSV, then Parse to see accounts and counts.</li>
+                <li><strong>Import</strong> — Map each broker account to an app account and click Import. No intermediate JSON file.</li>
+              </ol>
+            </div>
+            <BrokerImportPanel accounts={accounts} />
           </div>
         )}
 

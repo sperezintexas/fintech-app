@@ -45,6 +45,3 @@ docker-compose*
 # Misc (keep README if needed)
 *.md
 !README.md
-
-# Elastic Beanstalk
-.elasticbeanstalk/*
