@@ -309,15 +309,19 @@ export default function SchedulerPage() {
 
   const portfolioJobTypes = jobTypes.filter((t) => t.enabled && t.supportsPortfolio);
   const scheduledCount = jobs.filter((j) => j.nextRunAt).length;
-  const dailyOptionsJob = jobs.find((j) => j.name === "Daily Options Scanner");
   const MARKET_HOURS_CRON = "15 14-20 * * 1-5";
-  const needsDailyOptionsMarketHoursFix = dailyOptionsJob && dailyOptionsJob.scheduleCron !== MARKET_HOURS_CRON;
+  const unifiedScannerJob = jobs.find(
+    (j) => j.jobType === "unifiedOptionsScanner" || j.name === "Daily Options Scanner"
+  );
+  const needsDailyOptionsMarketHoursFix =
+    unifiedScannerJob != null && unifiedScannerJob.scheduleCron?.trim() !== MARKET_HOURS_CRON;
 
   return (
     <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Scheduler</h2>
           <p className="text-gray-600 mt-1 text-sm">Portfolio-level jobs: when run, each job can use data across all accounts. Manage jobs in the table below.</p>
+          <p className="text-gray-500 mt-1 text-xs">Schedules are stored in UTC. Next/Last run are shown in Central. If Daily Options Scanner shows a next run around 3 AM Central, click <strong>Fix Daily Options to market hours</strong> to set 9:15 AM–3:15 PM ET.</p>
         </div>
 
         {/* Toolbar: quick actions */}
@@ -434,14 +438,16 @@ export default function SchedulerPage() {
                     <th
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell cursor-pointer hover:bg-gray-50 select-none"
                       onClick={() => toggleSort('nextRunAt')}
+                      title="Times in Central (CST/CDT)"
                     >
-                      Next run {sortKey === 'nextRunAt' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                      Next run (Central) {sortKey === 'nextRunAt' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
                     </th>
                     <th
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell cursor-pointer hover:bg-gray-50 select-none"
                       onClick={() => toggleSort('lastRunAt')}
+                      title="Times in Central (CST/CDT)"
                     >
-                      Last run {sortKey === 'lastRunAt' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                      Last run (Central) {sortKey === 'lastRunAt' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
                     </th>
                     <th
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-20 cursor-pointer hover:bg-gray-50 select-none"
@@ -456,7 +462,12 @@ export default function SchedulerPage() {
                   {sortedJobs.map((j) => {
                     const typeInfo = jobTypes.find((t) => t.id === j.jobType);
                     const typeName = typeInfo?.name ?? j.jobType;
-                    const scheduleFriendly = cronToHuman(j.scheduleCron ?? "0 16 * * 1-5");
+                    const cron = (j.scheduleCron ?? "0 16 * * 1-5").trim();
+                    const scheduleFriendly = cronToHuman(cron);
+                    const isMarketHoursCron = cron === "15 14-20 * * 1-5";
+                    const scheduleLabel = isMarketHoursCron
+                      ? "At :15 past the hour, 9:15 AM–3:15 PM ET (UTC 14–20), Mon–Fri"
+                      : scheduleFriendly;
                     const nextRunFriendly = formatCst(j.nextRunAt ?? null);
                     const lastRunFriendly = formatCst(j.lastRunAt ?? null);
                     return (
@@ -468,7 +479,7 @@ export default function SchedulerPage() {
                             <div className="text-xs text-gray-500 line-clamp-2" title={typeInfo.description}>{typeInfo.description}</div>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{scheduleFriendly}</td>
+                        <td className="px-4 py-3 text-gray-600 text-sm whitespace-nowrap" title={scheduleFriendly}>{scheduleLabel}</td>
                         <td className="px-4 py-3 text-gray-600 text-xs hidden md:table-cell">{nextRunFriendly}</td>
                         <td className="px-4 py-3 text-gray-600 text-xs hidden md:table-cell">{lastRunFriendly}</td>
                         <td className="px-4 py-3">

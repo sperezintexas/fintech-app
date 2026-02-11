@@ -95,17 +95,10 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
   return { created, jobs: jobNames };
 }
 
-// GET - Get job status and schedules (uses agenda-client; smart-scheduler runs jobs)
+// GET - Get job status and schedules. Does not schedule Agenda jobs (smart-scheduler does that when running).
 export async function GET() {
   try {
     const status = await getJobStatus();
-    const hasRefreshPrices = status.jobs.some((j) => j.name === "refreshHoldingsPrices");
-    if (!hasRefreshPrices) {
-      await scheduleJob("refreshHoldingsPrices", "15 minutes");
-      const nextStatus = await getJobStatus();
-      return NextResponse.json({ status: "running", ...nextStatus });
-    }
-
     return NextResponse.json({
       status: "running",
       ...status,
@@ -202,22 +195,24 @@ export async function POST(request: NextRequest) {
         const db = await getDb();
         const MARKET_HOURS_CRON = "15 14-20 * * 1-5";
         const jobsColl = db.collection<JobDoc>("reportJobs");
-        const job = await jobsColl.findOne({ name: "Daily Options Scanner" });
+        const job =
+          (await jobsColl.findOne({ jobType: "unifiedOptionsScanner" })) ??
+          (await jobsColl.findOne({ name: "Daily Options Scanner" }));
         if (!job) {
           return NextResponse.json({
             success: true,
-            message: "No Daily Options Scanner job found; create it via Create recommended jobs.",
+            message: "No Daily Options Scanner / Unified Options Scanner job found; create it via Create recommended jobs.",
           });
         }
         const jobId = (job as { _id: ObjectId })._id.toString();
-        if (job.scheduleCron === MARKET_HOURS_CRON) {
+        if (job.scheduleCron?.trim() === MARKET_HOURS_CRON) {
           return NextResponse.json({
             success: true,
             message: "Daily Options Scanner already set to market hours (9:15 AM–4:15 PM ET).",
           });
         }
         await jobsColl.updateOne(
-          { name: "Daily Options Scanner" },
+          { _id: (job as { _id: ObjectId })._id },
           { $set: { scheduleCron: MARKET_HOURS_CRON, updatedAt: new Date().toISOString() } }
         );
         await upsertReportJobSchedule(jobId, MARKET_HOURS_CRON);

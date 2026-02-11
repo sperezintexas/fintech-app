@@ -121,16 +121,16 @@ function parseOptionFromDescription(
 
 function mapDescription1(desc1: string): { type: ActivityType; flipQty: boolean } | null {
   const d = desc1.trim().toLowerCase();
-  if (d === "sell" || d === "option sale" || d === "option sale " || d === "sale" || d === "sale ") {
+  if (d === "sell" || d === "option sale" || d === "option sale " || d === "sale" || d === "sale " || d.startsWith("option sale") || d.startsWith("pending sale") || d.startsWith("sale ")) {
     return { type: "SELL", flipQty: false };
   }
-  if (d === "option purchase" || d === "option purchase " || d === "buy" || d === "purchase") {
+  if (d === "option purchase" || d === "option purchase " || d === "buy" || d === "purchase" || d.startsWith("option purchase") || d.startsWith("pending purchase") || d.startsWith("buy ")) {
     return { type: "BUY", flipQty: false };
   }
-  if (d === "option expired") {
+  if (d === "option expired" || d.startsWith("option expired")) {
     return { type: "SELL", flipQty: false };
   }
-  if (d === "interest") {
+  if (d === "interest" || d.startsWith("interest ")) {
     return { type: "INTEREST", flipQty: false };
   }
   if (d.includes("dividend")) {
@@ -151,20 +151,39 @@ export type MerrillFormatResult = {
  * Parse Merrill Edge CSV string into activities grouped by account.
  * Requires columns: Trade Date, Symbol/CUSIP, Quantity. Optional: Account #, Description 1/2, Price, Amount.
  */
+/** Extract account ref from "IRA-Edge 51X-98940" or "Roth IRA-Edge 79Z-79494" (last token like XX-XXXXX). */
+function accountRefFromAccountColumn(accountCell: string): string {
+  const t = (accountCell ?? "").trim();
+  const parts = t.split(/\s+/);
+  const last = parts[parts.length - 1];
+  return last && /^[A-Z0-9]+-[A-Z0-9]+$/i.test(last) ? last : t;
+}
+
 export function parseMerrillCsv(csv: string): MerrillFormatResult {
   const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) {
     return { accounts: [] };
   }
 
-  const header = parseCsvLine(lines[0]);
+  let headerRowIndex = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const row = parseCsvLine(lines[i]);
+    if (row.some((cell) => /trade date/i.test(cell))) {
+      headerRowIndex = i;
+      break;
+    }
+  }
+  const header = parseCsvLine(lines[headerRowIndex]);
+  const dataStartIndex = headerRowIndex + 1;
+
   const iTradeDate = header.findIndex((h) => /trade date/i.test(h));
   const iAccountReg = header.findIndex((h) => /account registration/i.test(h));
   const iAccountNum = header.findIndex((h) => /account #/i.test(h));
+  const iAccount = header.findIndex((h) => /^account$/i.test(h));
   const iType = header.findIndex((h) => /^type$/i.test(h));
-  const iDesc1 = header.findIndex((h) => /description 1/i.test(h));
+  const iDesc1 = header.findIndex((h) => /description 1/i.test(h) || /^description$/i.test(h));
   const iDesc2 = header.findIndex((h) => /description 2/i.test(h));
-  const iSymbol = header.findIndex((h) => /symbol\/cusip/i.test(h));
+  const iSymbol = header.findIndex((h) => /symbol\/?\s*cusip/i.test(h));
   const iQty = header.findIndex((h) => /quantity/i.test(h));
   const iPrice = header.findIndex((h) => /price/i.test(h));
   const iAmount = header.findIndex((h) => /amount/i.test(h));
@@ -184,7 +203,7 @@ export function parseMerrillCsv(csv: string): MerrillFormatResult {
 
   const byAccount = new Map<string, { label: string; activities: ActivityImportItem[] }>();
 
-  for (let r = 1; r < lines.length; r++) {
+  for (let r = dataStartIndex; r < lines.length; r++) {
     const row = parseCsvLine(lines[r]);
     const type = row[iType] ?? "";
     const desc1 = (row[iDesc1] ?? "").trim();
@@ -204,8 +223,12 @@ export function parseMerrillCsv(csv: string): MerrillFormatResult {
     const mapped = mapDescription1(desc1);
     if (!mapped) continue;
 
-    const accountRef = (row[iAccountNum] ?? "").trim() || (row[iAccountReg] ?? "").trim();
-    const label = (row[iAccountReg] ?? "").trim() || accountRef;
+    const accountCell = (row[iAccount] ?? "").trim();
+    const accountRef =
+      (row[iAccountNum] ?? "").trim() ||
+      (row[iAccountReg] ?? "").trim() ||
+      (iAccount >= 0 ? accountRefFromAccountColumn(accountCell) : "");
+    const label = (row[iAccountReg] ?? "").trim() || (iAccount >= 0 ? accountCell : "") || accountRef;
     if (!looksLikeAccountRef(accountRef) && !looksLikeAccountRef(label)) continue;
     const key = accountRef || label || "default";
     if (!byAccount.has(key)) {

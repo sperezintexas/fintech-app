@@ -1,4 +1,4 @@
-# Ghostbranch: Feature comparison & robust portfolio sync
+              # Ghostbranch: Feature comparison & robust portfolio sync
 
 ## Goal
 
