@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import type { Job, AlertDeliveryChannel, ReportTemplateId } from "@/types/portfolio";
 import { REPORT_TEMPLATES } from "@/types/portfolio";
@@ -86,6 +86,38 @@ export default function SchedulerPage() {
 
   const { formatDate } = useDisplayTimezone();
 
+  const [refreshInterval, setRefreshInterval] = useState(30); // seconds, 0=off
+  const [sortKey, setSortKey] = useState<'name' | 'scheduleCron' | 'nextRunAt' | 'lastRunAt' | 'status'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const sortedJobs = useMemo(() => {
+    return [...jobs].sort((a, b) => {
+      const getVal = (j: Job, k: string) => {
+        const val = (j as Record<string, unknown>)[k];
+        if (['nextRunAt', 'lastRunAt'].includes(k)) {
+          return val ? new Date(val as string).getTime() : -Infinity;
+        }
+        return String(val ?? '');
+      };
+      const va = getVal(a, sortKey);
+      const vb = getVal(b, sortKey);
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [jobs, sortKey, sortDir]);
+
+  const toggleSort = (newKey: 'name' | 'scheduleCron' | 'nextRunAt' | 'lastRunAt' | 'status') => {
+    if (sortKey !== newKey) {
+      setSortKey(newKey);
+      setSortDir('asc');
+    } else {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    }
+  };
+
+  // Auto-refresh effect (moved after useCallbacks)
+
   const scheduleToCron = (time: string, freq: "daily" | "weekdays" | "sunday"): string => {
     const [h, m] = time.split(":").map((x) => parseInt(x, 10) || 0);
     const hour = Math.min(23, Math.max(0, h));
@@ -134,6 +166,16 @@ export default function SchedulerPage() {
     fetchJobTypes();
     fetchSchedulerStatus();
   }, [fetchJobTypes, fetchSchedulerStatus]);
+
+  // Auto-refresh effect
+  useEffect(() => {
+    if (refreshInterval === 0) return;
+    const id = setInterval(async () => {
+      await fetchSchedulerStatus();
+      await fetchJobs();
+    }, refreshInterval * 1000);
+    return () => clearInterval(id);
+  }, [refreshInterval, fetchSchedulerStatus, fetchJobs]);
 
   const handleSchedulerAction = async (action: string, jobName?: string) => {
     setSchedulerLoading(true);
@@ -289,16 +331,26 @@ export default function SchedulerPage() {
           >
             Run Portfolio Now
           </button>
-          <button
-            onClick={fetchSchedulerStatus}
-            disabled={schedulerLoading}
-            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 text-sm"
-          >
-            Refresh Status
-          </button>
-          <Link href="/health" className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm">
-            Health Status
-          </Link>
+            <button
+              onClick={fetchSchedulerStatus}
+              disabled={schedulerLoading}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 text-sm"
+            >
+              Refresh Status
+            </button>
+            <div className="flex items-center gap-1 text-sm text-gray-600">
+              <label className="text-xs">Auto:</label>
+              <select
+                value={refreshInterval}
+                onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                className="px-2 py-1 border border-gray-200 rounded text-xs bg-white focus:ring-1 focus:ring-blue-500"
+              >
+                <option value={0}>Off</option>
+                <option value={30}>30s</option>
+                <option value={60}>1m</option>
+                <option value={300}>5m</option>
+              </select>
+            </div>
           {schedulerMessage && (
             <span className={`px-3 py-1.5 rounded-lg text-sm ${schedulerMessage.startsWith("Error") ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
               {schedulerMessage}
@@ -353,34 +405,65 @@ export default function SchedulerPage() {
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Description</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Schedule</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Next run</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Last run</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Status</th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-72 cursor-pointer hover:bg-gray-50 select-none"
+                      onClick={() => toggleSort('name')}
+                    >
+                      Job {sortKey === 'name' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    </th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none whitespace-nowrap"
+                      onClick={() => toggleSort('scheduleCron')}
+                    >
+                      Schedule {sortKey === 'scheduleCron' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    </th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell cursor-pointer hover:bg-gray-50 select-none"
+                      onClick={() => toggleSort('nextRunAt')}
+                    >
+                      Next run {sortKey === 'nextRunAt' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    </th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell cursor-pointer hover:bg-gray-50 select-none"
+                      onClick={() => toggleSort('lastRunAt')}
+                    >
+                      Last run {sortKey === 'lastRunAt' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    </th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-20 cursor-pointer hover:bg-gray-50 select-none"
+                      onClick={() => toggleSort('status')}
+                    >
+                      Status {sortKey === 'status' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-28">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
-                  {jobs.map((j) => {
+                  {sortedJobs.map((j) => {
                     const typeInfo = jobTypes.find((t) => t.id === j.jobType);
                     const typeName = typeInfo?.name ?? j.jobType;
                     const scheduleFriendly = cronToHuman(j.scheduleCron ?? "0 16 * * 1-5");
                     const nextRunFriendly = j.nextRunAt ? formatDate(j.nextRunAt, { dateStyle: "short", timeStyle: "short" }) : "—";
                     const lastRunFriendly = j.lastRunAt ? formatDate(j.lastRunAt, { dateStyle: "short", timeStyle: "short" }) : "—";
                     return (
-                      <tr key={j._id} className="hover:bg-gray-50/50">
-                        <td className="px-4 py-3 font-medium text-gray-900">{j.name}</td>
-                        <td className="px-4 py-3 text-gray-700">{typeName}</td>
-                        <td className="px-4 py-3 text-gray-600 max-w-xs truncate hidden lg:table-cell" title={typeInfo?.description ?? ""}>{typeInfo?.description ?? "—"}</td>
+                      <tr key={j._id} className={`hover:bg-gray-50/50 ${(j.status as string) === 'failed' ? 'bg-red-50/80 border-l-4 border-red-400' : ''}`}>
+                        <td className="px-4 py-3 w-72">
+                          <div className="font-medium text-gray-900 mb-1">{j.name}</div>
+                          <div className="text-sm text-gray-700 mb-1">{typeName}</div>
+                          {typeInfo?.description && (
+                            <div className="text-xs text-gray-500 line-clamp-2" title={typeInfo.description}>{typeInfo.description}</div>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{scheduleFriendly}</td>
                         <td className="px-4 py-3 text-gray-600 text-xs hidden md:table-cell">{nextRunFriendly}</td>
                         <td className="px-4 py-3 text-gray-600 text-xs hidden md:table-cell">{lastRunFriendly}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${(j.status ?? "active") === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>
-                            {j.status ?? "active"}
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            (j.status as string) === 'failed' ? 'bg-red-100 text-red-800' :
+                            (j.status ?? "active") === "active" ? "bg-green-100 text-green-800" :
+                            "bg-gray-100 text-gray-700"
+                          }`}>
+                            {(j.status as string) === 'failed' ? 'Failed' : j.status ?? "active"}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">

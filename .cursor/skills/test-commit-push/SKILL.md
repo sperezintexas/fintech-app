@@ -1,7 +1,7 @@
 ---
 name: test-commit-push
-version: "1.0.5"
-description: Safe local dev → git workflow. Run tests, typecheck, lint, gitleaks; fix failures; generate conventional commit; suggest git add/commit/push. Use when preparing to commit, pushing changes, or when the user asks to test-commit-push.
+version: "1.0.6"
+description: Safe local dev → git workflow. Run tests, typecheck, lint, gitleaks; fix failures; bump app version when asked; generate conventional commit; suggest git add/commit/push. Use when preparing to commit, pushing changes, or when the user asks to test-commit-push.
 ---
 
 # Test-Commit-Push Workflow
@@ -31,6 +31,14 @@ If any test, typecheck, lint, or gitleaks check would fail:
 
 Pre-commit hooks (including gitleaks) will run on `git commit`. Running the gitleaks check in step 1 avoids surprises at commit time.
 
+### App Version Bump (When Requested)
+
+If the user asks to **bump app version** (or "bump version", "update version"):
+
+1. **Before** `git add`, run: `npm version patch --no-git-tag-version`
+2. This updates `package.json` (and `package-lock.json` if present). Include those files in the commit.
+3. Optionally mention the new version in the commit message, e.g. `feat(scheduler): improve Manage Jobs UI; bump v1.1.9`
+
 ### Conventional Commit Message (One Line)
 
 - Angular-style: `feat:`, `fix:`, `refactor:`, `chore:`, `test:`, `docs:`, etc.
@@ -38,6 +46,8 @@ Pre-commit hooks (including gitleaks) will run on `git commit`. Running the gitl
 - No body; if change touches multiple areas, use a more generic type or suggest multiple commits
 
 ### Git Commands (Exact Order)
+
+If you bumped version in this run, `git add` will include `package.json` (and `package-lock.json`).
 
 ```bash
 git add .
