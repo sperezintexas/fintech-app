@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import type { Job, AlertDeliveryChannel, ReportTemplateId } from "@/types/portfolio";
 import { REPORT_TEMPLATES } from "@/types/portfolio";
-import { cronToHuman } from "@/lib/cron-utils";
+import { cronToHumanInTimezone } from "@/lib/cron-utils";
 import { formatInTimezone } from "@/lib/date-format";
 
 const _DEFAULT_SCHEDULE_JOB_NAMES = [
@@ -15,22 +15,26 @@ const _DEFAULT_SCHEDULE_JOB_NAMES = [
   "Data Cleanup",
 ] as const;
 
-const SCHEDULE_PRESETS: Array<{ label: string; cron: string }> = [
-  { label: "Weekly Portfolio (Sun 6 PM)", cron: "0 18 * * 0" },
-  { label: "Daily Options Scanner (weekdays :15 market hrs)", cron: "15 14-20 * * 1-5" },
-  { label: "Watchlist Snapshot (Mon–Fri 9 AM & 4 PM ET)", cron: "0 14,21 * * 1-5" },
-  { label: "Deliver Alerts (Mon–Fri 4:30 PM)", cron: "30 16 * * 1-5" },
-  { label: "Data Cleanup (Daily 3 AM)", cron: "0 3 * * *" },
-  { label: "Weekdays 4:00 PM", cron: "0 16 * * 1-5" },
-  { label: "Weekdays 9:00 AM", cron: "0 9 * * 1-5" },
-];
+const CST = "America/Chicago";
+const SCHEDULE_PRESETS: Array<{ label: string; cron: string }> = (() => {
+  const tz = (c: string) => cronToHumanInTimezone(c, CST, "CST");
+  return [
+    { label: `Weekly Portfolio (${tz("0 18 * * 0")})`, cron: "0 18 * * 0" },
+    { label: `Daily Options (${tz("15 14-20 * * 1-5")})`, cron: "15 14-20 * * 1-5" },
+    { label: `Watchlist (${tz("0 14,21 * * 1-5")})`, cron: "0 14,21 * * 1-5" },
+    { label: `Deliver Alerts (${tz("30 16 * * 1-5")})`, cron: "30 16 * * 1-5" },
+    { label: `Data Cleanup (${tz("0 3 * * *")})`, cron: "0 3 * * *" },
+    { label: tz("0 16 * * 1-5"), cron: "0 16 * * 1-5" },
+    { label: tz("0 9 * * 1-5"), cron: "0 9 * * 1-5" },
+  ];
+})();
 
 /** Recommended cron per jobType; must match API RECOMMENDED_CRON_BY_JOB_TYPE. */
 const RECOMMENDED_CRON_BY_JOB_TYPE: Record<string, string> = {
   portfoliosummary: "0 18 * * 0",
   unifiedOptionsScanner: "15 14-20 * * 1-5",
   watchlistreport: "0 14,21 * * 1-5",
-  riskScanner: "0 17 * * 1-5",
+  riskScanner: "0 23 * * 1-5",
   deliverAlerts: "30 16 * * 1-5",
   cleanup: "0 3 * * *",
 };
@@ -471,14 +475,7 @@ export default function SchedulerPage() {
                     const typeInfo = jobTypes.find((t) => t.id === j.jobType);
                     const typeName = typeInfo?.name ?? j.jobType;
                     const cron = (j.scheduleCron ?? "0 16 * * 1-5").trim();
-                    const scheduleFriendly = cronToHuman(cron);
-                    const isMarketHoursCron = cron === "15 14-20 * * 1-5";
-                    const isWatchlistCron = cron === "0 14,21 * * 1-5";
-                    const scheduleLabel = isMarketHoursCron
-                      ? "At :15 past the hour, 9:15 AM–3:15 PM ET (UTC 14–20), Mon–Fri"
-                      : isWatchlistCron
-                        ? "9 AM & 4 PM ET (UTC 14, 21), Mon–Fri"
-                        : scheduleFriendly;
+                    const scheduleLabel = cronToHumanInTimezone(cron, CST, "CST");
                     const nextRunFriendly = formatCst(j.nextRunAt ?? null);
                     const lastRunFriendly = formatCst(j.lastRunAt ?? null);
                     return (
@@ -490,7 +487,7 @@ export default function SchedulerPage() {
                             <div className="text-xs text-gray-500 line-clamp-2" title={typeInfo.description}>{typeInfo.description}</div>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-gray-600 text-sm whitespace-nowrap" title={scheduleFriendly}>{scheduleLabel}</td>
+                        <td className="px-4 py-3 text-gray-600 text-sm whitespace-nowrap" title={scheduleLabel}>{scheduleLabel}</td>
                         <td className="px-4 py-3 text-gray-600 text-xs hidden md:table-cell">{nextRunFriendly}</td>
                         <td className="px-4 py-3 text-gray-600 text-xs hidden md:table-cell">{lastRunFriendly}</td>
                         <td className="px-4 py-3">

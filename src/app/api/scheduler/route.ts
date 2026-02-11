@@ -22,7 +22,7 @@ const RECOMMENDED_CRON_BY_JOB_TYPE: Record<string, string> = {
   portfoliosummary: "0 18 * * 0",
   unifiedOptionsScanner: "15 14-20 * * 1-5",
   watchlistreport: "0 14,21 * * 1-5",
-  riskScanner: "0 17 * * 1-5",
+  riskScanner: "0 23 * * 1-5",
   deliverAlerts: "30 16 * * 1-5",
   cleanup: "0 3 * * *",
 };
@@ -50,7 +50,7 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
     { name: "Weekly Portfolio", jobType: "portfoliosummary", accountId: null, scheduleCron: "0 18 * * 0", config: { includeAiInsights: true } },
     { name: "Daily Options Scanner", jobType: "unifiedOptionsScanner", accountId: null, scheduleCron: "15 14-20 * * 1-5" },
     { name: "Watchlist Snapshot", jobType: "watchlistreport", accountId: null, scheduleCron: "0 14,21 * * 1-5" },
-    { name: "Risk Scanner", jobType: "riskScanner", accountId: null, scheduleCron: "0 17 * * 1-5" },
+    { name: "Risk Scanner", jobType: "riskScanner", accountId: null, scheduleCron: "0 23 * * 1-5" },
     { name: "Deliver Alerts", jobType: "deliverAlerts", accountId: null, scheduleCron: "30 16 * * 1-5" },
     { name: "Data Cleanup", jobType: "cleanup", accountId: null, scheduleCron: "0 3 * * *" },
   ];
