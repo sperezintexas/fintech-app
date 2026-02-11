@@ -12,12 +12,13 @@ import type { MarketConditions } from "@/types/portfolio";
 // Initialize Yahoo Finance instance (v3 requirement)
 const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
-// Major indices ETFs to track
+// Major indices ETFs and VIX to track
 const INDEX_TICKERS = [
   { symbol: "SPY", name: "S&P 500" },
   { symbol: "QQQ", name: "Nasdaq 100" },
   { symbol: "DIA", name: "Dow Jones" },
   { symbol: "IWM", name: "Russell 2000" },
+  { symbol: "^VIX", name: "CBOE Volatility Index (VIX)" },
 ];
 
 // Cache for market data (refreshes every 5 minutes)

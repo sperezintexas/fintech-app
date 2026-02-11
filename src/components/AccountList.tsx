@@ -1,7 +1,9 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import type { Account, BrokerType, Position } from "@/types/portfolio";
 import { useRouter } from "next/navigation";
+import { downloadCsv } from "@/lib/csv-export";
 
 type AccountListProps = {
   accounts: Account[];
@@ -126,8 +128,109 @@ function getBrokerStyle(broker: BrokerType | undefined): { dot: string; label: s
   }
 }
 
+type SortKey = "name" | "accountRef" | "positions" | "costBasis" | "marketValue" | "dayChange" | "unrealizedPL";
+
+function SortableTh({
+  label,
+  sortKey,
+  currentSort,
+  sortDir,
+  onSort,
+  className = "",
+}: {
+  label: string;
+  sortKey: SortKey;
+  currentSort: SortKey | null;
+  sortDir: "asc" | "desc";
+  onSort: (key: SortKey) => void;
+  className?: string;
+}) {
+  const isActive = currentSort === sortKey;
+  return (
+    <th
+      className={`px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100 ${className}`}
+      onClick={() => onSort(sortKey)}
+      role="columnheader"
+      aria-sort={isActive ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {isActive && (
+          <span className="text-blue-600" aria-hidden>
+            {sortDir === "asc" ? "↑" : "↓"}
+          </span>
+        )}
+      </span>
+    </th>
+  );
+}
+
 export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountListProps) {
   const router = useRouter();
+  const [sortBy, setSortBy] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (key: SortKey) => {
+    if (sortBy === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedAccounts = useMemo(() => {
+    if (!sortBy) return accounts;
+    const metrics = new Map(accounts.map((a) => [a._id, computeAccountMetrics(a)]));
+    return [...accounts].sort((a, b) => {
+      const ma = metrics.get(a._id)!;
+      const mb = metrics.get(b._id)!;
+      let cmp = 0;
+      switch (sortBy) {
+        case "name":
+          cmp = (a.name ?? "").localeCompare(b.name ?? "");
+          break;
+        case "accountRef":
+          cmp = (a.accountRef ?? "").localeCompare(b.accountRef ?? "");
+          break;
+        case "positions":
+          cmp = (a.positions?.length ?? 0) - (b.positions?.length ?? 0);
+          break;
+        case "costBasis":
+          cmp = ma.costBasis - mb.costBasis;
+          break;
+        case "marketValue":
+          cmp = ma.marketValue - mb.marketValue;
+          break;
+        case "dayChange":
+          cmp = ma.dayChange - mb.dayChange;
+          break;
+        case "unrealizedPL":
+          cmp = ma.unrealizedPL - mb.unrealizedPL;
+          break;
+        default:
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [accounts, sortBy, sortDir]);
+
+  const handleExportCsv = () => {
+    const headers = ["Account", "Broker/Ref", "Positions", "Cost basis", "Market value", "Day change", "P&L"];
+    const rows = sortedAccounts.map((account) => {
+      const m = computeAccountMetrics(account);
+      return [
+        account.name ?? "",
+        account.accountRef ?? "",
+        String(account.positions?.length ?? 0),
+        m.costBasis.toFixed(2),
+        m.marketValue.toFixed(2),
+        m.dayChange.toFixed(2),
+        m.unrealizedPL.toFixed(2),
+      ];
+    });
+    downloadCsv(`my-portfolios-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+  };
 
   if (accounts.length === 0) {
     return (
@@ -153,38 +256,84 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="flex justify-end px-3 py-2 border-b border-gray-100 bg-gray-50/50">
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          className="text-sm font-medium text-gray-600 hover:text-gray-900 flex items-center gap-1.5"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export CSV
+        </button>
+      </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-sm" aria-label="Accounts">
+        <table className="w-full min-w-[640px] text-sm" aria-label="My Portfolios">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50/80">
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Account
-              </th>
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-36">
-                Broker / Ref
-              </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">
-                Positions
-              </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Cost basis
-              </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Market value
-              </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Day change
-              </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                P&L
-              </th>
+              <SortableTh
+                label="Account"
+                sortKey="name"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableTh
+                label="Broker / Ref"
+                sortKey="accountRef"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="w-36 text-left"
+              />
+              <SortableTh
+                label="Positions"
+                sortKey="positions"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="text-right w-20"
+              />
+              <SortableTh
+                label="Cost basis"
+                sortKey="costBasis"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="text-right"
+              />
+              <SortableTh
+                label="Market value"
+                sortKey="marketValue"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="text-right"
+              />
+              <SortableTh
+                label="Day change"
+                sortKey="dayChange"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="text-right"
+              />
+              <SortableTh
+                label="P&L"
+                sortKey="unrealizedPL"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="text-right"
+              />
               <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-28">
                 Actions
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {accounts.map((account) => {
+            {sortedAccounts.map((account) => {
               const strategyStyle = getStrategyBadge(account.strategy);
               const brokerStyle = getBrokerStyle(account.brokerType);
               const metrics = computeAccountMetrics(account);

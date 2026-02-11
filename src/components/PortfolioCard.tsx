@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import type { Portfolio } from "@/types/portfolio";
+
+const BROKER_ICONS: Record<string, string> = {
+  Merrill: "/merrill-icon.svg",
+  Fidelity: "/fidelity-icon.svg",
+};
 
 type PortfolioCardProps = {
   portfolio: Portfolio;
@@ -18,6 +24,31 @@ function formatCurrency(value: number): string {
 function formatPercent(value: number): string {
   const sign = value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
+}
+
+/** Stable color from ticker string for symbol icon background. */
+const SYMBOL_COLORS = [
+  "bg-blue-100 text-blue-800",
+  "bg-emerald-100 text-emerald-800",
+  "bg-violet-100 text-violet-800",
+  "bg-amber-100 text-amber-800",
+  "bg-rose-100 text-rose-800",
+  "bg-sky-100 text-sky-800",
+];
+
+function SymbolIcon({ ticker }: { ticker: string }) {
+  const s = (ticker || "").trim().toUpperCase();
+  const initial = s.slice(0, 2) || "?";
+  const colorIndex = s.length > 0 ? s.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) % SYMBOL_COLORS.length : 0;
+  const colorClass = SYMBOL_COLORS[colorIndex];
+  return (
+    <div
+      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold ${colorClass} ring-1 ring-black/5`}
+      aria-hidden
+    >
+      {initial}
+    </div>
+  );
 }
 
 export function PortfolioCard({ portfolio }: PortfolioCardProps) {
@@ -79,18 +110,42 @@ export function PortfolioCard({ portfolio }: PortfolioCardProps) {
                 className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-colors cursor-pointer group"
               >
                 <div className="flex items-center gap-3">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      account.riskLevel === "high"
-                        ? "bg-red-500"
-                        : account.riskLevel === "medium"
-                        ? "bg-yellow-500"
-                        : "bg-emerald-500"
-                    }`}
-                  />
+                  {account.brokerType && BROKER_ICONS[account.brokerType] ? (
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden bg-gray-100 ring-1 ring-gray-200/80">
+                      <Image
+                        src={BROKER_ICONS[account.brokerType]}
+                        alt={account.brokerType}
+                        width={24}
+                        height={24}
+                        className="w-6 h-6"
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        account.riskLevel === "high"
+                          ? "bg-red-500"
+                          : account.riskLevel === "medium"
+                          ? "bg-yellow-500"
+                          : "bg-emerald-500"
+                      }`}
+                    />
+                  )}
                   <div>
                     <p className="font-medium text-gray-800 group-hover:text-blue-700">{account.name}</p>
-                    <p className="text-xs text-gray-500 capitalize">
+                    <p className="text-xs text-gray-500 capitalize flex items-center gap-1.5">
+                      {!account.brokerType && (
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            account.riskLevel === "high"
+                              ? "bg-red-500"
+                              : account.riskLevel === "medium"
+                              ? "bg-yellow-500"
+                              : "bg-emerald-500"
+                          }`}
+                          aria-hidden
+                        />
+                      )}
                       {account.strategy} · {account.riskLevel} risk
                     </p>
                   </div>
@@ -134,15 +189,18 @@ export function PortfolioCard({ portfolio }: PortfolioCardProps) {
             .map((position) => (
               <div
                 key={position._id}
-                className="p-3 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg"
+                className="p-3 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex gap-3"
               >
-                <p className="font-semibold text-gray-800">{position.ticker}</p>
-                <p className="text-sm text-gray-600">
-                  {position.shares} shares
-                </p>
-                <p className="text-sm font-medium text-gray-800">
-                  {formatCurrency((position.shares || 0) * (position.currentPrice || 0))}
-                </p>
+                <SymbolIcon ticker={position.ticker ?? ""} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-gray-800">{position.ticker}</p>
+                  <p className="text-sm text-gray-600">
+                    {position.shares} shares
+                  </p>
+                  <p className="text-sm font-medium text-gray-800">
+                    {formatCurrency((position.shares || 0) * (position.currentPrice || 0))}
+                  </p>
+                </div>
               </div>
             ))}
         </div>

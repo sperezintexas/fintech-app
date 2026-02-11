@@ -1,6 +1,8 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import type { Account, Position } from "@/types/portfolio";
+import { downloadCsv } from "@/lib/csv-export";
 
 type HoldingRow = {
   position: Position;
@@ -98,12 +100,122 @@ function buildHoldingsRows(accounts: Account[]): { rows: HoldingRow[]; totalMark
   return { rows, totalMarketValue };
 }
 
+type SortKey =
+  | "symbol"
+  | "accountName"
+  | "exposurePercent"
+  | "costBasis"
+  | "marketValue"
+  | "dayChange"
+  | "unrealizedPL";
+
+function SortableTh({
+  label,
+  sortKey,
+  currentSort,
+  sortDir,
+  onSort,
+  className = "",
+}: {
+  label: string;
+  sortKey: SortKey;
+  currentSort: SortKey | null;
+  sortDir: "asc" | "desc";
+  onSort: (key: SortKey) => void;
+  className?: string;
+}) {
+  const isActive = currentSort === sortKey;
+  return (
+    <th
+      className={`px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100 ${className}`}
+      onClick={() => onSort(sortKey)}
+      role="columnheader"
+      aria-sort={isActive ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {isActive && (
+          <span className="text-blue-600" aria-hidden>
+            {sortDir === "asc" ? "↑" : "↓"}
+          </span>
+        )}
+      </span>
+    </th>
+  );
+}
+
 type MyHoldingsTableProps = {
   accounts: Account[];
 };
 
 export function MyHoldingsTable({ accounts }: MyHoldingsTableProps) {
   const { rows, totalMarketValue } = buildHoldingsRows(accounts);
+  const [sortBy, setSortBy] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (key: SortKey) => {
+    if (sortBy === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedRows = useMemo(() => {
+    if (!sortBy) return rows;
+    return [...rows].sort((a, b) => {
+      let cmp = 0;
+      switch (sortBy) {
+        case "symbol":
+          cmp = a.symbol.localeCompare(b.symbol);
+          break;
+        case "accountName":
+          cmp = a.accountName.localeCompare(b.accountName);
+          break;
+        case "exposurePercent":
+          cmp = a.exposurePercent - b.exposurePercent;
+          break;
+        case "costBasis":
+          cmp = a.costBasis - b.costBasis;
+          break;
+        case "marketValue":
+          cmp = a.marketValue - b.marketValue;
+          break;
+        case "dayChange":
+          cmp = a.dayChange - b.dayChange;
+          break;
+        case "unrealizedPL":
+          cmp = a.unrealizedPL - b.unrealizedPL;
+          break;
+        default:
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [rows, sortBy, sortDir]);
+
+  const handleExportCsv = () => {
+    const headers = [
+      "Symbol",
+      "Account",
+      "Exposure %",
+      "Cost basis",
+      "Market value",
+      "Day change",
+      "Unrealized G/L",
+    ];
+    const rowsForCsv = sortedRows.map((row) => [
+      row.symbol,
+      row.accountName,
+      totalMarketValue > 0 ? row.exposurePercent.toFixed(2) : "",
+      row.costBasis.toFixed(2),
+      row.marketValue.toFixed(2),
+      row.dayChange.toFixed(2),
+      row.unrealizedPL.toFixed(2),
+    ]);
+    downloadCsv(`my-holdings-${new Date().toISOString().slice(0, 10)}.csv`, headers, rowsForCsv);
+  };
 
   if (rows.length === 0) {
     return (
@@ -129,32 +241,73 @@ export function MyHoldingsTable({ accounts }: MyHoldingsTableProps) {
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="flex justify-end px-3 py-2 border-b border-gray-100 bg-gray-50/50">
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          className="text-sm font-medium text-gray-600 hover:text-gray-900 flex items-center gap-1.5"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export CSV
+        </button>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm" aria-label="My Holdings">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50/80">
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Symbol · Account
-              </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Exposure
-              </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Cost basis
-              </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Market value
-              </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Day change
-              </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Unrealized G/L
-              </th>
+              <SortableTh
+                label="Symbol · Account"
+                sortKey="symbol"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableTh
+                label="Exposure"
+                sortKey="exposurePercent"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="text-right"
+              />
+              <SortableTh
+                label="Cost basis"
+                sortKey="costBasis"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="text-right"
+              />
+              <SortableTh
+                label="Market value"
+                sortKey="marketValue"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="text-right"
+              />
+              <SortableTh
+                label="Day change"
+                sortKey="dayChange"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="text-right"
+              />
+              <SortableTh
+                label="Unrealized G/L"
+                sortKey="unrealizedPL"
+                currentSort={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+                className="text-right"
+              />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {rows.map((row) => (
+            {sortedRows.map((row) => (
               <tr key={`${row.accountId}-${row.position._id}`} className="hover:bg-gray-50">
                 <td className="px-3 py-2.5 min-w-0">
                   <div>

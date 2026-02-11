@@ -1,7 +1,18 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import { Position } from "@/types/portfolio";
 import { formatOptionPremium } from "@/lib/format-currency";
+
+type PositionSortKey =
+  | "symbol"
+  | "qty"
+  | "last"
+  | "unitCost"
+  | "costBasis"
+  | "marketValue"
+  | "dayChange"
+  | "unrealizedPL";
 
 type PositionListProps = {
   positions: Position[];
@@ -38,6 +49,13 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
       maximumFractionDigits: decimals,
     }).format(value);
   };
+
+  /** Format share/contract quantity: no decimals for whole numbers (500 not 500.000). */
+  const formatQuantity = (value: number) =>
+    new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 4,
+    }).format(value);
 
   // Parse YYYY-MM-DD as local calendar date (avoids UTC midnight showing as previous day)
   const parseLocalDate = (isoDate: string): Date => {
@@ -147,7 +165,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
         type: "Stock" as const,
         symbol: position.ticker || "",
         quantity: shares,
-        quantityLabel: formatNumber(shares, 3),
+        quantityLabel: formatQuantity(shares),
         lastPrice: currentPrice,
         avgCost: purchasePrice,
         totalCost,
@@ -217,6 +235,88 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
     return values.quantityLabel;
   };
 
+  const [sortBy, setSortBy] = useState<PositionSortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (key: PositionSortKey) => {
+    if (sortBy === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortBy(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedPositions = useMemo(() => {
+    if (!sortBy) return positions;
+    const valueMap = new Map(positions.map((p) => [p._id, calculatePositionValues(p)]));
+    return [...positions].sort((a, b) => {
+      const va = valueMap.get(a._id)!;
+      const vb = valueMap.get(b._id)!;
+      const dayChangeA =
+        a.dailyChange != null
+          ? a.dailyChange
+          : a.dailyChangePercent != null && va.marketValue
+            ? (va.marketValue * a.dailyChangePercent) / 100
+            : 0;
+      const dayChangeB =
+        b.dailyChange != null
+          ? b.dailyChange
+          : b.dailyChangePercent != null && vb.marketValue
+            ? (vb.marketValue * b.dailyChangePercent) / 100
+            : 0;
+      let cmp = 0;
+      switch (sortBy) {
+        case "symbol":
+          cmp = (va.symbol ?? "").localeCompare(vb.symbol ?? "");
+          break;
+        case "qty":
+          cmp = (va.quantity ?? 0) - (vb.quantity ?? 0);
+          break;
+        case "last":
+          cmp = va.lastPrice - vb.lastPrice;
+          break;
+        case "unitCost":
+          cmp = va.avgCost - vb.avgCost;
+          break;
+        case "costBasis":
+          cmp = va.totalCost - vb.totalCost;
+          break;
+        case "marketValue":
+          cmp = va.marketValue - vb.marketValue;
+          break;
+        case "dayChange":
+          cmp = dayChangeA - dayChangeB;
+          break;
+        case "unrealizedPL":
+          cmp = va.unrealizedPL - vb.unrealizedPL;
+          break;
+        default:
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [positions, sortBy, sortDir]);
+
+  const sortableTh = (
+    label: string,
+    key: PositionSortKey,
+    className = "text-left"
+  ) => (
+    <th
+      className={`px-3 py-2 text-xs font-semibold text-gray-500 uppercase cursor-pointer select-none hover:bg-gray-100 ${className}`}
+      onClick={() => handleSort(key)}
+      role="columnheader"
+      aria-sort={sortBy === key ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {sortBy === key && (
+          <span className="text-blue-600" aria-hidden>{sortDir === "asc" ? "↑" : "↓"}</span>
+        )}
+      </span>
+    </th>
+  );
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       {/* Desktop Table View - Symbol · Desc, Symbols (qty), Cost basis, Market value, Day change, Unrealized P/L */}
@@ -224,37 +324,21 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
-                Symbol
-              </th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Symbols
-              </th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Last
-              </th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Unit cost
-              </th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Cost basis
-              </th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Market value
-              </th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Day change
-              </th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-                Unrealized P/L
-              </th>
+              {sortableTh("Symbol", "symbol")}
+              {sortableTh("Qty", "qty", "text-right")}
+              {sortableTh("Last", "last", "text-right")}
+              {sortableTh("Unit cost", "unitCost", "text-right")}
+              {sortableTh("Cost basis", "costBasis", "text-right")}
+              {sortableTh("Market value", "marketValue", "text-right")}
+              {sortableTh("Day change", "dayChange", "text-right")}
+              {sortableTh("Unrealized P/L", "unrealizedPL", "text-right")}
               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase w-24">
                 Actions
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {positions.map((position) => {
+            {sortedPositions.map((position) => {
               const values = calculatePositionValues(position);
               const isStock = position.type === "stock";
               const isOption = position.type === "option";
@@ -464,7 +548,7 @@ export function PositionList({ positions, onEdit, onDelete, onAddToWatchlist, on
 
       {/* Mobile Card View - Symbol, Description, Qty, Price, Exp, Value, Unit Cost, Cost Basis, Unrealized P/L */}
       <div className="md:hidden divide-y divide-gray-100">
-        {positions.map((position) => {
+        {sortedPositions.map((position) => {
           const values = calculatePositionValues(position);
           const isStock = position.type === "stock";
           const isOption = position.type === "option";
