@@ -326,6 +326,8 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
               <li>• Show my portfolio</li>
               <li>• What am I watching? / How is my watchlist doing?</li>
               <li>• Market news and sentiment</li>
+              <li>• What jobs are scheduled? / When does the options scanner run?</li>
+              <li>• Run scan now / Evaluate my options positions</li>
             </ul>
             <p className="mt-4 text-xs text-gray-500">
               Chat history loads automatically when you visit <Link href="/chat" className="text-blue-600 hover:underline">/chat</Link>.
@@ -338,6 +340,9 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
                 <p><strong>Market News:</strong> market, news, outlook, trending, sentiment, conditions, indices</p>
                 <p><strong>Stock Prices:</strong> price, quote, stock, option, trading, how much, current, value — or ticker (TSLA, AAPL)</p>
                 <p><strong>Portfolio &amp; Watchlist:</strong> portfolio, holdings, positions, account, balance, watchlist, watching, tracking</p>
+                <p><strong>Risk Analysis:</strong> risk, var, beta, sharpe, diversification, volatility, stress, analyze portfolio</p>
+                <p><strong>Covered Call Recs:</strong> covered call, my calls, scanner, recommendations, btc, roll, assign, expiration, should I btc/roll/close</p>
+                <p><strong>Schedule Jobs (list/run):</strong> jobs, schedules, automation, scanners, next run, run scan, evaluate positions now, check my options</p>
               </div>
             </details>
           </div>

@@ -8,6 +8,7 @@
 
 import YahooFinance from "yahoo-finance2";
 import type { MarketConditions } from "@/types/portfolio";
+import { getMarketState } from "@/lib/market-calendar";
 
 // Initialize Yahoo Finance instance (v3 requirement)
 const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
@@ -29,37 +30,9 @@ let marketDataCache: {
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-// Determine market status based on current time (US Eastern Time)
+// Determine market status from market calendar (NYSE/NASDAQ hours + holidays)
 function getMarketStatus(): MarketConditions["status"] {
-  const now = new Date();
-  const easternTime = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
-  const hour = easternTime.getHours();
-  const day = easternTime.getDay(); // 0 = Sunday, 6 = Saturday
-
-  // Market is closed on weekends
-  if (day === 0 || day === 6) {
-    return "closed";
-  }
-
-  // Pre-market: 4:00 AM - 9:30 AM ET
-  if (hour >= 4 && hour < 9) {
-    return "pre-market";
-  }
-  // Market open: 9:30 AM - 4:00 PM ET
-  if (hour >= 9 && hour < 16) {
-    // Check if it's after 9:30 AM
-    const minutes = easternTime.getMinutes();
-    if (hour === 9 && minutes < 30) {
-      return "pre-market";
-    }
-    return "open";
-  }
-  // After hours: 4:00 PM - 8:00 PM ET
-  if (hour >= 16 && hour < 20) {
-    return "after-hours";
-  }
-
-  return "closed";
+  return getMarketState(new Date());
 }
 
 // Get quote data for a single ticker with full OHLC

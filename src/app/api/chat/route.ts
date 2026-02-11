@@ -4,7 +4,7 @@ import { getMarketNewsAndOutlook, getStockAndOptionPrices } from "@/lib/yahoo";
 import { getDb } from "@/lib/mongodb";
 import type { Account } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
-import { callGrokWithTools, WEB_SEARCH_TOOL, COVERED_CALL_ALTERNATIVES_TOOL } from "@/lib/xai-grok";
+import { callGrokWithTools, WEB_SEARCH_TOOL, COVERED_CALL_ALTERNATIVES_TOOL, LIST_JOBS_TOOL, TRIGGER_PORTFOLIO_SCAN_TOOL } from "@/lib/xai-grok";
 import { getGrokChatConfig } from "@/lib/grok-chat-config";
 import { appendChatHistory } from "@/lib/chat-history";
 import { getRecentCoveredCallRecommendations } from "@/lib/covered-call-analyzer";
@@ -490,6 +490,9 @@ Always include a brief disclaimer that this is not financial advice.`;
       const grokTools = [...(toolConfig.webSearch ? [WEB_SEARCH_TOOL] : [])];
       if (toolConfig.coveredCallRecs && (orderContext || needsCoveredCallTool(message))) {
         grokTools.push(COVERED_CALL_ALTERNATIVES_TOOL);
+      }
+      if (toolConfig.jobs) {
+        grokTools.push(LIST_JOBS_TOOL, TRIGGER_PORTFOLIO_SCAN_TOOL);
       }
       const grokResult = await callGrokWithTools(systemPrompt, userContent, { tools: grokTools });
       response = grokResult.text;

@@ -20,7 +20,7 @@ const SCHEDULE_PRESETS: Array<{ label: string; cron: string }> = (() => {
   const tz = (c: string) => cronToHumanInTimezone(c, CST, "CST");
   return [
     { label: `Weekly Portfolio (${tz("0 18 * * 0")})`, cron: "0 18 * * 0" },
-    { label: `Daily Options (${tz("15 14-20 * * 1-5")})`, cron: "15 14-20 * * 1-5" },
+    { label: `Daily Options (${tz("0,15,30,45 14-20 * * 1-5")})`, cron: "0,15,30,45 14-20 * * 1-5" },
     { label: `Watchlist (${tz("0 14,21 * * 1-5")})`, cron: "0 14,21 * * 1-5" },
     { label: `Deliver Alerts (${tz("30 16 * * 1-5")})`, cron: "30 16 * * 1-5" },
     { label: `Data Cleanup (${tz("0 3 * * *")})`, cron: "0 3 * * *" },
@@ -32,7 +32,7 @@ const SCHEDULE_PRESETS: Array<{ label: string; cron: string }> = (() => {
 /** Recommended cron per jobType; must match API RECOMMENDED_CRON_BY_JOB_TYPE. */
 const RECOMMENDED_CRON_BY_JOB_TYPE: Record<string, string> = {
   portfoliosummary: "0 18 * * 0",
-  unifiedOptionsScanner: "15 14-20 * * 1-5",
+  unifiedOptionsScanner: "0,15,30,45 14-20 * * 1-5",
   watchlistreport: "0 14,21 * * 1-5",
   riskScanner: "0 23 * * 1-5",
   deliverAlerts: "30 16 * * 1-5",

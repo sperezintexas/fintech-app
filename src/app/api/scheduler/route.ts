@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 /** Canonical cron per jobType for "Fix all schedules" and createRecommendedJobs. */
 const RECOMMENDED_CRON_BY_JOB_TYPE: Record<string, string> = {
   portfoliosummary: "0 18 * * 0",
-  unifiedOptionsScanner: "15 14-20 * * 1-5",
+  unifiedOptionsScanner: "0,15,30,45 14-20 * * 1-5",
   watchlistreport: "0 14,21 * * 1-5",
   riskScanner: "0 23 * * 1-5",
   deliverAlerts: "30 16 * * 1-5",
@@ -48,7 +48,7 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
   // Portfolio-level (accountId: null) so jobs appear in Setup > Scheduled Jobs and run for all accounts where applicable
   const recommended: Array<{ name: string; jobType: string; accountId: string | null; scheduleCron: string; config?: Record<string, unknown> }> = [
     { name: "Weekly Portfolio", jobType: "portfoliosummary", accountId: null, scheduleCron: "0 18 * * 0", config: { includeAiInsights: true } },
-    { name: "Daily Options Scanner", jobType: "unifiedOptionsScanner", accountId: null, scheduleCron: "15 14-20 * * 1-5" },
+    { name: "Daily Options Scanner", jobType: "unifiedOptionsScanner", accountId: null, scheduleCron: "0,15,30,45 14-20 * * 1-5" },
     { name: "Watchlist Snapshot", jobType: "watchlistreport", accountId: null, scheduleCron: "0 14,21 * * 1-5" },
     { name: "Risk Scanner", jobType: "riskScanner", accountId: null, scheduleCron: "0 23 * * 1-5" },
     { name: "Deliver Alerts", jobType: "deliverAlerts", accountId: null, scheduleCron: "30 16 * * 1-5" },

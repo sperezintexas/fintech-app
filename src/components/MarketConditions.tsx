@@ -68,6 +68,18 @@ export function MarketConditions({ market, variant = "card" }: MarketConditionsP
 
     return (
       <div className="w-full">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+          <div
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium shadow-sm border border-gray-100"
+            aria-live="polite"
+            role="status"
+          >
+            <span
+              className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(market.status)} ${market.status === "open" ? "animate-pulse" : ""}`}
+            />
+            <span className="text-gray-700">{getStatusText(market.status)}</span>
+          </div>
+        </div>
         <div
           className="flex gap-3 overflow-x-auto overflow-y-hidden pb-2 -mx-1 px-1 snap-x snap-mandatory [scrollbar-width:thin] [-webkit-overflow-scrolling:touch]"
           role="region"

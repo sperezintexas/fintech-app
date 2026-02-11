@@ -31,7 +31,19 @@ Defined in `src/lib/xai-grok.ts` as `WEB_SEARCH_TOOL` (OpenAI-compatible functio
 - **Config**: `tools.webSearch` (default: true). Requires `WEB_SEARCH_API_KEY` or `SERPAPI_API_KEY`.
 - **Examples for Grok**: `TSLA earnings date 2026`, `Tesla stock news today`, `BA defense sector outlook`, `current weather Austin TX`.
 
-### 2. Server-Side Pre-Fetch Tools (Market Data, Portfolio, Watchlist)
+### 2. LLM Tools (Schedule Jobs)
+
+When `tools.jobs` is enabled (default: true), Grok can call:
+
+| Tool | Description | When Grok uses it |
+|------|--------------|-------------------|
+| **list_jobs** | List scheduled report jobs (Unified Options Scanner, Watchlist, etc.), cron schedules, status, next run times | User asks about jobs, schedules, automation, scanners, next run |
+| **trigger_portfolio_scan** | Run full portfolio options evaluation now (Unified Options Scanner + watchlist + deliver alerts) | User explicitly asks to run scan, evaluate positions now, check my options |
+
+- **Config**: `tools.jobs` in Grok Chat config (Setup → Chat config or `/api/chat/config`).
+- **Keywords that help trigger**: jobs, schedules, automation, scanners, next run, run scan, evaluate positions now, check my options.
+
+### 3. Server-Side Pre-Fetch Tools (Market Data, Portfolio, Watchlist)
 
 Run before the Grok call. Results are injected into the user message as `[Context from tools]`.
 
@@ -78,6 +90,7 @@ Appended dynamically:
     marketData: boolean;     // default true
     portfolio: boolean;      // default true — portfolio, watchlist, risk analysis
     coveredCallRecs: boolean; // default true — recent Covered Call Scanner recommendations
+    jobs: boolean;           // default true — LLM tools list_jobs, trigger_portfolio_scan (schedules, run scan)
   };
   context: {
     riskProfile?: "low" | "medium" | "high" | "aggressive";  // default "medium"
@@ -115,7 +128,7 @@ If Grok returns empty, hits tool loop limit, or throws: `buildFallbackResponse()
 
 ## Tool Keywords Reference
 
-Use these keywords in your message to trigger pre-fetch tools:
+Use these keywords in your message to trigger pre-fetch tools or help Grok choose LLM tools:
 
 | Tool | Keywords |
 |------|----------|
@@ -124,6 +137,8 @@ Use these keywords in your message to trigger pre-fetch tools:
 | **Portfolio & Watchlist** | portfolio, holdings, positions, account, balance, watchlist, watching, tracking |
 | **Risk Analysis** | risk, var, beta, sharpe, diversification, volatility, stress, analyze portfolio |
 | **Covered Call Recommendations** | covered call, my calls, scanner, recommendations, btc, roll, assign, expiration, should I btc/roll/close |
+| **Schedule Jobs (list)** | jobs, schedules, automation, scanners, next run, when does X run |
+| **Schedule Jobs (run scan)** | run scan, evaluate positions now, check my options, run options scanner |
 
 ## Example Prompts
 
@@ -135,6 +150,8 @@ Use these keywords in your message to trigger pre-fetch tools:
 - *How is my watchlist doing?* — Portfolio + watchlist with live prices
 - *Should I BTC my TSLA call?* / *Covered call recommendations?* / *Any roll suggestions?* — Triggers Covered Call Recommendations (last 20 from scanner). Combine with “TSLA” for stock + options context. Grok uses pre-injected prices and advises BTC when strike neared (per core.mdc).
 - *What’s my portfolio risk?* — Risk analysis (VaR, beta, diversification, Grok recommendations).
+- *What jobs are scheduled?* / *When does the options scanner run?* — Grok can use list_jobs (when tools.jobs is on).
+- *Run scan now* / *Evaluate my options positions* — Grok can use trigger_portfolio_scan to run the full scan immediately.
 - *TSLA earnings date* / *Tesla FSD news* — Grok can use web_search when context doesn’t include it.
 
 ## Environment

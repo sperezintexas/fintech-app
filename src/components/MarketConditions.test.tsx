@@ -59,4 +59,10 @@ describe("MarketConditions", () => {
     render(<MarketConditions market={closedMarket} />);
     expect(screen.getByText("Market Closed")).toBeInTheDocument();
   });
+
+  it("ticker variant shows market status pill", () => {
+    render(<MarketConditions market={mockMarket} variant="ticker" />);
+    expect(screen.getByText("Market Open")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
 });

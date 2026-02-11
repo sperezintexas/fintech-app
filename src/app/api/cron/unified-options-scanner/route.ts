@@ -24,7 +24,7 @@ function verifyCronRequest(request: NextRequest): boolean {
  * Unified Options Scanner every weekday at :15 during market hours (e.g. 9:15–3:15 ET).
  * Runs portfolio-level scan (first account or null), then delivers alerts.
  *
- * Schedule in UTC. Example: 15 14-20 * * 1-5 (14:15–20:15 UTC ≈ 9:15–3:15 ET). Use GitHub Actions cron workflow or CRON_SECRET when calling from outside.
+ * Schedule in UTC. Example: 0,15,30,45 14-20 * * 1-5 (every 15 min 14:00–20:45 UTC ≈ 9:00 AM–3:45 PM ET, weekdays). Use GitHub Actions cron workflow or CRON_SECRET when calling from outside.
  */
 export async function GET(request: NextRequest) {
   if (!verifyCronRequest(request)) {

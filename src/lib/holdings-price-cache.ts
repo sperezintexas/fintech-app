@@ -6,6 +6,7 @@
 
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
+import { isMarketHours as isMarketOpenFromCalendar } from "@/lib/market-calendar";
 import { getMultipleTickerPrices, getOptionPremiumForPosition } from "@/lib/yahoo";
 import type { Position } from "@/types/portfolio";
 
@@ -33,7 +34,7 @@ const CACHE_TTL_OFF_MARKET_MS = 2 * 60 * 60 * 1000;
 export function isPriceCacheFresh(updatedAt: string): boolean {
   const updated = new Date(updatedAt).getTime();
   const now = Date.now();
-  const ttl = isMarketHours() ? CACHE_TTL_MARKET_MS : CACHE_TTL_OFF_MARKET_MS;
+  const ttl = isMarketOpenFromCalendar() ? CACHE_TTL_MARKET_MS : CACHE_TTL_OFF_MARKET_MS;
   return now - updated <= ttl;
 }
 
@@ -54,18 +55,9 @@ export type OptionPriceCacheEntry = {
   updatedAt: string;
 };
 
-/** 9:30 AM–4:00 PM ET, weekdays (Mon–Fri). */
+/** 9:30 AM–4:00 PM ET, weekdays, excluding US market holidays (uses market-calendar). */
 export function isMarketHours(): boolean {
-  const now = new Date();
-  const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
-  const day = et.getDay();
-  const hour = et.getHours();
-  const min = et.getMinutes();
-  if (day === 0 || day === 6) return false;
-  if (hour < 9) return false;
-  if (hour === 9 && min < 30) return false;
-  if (hour >= 16) return false;
-  return true;
+  return isMarketOpenFromCalendar();
 }
 
 /**

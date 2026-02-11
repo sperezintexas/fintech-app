@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { MarketConditions } from "@/components/MarketConditions";
+import { MarketStatusPill } from "@/components/MarketStatusPill";
 import type { MarketConditions as MarketConditionsType } from "@/types/portfolio";
 
 export function MarketConditionsBlock() {
@@ -25,7 +26,10 @@ export function MarketConditionsBlock() {
   if (!marketData) {
     return (
       <div className="w-full rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-6">
-        <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">Market Conditions</h2>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+          <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">Market Conditions</h2>
+          <MarketStatusPill />
+        </div>
         <p className="mt-2 text-sm text-gray-500">Loading market data...</p>
       </div>
     );
