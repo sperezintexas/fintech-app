@@ -978,6 +978,23 @@ export async function analyzeCoveredCallForOption(
   return [baseRec];
 }
 
+async function getAccountDisplayName(
+  db: Awaited<ReturnType<typeof getDb>>,
+  accountId: string
+): Promise<string | undefined> {
+  try {
+    const acc = await db.collection("accounts").findOne(
+      { _id: new ObjectId(accountId) },
+      { projection: { name: 1, broker: 1 } }
+    );
+    if (!acc) return undefined;
+    const a = acc as { name?: string; broker?: string };
+    return a.broker ?? a.name;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Store recommendations in coveredCallRecommendations collection and create alerts. */
 export async function storeCoveredCallRecommendations(
   recommendations: CoveredCallRecommendation[],
@@ -1002,13 +1019,19 @@ export async function storeCoveredCallRecommendations(
       isFromHoldings &&
       (rec.recommendation === "BUY_TO_CLOSE" || rec.recommendation === "SELL_NEW_CALL" || rec.recommendation === "ROLL")
     ) {
+      const accountName = await getAccountDisplayName(db, rec.accountId);
+      const metrics = {
+        ...rec.metrics,
+        ...(rec.entryPremium != null && { unitCost: rec.entryPremium }),
+      };
       const alert: Record<string, unknown> = {
         type: "covered-call",
         accountId: rec.accountId,
+        accountName: accountName ?? undefined,
         symbol: rec.symbol,
         recommendation: rec.recommendation,
         reason: rec.reason,
-        metrics: rec.metrics,
+        metrics,
         severity: "warning",
         createdAt: new Date().toISOString(),
         acknowledged: false,

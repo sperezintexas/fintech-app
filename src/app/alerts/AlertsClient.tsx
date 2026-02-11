@@ -334,6 +334,7 @@ export function AlertsClient({ initialAccounts, initialAlerts }: AlertsClientPro
                     <AlertCard
                       key={alert._id}
                       alert={alert}
+                      accounts={accounts}
                       onAcknowledge={handleAcknowledge}
                       formatCurrency={formatCurrency}
                       formatPercent={formatPercent}
@@ -355,6 +356,7 @@ export function AlertsClient({ initialAccounts, initialAlerts }: AlertsClientPro
                     <AlertCard
                       key={alert._id}
                       alert={alert}
+                      accounts={accounts}
                       onAcknowledge={handleAcknowledge}
                       formatCurrency={formatCurrency}
                       formatPercent={formatPercent}
@@ -378,6 +380,7 @@ export function AlertsClient({ initialAccounts, initialAlerts }: AlertsClientPro
 
 type AlertCardProps = {
   alert: AlertRecordServer;
+  accounts: Account[];
   onAcknowledge: (id: string) => void;
   formatCurrency: (v?: number) => string;
   formatPercent: (v?: number) => string;
@@ -391,6 +394,7 @@ type AlertCardProps = {
 
 function AlertCard({
   alert,
+  accounts,
   onAcknowledge,
   formatCurrency,
   formatPercent,
@@ -404,6 +408,7 @@ function AlertCard({
   const severity = alert.severity ?? "info";
   const hasDetails = alert.details && typeof alert.details === "object";
   const hasMetrics = alert.metrics && typeof alert.metrics === "object";
+  const accountLabel = alert.accountName ?? (alert.accountId ? accounts.find((a) => a._id === alert.accountId)?.name : undefined) ?? alert.accountId;
 
   return (
     <div
@@ -413,6 +418,11 @@ function AlertCard({
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className="font-bold text-lg">{alert.symbol}</span>
+            {accountLabel && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800">
+                {accountLabel}
+              </span>
+            )}
             <span
               className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRecommendationBadge(alert.recommendation)}`}
             >
@@ -532,6 +542,12 @@ function AlertCard({
                   <span className="ml-1 font-medium">
                     {formatCurrency(alert.metrics.callBid)}–{formatCurrency(alert.metrics.callAsk)}
                   </span>
+                </div>
+              )}
+              {alert.metrics.unitCost != null && (
+                <div>
+                  <span className="text-gray-600">Unit cost:</span>
+                  <span className="ml-1 font-medium">{formatCurrency(alert.metrics.unitCost)}</span>
                 </div>
               )}
             </>

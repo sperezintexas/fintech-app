@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { Job, AlertDeliveryChannel, ReportTemplateId } from "@/types/portfolio";
 import { REPORT_TEMPLATES } from "@/types/portfolio";
 import { cronToHuman } from "@/lib/cron-utils";
-import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
+import { formatInTimezone } from "@/lib/date-format";
 
 const _DEFAULT_SCHEDULE_JOB_NAMES = [
   "Weekly Portfolio",
@@ -84,7 +84,9 @@ export default function SchedulerPage() {
     isError: boolean;
   } | null>(null);
 
-  const { formatDate } = useDisplayTimezone();
+  const CST = "America/Chicago";
+  const formatCst = (date: string | null | undefined) =>
+    formatInTimezone(date, CST, { dateStyle: "short", timeStyle: "short" });
 
   const [refreshInterval, setRefreshInterval] = useState(30); // seconds, 0=off
   const [sortKey, setSortKey] = useState<'name' | 'scheduleCron' | 'nextRunAt' | 'lastRunAt' | 'status'>('name');
@@ -443,8 +445,8 @@ export default function SchedulerPage() {
                     const typeInfo = jobTypes.find((t) => t.id === j.jobType);
                     const typeName = typeInfo?.name ?? j.jobType;
                     const scheduleFriendly = cronToHuman(j.scheduleCron ?? "0 16 * * 1-5");
-                    const nextRunFriendly = j.nextRunAt ? formatDate(j.nextRunAt, { dateStyle: "short", timeStyle: "short" }) : "—";
-                    const lastRunFriendly = j.lastRunAt ? formatDate(j.lastRunAt, { dateStyle: "short", timeStyle: "short" }) : "—";
+                    const nextRunFriendly = formatCst(j.nextRunAt ?? null);
+                    const lastRunFriendly = formatCst(j.lastRunAt ?? null);
                     return (
                       <tr key={j._id} className={`hover:bg-gray-50/50 ${(j.status as string) === 'failed' ? 'bg-red-50/80 border-l-4 border-red-400' : ''}`}>
                         <td className="px-4 py-3 w-72">

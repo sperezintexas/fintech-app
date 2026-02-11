@@ -32,6 +32,7 @@ export type AlertsFilterServer = {
 export type AlertRecordServer = {
   _id: string;
   accountId?: string;
+  accountName?: string;
   symbol: string;
   recommendation: string;
   severity?: string;
@@ -53,6 +54,7 @@ export type AlertRecordServer = {
     pl?: number;
     plPercent?: number;
     underlyingPrice?: number;
+    unitCost?: number;
   };
   suggestedActions?: string[];
   riskWarning?: string;

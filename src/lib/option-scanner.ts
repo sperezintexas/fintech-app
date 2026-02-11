@@ -345,6 +345,7 @@ export async function scanOptions(
       source: useGrok ? "grok" : "rules",
       preliminaryRecommendation: r.prelim.recommendation,
       preliminaryReason: r.prelim.reason,
+      unitCost: r.pos.premium,
       metrics: {
         price: r.metrics.price,
         underlyingPrice: r.metrics.underlyingPrice,
@@ -365,6 +366,20 @@ export async function scanOptions(
   return recommendations;
 }
 
+async function getAccountDisplayName(db: Awaited<ReturnType<typeof getDb>>, accountId: string): Promise<string | undefined> {
+  try {
+    const acc = await db.collection("accounts").findOne(
+      { _id: new ObjectId(accountId) },
+      { projection: { name: 1, broker: 1 } }
+    );
+    if (!acc) return undefined;
+    const a = acc as { name?: string; broker?: string };
+    return a.broker ?? a.name;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Store recommendations in optionRecommendations collection and optionally create alerts. */
 export async function storeOptionRecommendations(
   recommendations: OptionRecommendation[],
@@ -382,14 +397,16 @@ export async function storeOptionRecommendations(
     stored++;
 
     if (options?.createAlerts && rec.recommendation === "BUY_TO_CLOSE") {
+      const accountName = await getAccountDisplayName(db, rec.accountId);
       const alert = {
         type: "option-scanner",
         positionId: rec.positionId,
         accountId: rec.accountId,
+        accountName: accountName ?? undefined,
         symbol: rec.symbol,
         recommendation: rec.recommendation,
         reason: rec.reason,
-        metrics: rec.metrics,
+        metrics: { ...rec.metrics, ...(rec.unitCost != null && { unitCost: rec.unitCost }) },
         severity: "warning",
         createdAt: new Date().toISOString(),
         acknowledged: false,

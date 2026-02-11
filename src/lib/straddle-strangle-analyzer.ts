@@ -331,6 +331,23 @@ export async function analyzeStraddlesAndStrangles(
   return recommendations;
 }
 
+async function getAccountDisplayName(
+  db: Awaited<ReturnType<typeof getDb>>,
+  accountId: string
+): Promise<string | undefined> {
+  try {
+    const acc = await db.collection("accounts").findOne(
+      { _id: new ObjectId(accountId) },
+      { projection: { name: 1, broker: 1 } }
+    );
+    if (!acc) return undefined;
+    const a = acc as { name?: string; broker?: string };
+    return a.broker ?? a.name;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Store recommendations and create alerts. */
 export async function storeStraddleStrangleRecommendations(
   recommendations: StraddleStrangleRecommendation[],
@@ -350,9 +367,11 @@ export async function storeStraddleStrangleRecommendations(
     stored++;
 
     if (options?.createAlerts && (rec.recommendation === "SELL_TO_CLOSE" || rec.recommendation === "ROLL")) {
+      const accountName = await getAccountDisplayName(db, rec.accountId);
       const alert = {
         type: "straddle-strangle",
         accountId: rec.accountId,
+        accountName: accountName ?? undefined,
         symbol: rec.symbol,
         recommendation: rec.recommendation,
         reason: rec.reason,
