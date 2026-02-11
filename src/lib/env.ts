@@ -23,13 +23,20 @@ export type ValidatedEnv = {
   AUTH_URL: string;
   /** Optional: Slack webhook for alerts */
   SLACK_WEBHOOK_URL: string | undefined;
-  /** Optional: X API keys for alerts */
+  /** Optional: X API keys (e.g. Grok chat). Auth uses X_CLIENT_ID / X_CLIENT_SECRET. */
   X_API_KEY: string | undefined;
   X_API_SECRET: string | undefined;
+  /** Optional: X posting OAuth 1.0a app credentials (Consumer Key/Secret). X_CONSUMER_KEY/X_SECRET_KEY used for posting; X_API_KEY/X_API_SECRET for other use (e.g. Grok). */
+  X_CONSUMER_KEY: string | undefined;
+  X_SECRET_KEY: string | undefined;
   X_ACCESS_TOKEN: string | undefined;
   X_ACCESS_SECRET: string | undefined;
   X_CLIENT_ID: string | undefined;
   X_CLIENT_SECRET: string | undefined;
+  /** Optional: Bearer token for X API posting (Authorization: Bearer). Auth uses X_CLIENT_ID / X_CLIENT_SECRET. */
+  X_BEARER_TOKEN: string | undefined;
+  /** Optional: OAuth 2.0 user access token for posting (alternative to X_BEARER_TOKEN). */
+  X_OAUTH2_ACCESS_TOKEN: string | undefined;
 };
 
 function getMongoUriFromRaw(input: ServerEnvInput): string {
@@ -50,10 +57,14 @@ function buildValidatedEnv(raw: ServerEnvInput, fullEnv: NodeJS.ProcessEnv): Val
     SLACK_WEBHOOK_URL: fullEnv.SLACK_WEBHOOK_URL,
     X_API_KEY: fullEnv.X_API_KEY,
     X_API_SECRET: fullEnv.X_API_SECRET,
+    X_CONSUMER_KEY: fullEnv.X_CONSUMER_KEY,
+    X_SECRET_KEY: fullEnv.X_SECRET_KEY,
     X_ACCESS_TOKEN: fullEnv.X_ACCESS_TOKEN,
     X_ACCESS_SECRET: fullEnv.X_ACCESS_SECRET,
     X_CLIENT_ID: fullEnv.X_CLIENT_ID,
     X_CLIENT_SECRET: fullEnv.X_CLIENT_SECRET,
+    X_BEARER_TOKEN: fullEnv.X_BEARER_TOKEN,
+    X_OAUTH2_ACCESS_TOKEN: fullEnv.X_OAUTH2_ACCESS_TOKEN,
   };
 }
 

@@ -1,5 +1,8 @@
 import { TwitterApi } from "twitter-api-v2";
 
+/** Account to post as; credentials in .env must be for this user. */
+export const X_POST_AS_USERNAME = process.env.X_POST_AS_USERNAME?.trim() || "atxbogart";
+
 type RateLimitError = Error & {
   code?: number;
   rateLimit?: { reset?: number };
@@ -17,26 +20,58 @@ function formatRateLimitError(e: RateLimitError): string {
   return "X API rate limited. Try again in ~15 min";
 }
 
-type XCredentials = {
-  appKey: string;
-  appSecret: string;
-  accessToken: string;
-  accessSecret: string;
-};
+let cachedClient: TwitterApi | null = null;
+let clientPromise: Promise<TwitterApi> | null = null;
 
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing environment variable: ${name}`);
-  return v;
-}
+/** Posting uses OAuth only (X_OAUTH2_ACCESS_TOKEN or OAuth 1.0a). X_BEARER_TOKEN is ignored for posting. Verifies posting as X_POST_AS_USERNAME (default atxbogart). */
+async function getXClient(): Promise<TwitterApi> {
+  if (cachedClient) return cachedClient;
+  if (clientPromise) return clientPromise;
 
-function getXCredentials(): XCredentials {
-  return {
-    appKey: requireEnv("X_API_KEY"),
-    appSecret: requireEnv("X_API_SECRET"),
-    accessToken: requireEnv("X_ACCESS_TOKEN"),
-    accessSecret: requireEnv("X_ACCESS_TOKEN_SECRET"),
-  };
+  clientPromise = (async (): Promise<TwitterApi> => {
+    const oauth2Token = process.env.X_OAUTH2_ACCESS_TOKEN?.trim();
+    // Posting: use X_CONSUMER_KEY/X_SECRET_KEY (OAuth 1.0a for X). X_API_KEY/X_API_SECRET are for Grok chat, not posting.
+    const appKey = process.env.X_CONSUMER_KEY || process.env.X_API_KEY;
+    const appSecret = process.env.X_SECRET_KEY || process.env.X_API_SECRET;
+    const accessToken = process.env.X_ACCESS_TOKEN;
+    const accessSecret = process.env.X_ACCESS_TOKEN_SECRET || process.env.X_ACCESS_SECRET;
+    let client: TwitterApi;
+    if (oauth2Token) {
+      client = new TwitterApi(oauth2Token);
+    } else if (appKey && appSecret && accessToken && accessSecret) {
+      client = new TwitterApi({ appKey, appSecret, accessToken, accessSecret });
+    } else {
+      throw new Error(
+        "Missing X credentials for posting. Set X_OAUTH2_ACCESS_TOKEN (OAuth 2.0) or X_CONSUMER_KEY, X_SECRET_KEY, X_ACCESS_TOKEN, X_ACCESS_SECRET (OAuth 1.0a for X). X_API_KEY/X_API_SECRET are for Grok chat."
+      );
+    }
+    let me: { data?: { username?: string } };
+    try {
+      me = await client.v2.me();
+    } catch (e: unknown) {
+      const err = e as { code?: number; message?: string };
+      if (err?.code === 401) {
+        throw new Error(
+          "X API 401 Unauthorized: token invalid or expired. Check credentials in .env.local."
+        );
+      }
+      throw e;
+    }
+    const username = (me.data?.username ?? "").toLowerCase();
+    const expected = X_POST_AS_USERNAME.toLowerCase();
+    if (username !== expected) {
+      throw new Error(
+        `X credentials post as @${me.data?.username ?? "unknown"}; expected @${X_POST_AS_USERNAME}. Use tokens for @${X_POST_AS_USERNAME}.`
+      );
+    }
+    cachedClient = client;
+    return client;
+  })().catch((e) => {
+    clientPromise = null;
+    throw e;
+  });
+
+  return clientPromise;
 }
 
 export function truncateForX(text: string, maxChars = 280): string {
@@ -73,21 +108,19 @@ export function splitForXThread(text: string, maxChars = 280): string[] {
 
 export async function postToXTweet(rawText: string): Promise<{ id: string; text: string }> {
   try {
-    const creds = getXCredentials();
-    const client = new TwitterApi({
-      appKey: creds.appKey,
-      appSecret: creds.appSecret,
-      accessToken: creds.accessToken,
-      accessSecret: creds.accessSecret,
-    });
-
+    const client = await getXClient();
     const text = truncateForX(rawText, 280);
     const res = await client.v2.tweet(text);
     return { id: res.data.id, text: res.data.text };
   } catch (e) {
-    const err = e as RateLimitError & { rateLimitError?: boolean };
+    const err = e as RateLimitError & { rateLimitError?: boolean; code?: number };
     if (err?.code === 429 || err?.code === 420 || err?.rateLimitError)
       throw new Error(formatRateLimitError(err));
+    if (err?.code === 403) {
+      throw new Error(
+        "X API 403 Forbidden: Bearer token is app-only (read-only). To post, use OAuth 1.0a (X_CONSUMER_KEY, X_SECRET_KEY, X_ACCESS_TOKEN, X_ACCESS_SECRET) or OAuth 2.0 user token."
+      );
+    }
     throw e;
   }
 }
@@ -105,19 +138,18 @@ export async function postToXThread(rawText: string): Promise<{ ids: string[] }>
     return { ids: [res.id] };
   }
   try {
-    const creds = getXCredentials();
-    const client = new TwitterApi({
-      appKey: creds.appKey,
-      appSecret: creds.appSecret,
-      accessToken: creds.accessToken,
-      accessSecret: creds.accessSecret,
-    });
+    const client = await getXClient();
     const results = await client.v2.tweetThread(toPost);
     return { ids: results.map((r) => r.data.id) };
   } catch (e) {
-    const err = e as RateLimitError & { rateLimitError?: boolean };
+    const err = e as RateLimitError & { rateLimitError?: boolean; code?: number };
     if (err?.code === 429 || err?.code === 420 || err?.rateLimitError)
       throw new Error(formatRateLimitError(err));
+    if (err?.code === 403) {
+      throw new Error(
+        "X API 403 Forbidden: Bearer token is app-only (read-only). To post, use OAuth 1.0a or OAuth 2.0 user token."
+      );
+    }
     throw e;
   }
 }
