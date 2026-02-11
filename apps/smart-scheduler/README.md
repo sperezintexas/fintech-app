@@ -1,10 +1,15 @@
-# Smart Scheduler
+# Smart Scheduler (master job runner)
 
-Standalone Agenda.js worker. The **only** process that starts Agenda and runs job handlers. The Next.js web app does **not** start Agenda; it only enqueues/schedules jobs via `src/lib/agenda-client.ts`. See `.cursor/rules/smart-scheduler-separation.mdc` and root `README.md` (Architecture).
+Standalone Agenda.js worker. **Local/Next.js node is a slave** (schedules only via UI/API); **this process is the master** and is the only one that runs job handlers. The web app uses `src/lib/agenda-client.ts` to enqueue/schedule; it never starts Agenda.
+
+- **Slave (local):** Next.js or any node without `AGENDA_MASTER=true` — no job execution.
+- **Master (remote):** Run this app with `AGENDA_MASTER=true` so it starts Agenda and runs jobs.
+
+See `.cursor/rules/smart-scheduler-separation.mdc` and root `README.md` (Architecture).
 
 ## Run from repo root
 
-Env must be set (e.g. `MONGODB_URI`, `MONGODB_DB`). Use `.env.local` or `node --env-file=.env.local` when invoking the script.
+Env must be set (e.g. `MONGODB_URI`, `MONGODB_DB`). **Set `AGENDA_MASTER=true`** when this process is the designated job runner. Use `.env.local` or `node --env-file=.env.local` when invoking.
 
 ```bash
 pnpm run start:scheduler
@@ -13,10 +18,10 @@ pnpm run start:scheduler
 
 ## Dev (watch mode)
 
-From repo root (path resolution uses root tsconfig):
+From repo root. To actually run jobs locally, set `AGENDA_MASTER=true`:
 
 ```bash
-pnpm run start:scheduler
+AGENDA_MASTER=true pnpm run start:scheduler
 ```
 
 To run with auto-restart on file changes, use `ts-node-dev` from `apps/smart-scheduler` with `TS_NODE_PROJECT=apps/smart-scheduler/tsconfig.json` (see `package.json` in this app).

@@ -17,6 +17,16 @@ import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
 
 export const dynamic = "force-dynamic";
 
+/** Canonical cron per jobType for "Fix all schedules" and createRecommendedJobs. */
+const RECOMMENDED_CRON_BY_JOB_TYPE: Record<string, string> = {
+  portfoliosummary: "0 18 * * 0",
+  unifiedOptionsScanner: "15 14-20 * * 1-5",
+  watchlistreport: "0 14,21 * * 1-5",
+  riskScanner: "0 17 * * 1-5",
+  deliverAlerts: "30 16 * * 1-5",
+  cleanup: "0 3 * * *",
+};
+
 type JobDoc = {
   accountId: string | null;
   name: string;
@@ -39,7 +49,7 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
   const recommended: Array<{ name: string; jobType: string; accountId: string | null; scheduleCron: string; config?: Record<string, unknown> }> = [
     { name: "Weekly Portfolio", jobType: "portfoliosummary", accountId: null, scheduleCron: "0 18 * * 0", config: { includeAiInsights: true } },
     { name: "Daily Options Scanner", jobType: "unifiedOptionsScanner", accountId: null, scheduleCron: "15 14-20 * * 1-5" },
-    { name: "Watchlist Snapshot", jobType: "watchlistreport", accountId: null, scheduleCron: "0 9,16 * * 1-5" },
+    { name: "Watchlist Snapshot", jobType: "watchlistreport", accountId: null, scheduleCron: "0 14,21 * * 1-5" },
     { name: "Risk Scanner", jobType: "riskScanner", accountId: null, scheduleCron: "0 17 * * 1-5" },
     { name: "Deliver Alerts", jobType: "deliverAlerts", accountId: null, scheduleCron: "30 16 * * 1-5" },
     { name: "Data Cleanup", jobType: "cleanup", accountId: null, scheduleCron: "0 3 * * *" },
@@ -55,19 +65,17 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
   let created = 0;
   const jobNames: string[] = [];
 
-  /** Daily Options Scanner must run only during market hours (9:15 AM–4:15 PM ET). */
-  const DAILY_OPTIONS_SCANNER_CRON = "15 14-20 * * 1-5";
-
   for (const r of recommended) {
     const exists = await jobsColl.findOne({ name: r.name });
     if (exists) {
-      if (r.name === "Daily Options Scanner" && exists.scheduleCron !== DAILY_OPTIONS_SCANNER_CRON) {
+      const expectedCron = RECOMMENDED_CRON_BY_JOB_TYPE[r.jobType];
+      if (expectedCron && exists.scheduleCron?.trim() !== expectedCron) {
         await jobsColl.updateOne(
           { name: r.name },
-          { $set: { scheduleCron: DAILY_OPTIONS_SCANNER_CRON, updatedAt: now } }
+          { $set: { scheduleCron: expectedCron, updatedAt: now } }
         );
         const existingId = (exists as { _id: ObjectId })._id.toString();
-        await upsertReportJobSchedule(existingId, DAILY_OPTIONS_SCANNER_CRON);
+        await upsertReportJobSchedule(existingId, expectedCron);
       }
       continue;
     }
@@ -191,34 +199,31 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      case "fixDailyOptionsScannerSchedule": {
+      case "fixAllRecommendedSchedules": {
         const db = await getDb();
-        const MARKET_HOURS_CRON = "15 14-20 * * 1-5";
         const jobsColl = db.collection<JobDoc>("reportJobs");
-        const job =
-          (await jobsColl.findOne({ jobType: "unifiedOptionsScanner" })) ??
-          (await jobsColl.findOne({ name: "Daily Options Scanner" }));
-        if (!job) {
-          return NextResponse.json({
-            success: true,
-            message: "No Daily Options Scanner / Unified Options Scanner job found; create it via Create recommended jobs.",
-          });
+        const allJobs = await jobsColl.find({}).toArray();
+        const now = new Date().toISOString();
+        const updated: string[] = [];
+        for (const job of allJobs) {
+          const expectedCron = job.jobType ? RECOMMENDED_CRON_BY_JOB_TYPE[job.jobType] : undefined;
+          if (!expectedCron || (job.scheduleCron?.trim() ?? "") === expectedCron) continue;
+          const jobId = (job as { _id: ObjectId })._id.toString();
+          await jobsColl.updateOne(
+            { _id: (job as { _id: ObjectId })._id },
+            { $set: { scheduleCron: expectedCron, updatedAt: now } }
+          );
+          await upsertReportJobSchedule(jobId, expectedCron);
+          updated.push(job.name);
         }
-        const jobId = (job as { _id: ObjectId })._id.toString();
-        if (job.scheduleCron?.trim() === MARKET_HOURS_CRON) {
-          return NextResponse.json({
-            success: true,
-            message: "Daily Options Scanner already set to market hours (9:15 AM–4:15 PM ET).",
-          });
-        }
-        await jobsColl.updateOne(
-          { _id: (job as { _id: ObjectId })._id },
-          { $set: { scheduleCron: MARKET_HOURS_CRON, updatedAt: new Date().toISOString() } }
-        );
-        await upsertReportJobSchedule(jobId, MARKET_HOURS_CRON);
         return NextResponse.json({
           success: true,
-          message: "Daily Options Scanner schedule updated to market hours only (9:15 AM–4:15 PM ET, weekdays).",
+          message:
+            updated.length > 0
+              ? `Updated schedule for ${updated.length} job(s): ${updated.join(", ")}.`
+              : "All jobs already use recommended schedules.",
+          updated: updated.length,
+          jobs: updated,
         });
       }
 

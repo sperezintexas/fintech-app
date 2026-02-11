@@ -84,10 +84,16 @@ export async function withRetry<T>(
 let agenda: Agenda | null = null;
 
 /**
- * Creates Agenda, defines all jobs, starts the worker. For use by smart-scheduler only.
- * Web app must not call this; use agenda-client and scheduleJob/runJobNow/etc. instead.
+ * Creates Agenda, defines all jobs, starts the worker. For use by the master job runner only.
+ * Local/Next.js node must stay a slave (schedule via getAgendaClient only); only the remote
+ * scheduler process should set AGENDA_MASTER=true and run this.
  */
 export async function getAgenda(): Promise<Agenda> {
+  if (process.env.AGENDA_MASTER !== "true") {
+    throw new Error(
+      "Agenda worker may only be started on the master node. Local node is a slave (schedule via UI/API only). Set AGENDA_MASTER=true only on the remote job runner (e.g. smart-scheduler)."
+    );
+  }
   if (agenda) return agenda;
 
   const mongoUri = getMongoUri();

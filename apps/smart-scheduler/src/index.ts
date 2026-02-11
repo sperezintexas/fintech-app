@@ -1,9 +1,9 @@
 /**
- * Smart Scheduler entry point.
- * Only process that starts Agenda and runs job handlers.
- * Web app must not start Agenda; it uses agenda-client to enqueue/schedule.
- * Set JOB_RUNNER=false to skip starting (e.g. local testing); default runs.
- * Run from repo root with env set (e.g. node --env-file=.env.local or export MONGODB_URI).
+ * Smart Scheduler entry point — master job runner only.
+ * Local/Next.js node is a slave (enqueue/schedule via agenda-client); this process is the
+ * single master that runs job handlers. Set AGENDA_MASTER=true when running this process
+ * (e.g. in production). Set JOB_RUNNER=false or omit AGENDA_MASTER locally to avoid
+ * running jobs on the same machine as the web app.
  */
 
 import { Agenda } from "agenda";
@@ -14,7 +14,11 @@ const COLLECTION = "scheduledJobs";
 
 async function main() {
   if (process.env.JOB_RUNNER === "false") {
-    console.log("[smart-scheduler] JOB_RUNNER=false, exiting without starting");
+    console.log("[smart-scheduler] JOB_RUNNER=false, exiting without starting (slave)");
+    process.exit(0);
+  }
+  if (process.env.AGENDA_MASTER !== "true") {
+    console.log("[smart-scheduler] AGENDA_MASTER not set; this node is a slave. Set AGENDA_MASTER=true on the remote master to run jobs.");
     process.exit(0);
   }
   const mongoUri = getMongoUri();

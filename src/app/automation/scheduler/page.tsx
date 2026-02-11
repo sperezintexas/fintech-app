@@ -18,12 +18,22 @@ const _DEFAULT_SCHEDULE_JOB_NAMES = [
 const SCHEDULE_PRESETS: Array<{ label: string; cron: string }> = [
   { label: "Weekly Portfolio (Sun 6 PM)", cron: "0 18 * * 0" },
   { label: "Daily Options Scanner (weekdays :15 market hrs)", cron: "15 14-20 * * 1-5" },
-  { label: "Watchlist Snapshot (Mon–Fri 9 AM & 4 PM)", cron: "0 9,16 * * 1-5" },
+  { label: "Watchlist Snapshot (Mon–Fri 9 AM & 4 PM ET)", cron: "0 14,21 * * 1-5" },
   { label: "Deliver Alerts (Mon–Fri 4:30 PM)", cron: "30 16 * * 1-5" },
   { label: "Data Cleanup (Daily 3 AM)", cron: "0 3 * * *" },
   { label: "Weekdays 4:00 PM", cron: "0 16 * * 1-5" },
   { label: "Weekdays 9:00 AM", cron: "0 9 * * 1-5" },
 ];
+
+/** Recommended cron per jobType; must match API RECOMMENDED_CRON_BY_JOB_TYPE. */
+const RECOMMENDED_CRON_BY_JOB_TYPE: Record<string, string> = {
+  portfoliosummary: "0 18 * * 0",
+  unifiedOptionsScanner: "15 14-20 * * 1-5",
+  watchlistreport: "0 14,21 * * 1-5",
+  riskScanner: "0 17 * * 1-5",
+  deliverAlerts: "30 16 * * 1-5",
+  cleanup: "0 3 * * *",
+};
 
 type ScheduledJob = {
   id: string;
@@ -309,19 +319,17 @@ export default function SchedulerPage() {
 
   const portfolioJobTypes = jobTypes.filter((t) => t.enabled && t.supportsPortfolio);
   const scheduledCount = jobs.filter((j) => j.nextRunAt).length;
-  const MARKET_HOURS_CRON = "15 14-20 * * 1-5";
-  const unifiedScannerJob = jobs.find(
-    (j) => j.jobType === "unifiedOptionsScanner" || j.name === "Daily Options Scanner"
-  );
-  const needsDailyOptionsMarketHoursFix =
-    unifiedScannerJob != null && unifiedScannerJob.scheduleCron?.trim() !== MARKET_HOURS_CRON;
+  const needsScheduleFix = jobs.some((j) => {
+    const expected = j.jobType ? RECOMMENDED_CRON_BY_JOB_TYPE[j.jobType] : undefined;
+    return expected != null && (j.scheduleCron?.trim() ?? "") !== expected;
+  });
 
   return (
     <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Scheduler</h2>
           <p className="text-gray-600 mt-1 text-sm">Portfolio-level jobs: when run, each job can use data across all accounts. Manage jobs in the table below.</p>
-          <p className="text-gray-500 mt-1 text-xs">Schedules are stored in UTC. Next/Last run are shown in Central. If Daily Options Scanner shows a next run around 3 AM Central, click <strong>Fix Daily Options to market hours</strong> to set 9:15 AM–3:15 PM ET.</p>
+          <p className="text-gray-500 mt-1 text-xs">Schedules are stored in UTC. Next/Last run are shown in Central. Use <strong>Fix all schedules</strong> to set all jobs with a recommended schedule to the correct cron.</p>
         </div>
 
         {/* Toolbar: quick actions */}
@@ -347,13 +355,13 @@ export default function SchedulerPage() {
             >
               Refresh Status
             </button>
-            {needsDailyOptionsMarketHoursFix && (
+            {needsScheduleFix && (
               <button
-                onClick={() => handleSchedulerAction("fixDailyOptionsScannerSchedule")}
+                onClick={() => handleSchedulerAction("fixAllRecommendedSchedules")}
                 disabled={schedulerLoading}
                 className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 text-sm font-medium"
               >
-                Fix Daily Options to market hours
+                Fix all schedules
               </button>
             )}
             <div className="flex items-center gap-1 text-sm text-gray-600">
@@ -465,9 +473,12 @@ export default function SchedulerPage() {
                     const cron = (j.scheduleCron ?? "0 16 * * 1-5").trim();
                     const scheduleFriendly = cronToHuman(cron);
                     const isMarketHoursCron = cron === "15 14-20 * * 1-5";
+                    const isWatchlistCron = cron === "0 14,21 * * 1-5";
                     const scheduleLabel = isMarketHoursCron
                       ? "At :15 past the hour, 9:15 AM–3:15 PM ET (UTC 14–20), Mon–Fri"
-                      : scheduleFriendly;
+                      : isWatchlistCron
+                        ? "9 AM & 4 PM ET (UTC 14, 21), Mon–Fri"
+                        : scheduleFriendly;
                     const nextRunFriendly = formatCst(j.nextRunAt ?? null);
                     const lastRunFriendly = formatCst(j.lastRunAt ?? null);
                     return (
