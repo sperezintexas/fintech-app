@@ -309,6 +309,9 @@ export default function SchedulerPage() {
 
   const portfolioJobTypes = jobTypes.filter((t) => t.enabled && t.supportsPortfolio);
   const scheduledCount = jobs.filter((j) => j.nextRunAt).length;
+  const dailyOptionsJob = jobs.find((j) => j.name === "Daily Options Scanner");
+  const MARKET_HOURS_CRON = "15 14-20 * * 1-5";
+  const needsDailyOptionsMarketHoursFix = dailyOptionsJob && dailyOptionsJob.scheduleCron !== MARKET_HOURS_CRON;
 
   return (
     <div className="space-y-6">
@@ -340,6 +343,15 @@ export default function SchedulerPage() {
             >
               Refresh Status
             </button>
+            {needsDailyOptionsMarketHoursFix && (
+              <button
+                onClick={() => handleSchedulerAction("fixDailyOptionsScannerSchedule")}
+                disabled={schedulerLoading}
+                className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 text-sm font-medium"
+              >
+                Fix Daily Options to market hours
+              </button>
+            )}
             <div className="flex items-center gap-1 text-sm text-gray-600">
               <label className="text-xs">Auto:</label>
               <select
