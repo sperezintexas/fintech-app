@@ -1259,7 +1259,18 @@ export async function runJobNow(
   console.log(`Triggered job "${jobName}" to run now`);
 }
 
-/** List job status (deduplicated by name). Uses agenda-client; safe to call from web. */
+/** Agenda job document shape in MongoDB (scheduledJobs collection). */
+type AgendaJobDoc = {
+  _id?: unknown;
+  name: string;
+  nextRunAt?: Date | null;
+  lastRunAt?: Date | null;
+  lastFinishedAt?: Date | null;
+  failCount?: number;
+  data?: unknown;
+};
+
+/** List job status (deduplicated by name). Reads from scheduledJobs collection so it works when Agenda is not started (e.g. web-only local dev). */
 export async function getJobStatus(): Promise<{
   jobs: Array<{
     id: string;
@@ -1271,33 +1282,38 @@ export async function getJobStatus(): Promise<{
     data: unknown;
   }>;
 }> {
-  const ag = await getAgendaClient();
-  const jobs = await ag.jobs({});
+  const db = await getDb();
+  const collection = db.collection<AgendaJobDoc>("scheduledJobs");
+  const cursor = collection.find({});
+  const rawJobs = await cursor.toArray();
 
-  // Deduplicate by name - keep the most recent/active one
-  const jobsByName = new Map<string, typeof jobs[0]>();
-
-  for (const job of jobs) {
-    const name = job.attrs.name;
+  // Deduplicate by name - keep the most recent/active one (same logic as before)
+  const jobsByName = new Map<string, AgendaJobDoc>();
+  for (const doc of rawJobs) {
+    const name = doc.name;
     const existing = jobsByName.get(name);
-
-    // Keep the one with nextRunAt (scheduled), or most recent lastRunAt
-    if (!existing ||
-        (job.attrs.nextRunAt && !existing.attrs.nextRunAt) ||
-        (job.attrs.lastRunAt && (!existing.attrs.lastRunAt || job.attrs.lastRunAt > existing.attrs.lastRunAt))) {
-      jobsByName.set(name, job);
+    const nextRun = doc.nextRunAt ? new Date(doc.nextRunAt) : null;
+    const lastRun = doc.lastRunAt ? new Date(doc.lastRunAt) : null;
+    const existingNext = existing?.nextRunAt ? new Date(existing.nextRunAt) : null;
+    const existingLast = existing?.lastRunAt ? new Date(existing.lastRunAt) : null;
+    if (
+      !existing ||
+      (nextRun && !existingNext) ||
+      (lastRun && (!existingLast || lastRun > existingLast))
+    ) {
+      jobsByName.set(name, doc);
     }
   }
 
   return {
-    jobs: Array.from(jobsByName.values()).map((job) => ({
-      id: job.attrs._id?.toString() || `${job.attrs.name}-${Date.now()}`,
-      name: job.attrs.name,
-      lastRunAt: job.attrs.lastRunAt || null,
-      nextRunAt: job.attrs.nextRunAt || null,
-      lastFinishedAt: job.attrs.lastFinishedAt || null,
-      failCount: job.attrs.failCount || 0,
-      data: job.attrs.data,
+    jobs: Array.from(jobsByName.values()).map((doc) => ({
+      id: doc._id != null ? String(doc._id) : `${doc.name}-${Date.now()}`,
+      name: doc.name,
+      lastRunAt: doc.lastRunAt ? new Date(doc.lastRunAt) : null,
+      nextRunAt: doc.nextRunAt ? new Date(doc.nextRunAt) : null,
+      lastFinishedAt: doc.lastFinishedAt ? new Date(doc.lastFinishedAt) : null,
+      failCount: doc.failCount ?? 0,
+      data: doc.data,
     })),
   };
 }

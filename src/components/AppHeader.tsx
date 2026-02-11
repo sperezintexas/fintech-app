@@ -126,13 +126,30 @@ export function AppHeader() {
   );
 }
 
+type MongoInfo = {
+  connectionDisplay?: string;
+  database?: string;
+} | null;
+
 function UserMenu() {
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
+  const [mongoInfo, setMongoInfo] = useState<MongoInfo>(null);
 
   const image = session?.user?.image ?? null;
   const initial = session?.user?.name?.[0] ?? session?.user?.username?.[0] ?? "?";
   const displayName = session?.user?.username ?? session?.user?.name ?? "User";
+
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/health")
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data: { checks?: { mongodb?: { connectionDisplay?: string; database?: string } } }) => {
+        const m = data?.checks?.mongodb;
+        setMongoInfo(m ? { connectionDisplay: m.connectionDisplay, database: m.database } : null);
+      })
+      .catch(() => setMongoInfo(null));
+  }, [open]);
 
   return (
     <div className="relative">
@@ -163,10 +180,27 @@ function UserMenu() {
             aria-hidden
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 mt-1 py-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+          <div className="absolute right-0 mt-1 py-1 min-w-[16rem] max-w-[24rem] bg-white rounded-lg shadow-lg border border-gray-200 z-50">
             <div className="px-3 py-2 text-sm text-gray-700 border-b border-gray-100">
               @{displayName}
             </div>
+            {mongoInfo && (mongoInfo.connectionDisplay != null || mongoInfo.database != null) && (
+              <div className="px-3 py-2 border-b border-gray-100">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                  MongoDB
+                </div>
+                {mongoInfo.connectionDisplay != null && (
+                  <div className="text-xs text-gray-600 font-mono break-all" title="Connection string (password masked)">
+                    {mongoInfo.connectionDisplay}
+                  </div>
+                )}
+                {mongoInfo.database != null && (
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    DB: {mongoInfo.database}
+                  </div>
+                )}
+              </div>
+            )}
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: "/contact" })}

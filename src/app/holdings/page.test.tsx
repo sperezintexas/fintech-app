@@ -49,7 +49,7 @@ describe("Holdings Page", () => {
     render(Page);
 
     await waitFor(() => {
-      expect(screen.getByText("Holdings")).toBeInTheDocument();
+      expect(screen.getByText("myHoldings")).toBeInTheDocument();
     });
     await waitFor(() => {
       expect(screen.getByText(/Merrill/)).toBeInTheDocument();

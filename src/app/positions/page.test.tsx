@@ -32,7 +32,7 @@ describe("PositionList - Position Calculations", () => {
     // Assert (PositionList renders desktop + mobile views; compact format "Qty @ Cost")
     expect(screen.getAllByText(/AAPL/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Stock").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/10\.000/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("10").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$175.00").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$1,750.00").length).toBeGreaterThan(0);
   });

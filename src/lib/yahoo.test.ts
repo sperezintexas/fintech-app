@@ -94,7 +94,7 @@ describe("Yahoo Finance Service", () => {
       expect(result).toHaveProperty("indices");
       expect(result).toHaveProperty("lastUpdated");
       expect(Array.isArray(result.indices)).toBe(true);
-      expect(result.indices.length).toBe(4);
+      expect(result.indices.length).toBe(5);
       expect(["open", "closed", "pre-market", "after-hours"]).toContain(
         result.status
       );
@@ -110,6 +110,7 @@ describe("Yahoo Finance Service", () => {
       expect(symbols).toContain("QQQ");
       expect(symbols).toContain("DIA");
       expect(symbols).toContain("IWM");
+      expect(symbols).toContain("^VIX");
     });
   });
 });

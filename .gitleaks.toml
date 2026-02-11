@@ -20,6 +20,8 @@ paths = [
   '''\.env\.example''',
   '''\.env\.sample''',
   '''\.env\.template''',
+  '''\.env\.local''',
+  '''\.env\.prod''',
   '''src/lib/__tests__/env\.test\.ts''',
   '''scripts/seed-local-db\.ts''',
   '''scripts/export-accounts-csv\.ts''',

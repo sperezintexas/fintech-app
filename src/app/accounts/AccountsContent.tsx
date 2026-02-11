@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { AccountList } from "@/components/AccountList";
 import { AccountForm } from "@/components/AccountForm";
 import { MyHoldingsTable } from "@/components/MyHoldingsTable";
+import { downloadCsv } from "@/lib/csv-export";
 import type { Account, Activity, RiskLevel, Strategy } from "@/types/portfolio";
+
+type ActivitySortKey = "date" | "symbol" | "type" | "quantity" | "unitPrice" | "fee" | "comment";
 
 type AccountsTab = "portfolios" | "holdings" | "activity";
 
@@ -33,6 +36,8 @@ export function AccountsContent() {
   const [activityAccountId, setActivityAccountId] = useState<string>("");
   const [activities, setActivities] = useState<Activity[]>([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
+  const [activitySortBy, setActivitySortBy] = useState<ActivitySortKey | null>(null);
+  const [activitySortDir, setActivitySortDir] = useState<"asc" | "desc">("asc");
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -136,6 +141,83 @@ export function AccountsContent() {
     setEditingAccount(undefined);
   };
 
+  const handleActivitySort = (key: ActivitySortKey) => {
+    if (activitySortBy === key) {
+      setActivitySortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setActivitySortBy(key);
+      setActivitySortDir("asc");
+    }
+  };
+
+  const sortedActivities = useMemo(() => {
+    if (!activitySortBy) return activities;
+    return [...activities].sort((a, b) => {
+      let cmp = 0;
+      switch (activitySortBy) {
+        case "date":
+          cmp = (a.date ?? "").localeCompare(b.date ?? "");
+          break;
+        case "symbol":
+          cmp = (a.symbol ?? "").localeCompare(b.symbol ?? "");
+          break;
+        case "type":
+          cmp = (a.type ?? "").localeCompare(b.type ?? "");
+          break;
+        case "quantity":
+          cmp = a.quantity - b.quantity;
+          break;
+        case "unitPrice":
+          cmp = a.unitPrice - b.unitPrice;
+          break;
+        case "fee":
+          cmp = (a.fee ?? 0) - (b.fee ?? 0);
+          break;
+        case "comment":
+          cmp = (a.comment ?? "").localeCompare(b.comment ?? "");
+          break;
+        default:
+          break;
+      }
+      return activitySortDir === "asc" ? cmp : -cmp;
+    });
+  }, [activities, activitySortBy, activitySortDir]);
+
+  const handleActivityExportCsv = () => {
+    const headers = ["Date", "Symbol", "Type", "Qty", "Unit price", "Fee", "Comment"];
+    const rows = sortedActivities.map((a) => [
+      a.date ?? "",
+      a.symbol ?? "",
+      a.type ?? "",
+      String(a.quantity),
+      a.unitPrice.toFixed(2),
+      a.fee != null ? a.fee.toFixed(2) : "",
+      a.comment ?? "",
+    ]);
+    downloadCsv(`my-activity-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+  };
+
+  const activitySortableTh = (label: string, sortKey: ActivitySortKey, className = "text-left") => {
+    const isActive = activitySortBy === sortKey;
+    return (
+      <th
+        className={`px-4 py-3 text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:bg-gray-100 ${className}`}
+        onClick={() => handleActivitySort(sortKey)}
+        role="columnheader"
+        aria-sort={isActive ? (activitySortDir === "asc" ? "ascending" : "descending") : undefined}
+      >
+        <span className="inline-flex items-center gap-1">
+          {label}
+          {isActive && (
+            <span className="text-blue-600" aria-hidden>
+              {activitySortDir === "asc" ? "↑" : "↓"}
+            </span>
+          )}
+        </span>
+      </th>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
       <AppHeader />
@@ -143,7 +225,7 @@ export function AccountsContent() {
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-3xl font-bold text-gray-900">Accounts</h2>
+            <h2 className="text-3xl font-bold text-gray-900">myAccounts</h2>
             <p className="text-gray-600 mt-1">
               Manage your investment accounts and strategies.
             </p>
@@ -256,21 +338,34 @@ export function AccountsContent() {
                   No activities yet. Import trades (Merrill CSV or API) to see history.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Unit price</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Fee</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Comment</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {activities.map((a) => (
+                <>
+                  <div className="flex justify-end px-4 py-2 border-b border-gray-100 bg-gray-50/50">
+                    <button
+                      type="button"
+                      onClick={handleActivityExportCsv}
+                      className="text-sm font-medium text-gray-600 hover:text-gray-900 flex items-center gap-1.5"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Export CSV
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          {activitySortableTh("Date", "date")}
+                          {activitySortableTh("Symbol", "symbol")}
+                          {activitySortableTh("Type", "type")}
+                          {activitySortableTh("Qty", "quantity", "text-right")}
+                          {activitySortableTh("Unit price", "unitPrice", "text-right")}
+                          {activitySortableTh("Fee", "fee", "text-right")}
+                          {activitySortableTh("Comment", "comment")}
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {sortedActivities.map((a) => (
                         <tr key={a._id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{a.date}</td>
                           <td className="px-4 py-3 text-sm font-medium text-gray-900">{a.symbol}</td>
@@ -286,10 +381,11 @@ export function AccountsContent() {
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{a.comment ?? "—"}</td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </div>
