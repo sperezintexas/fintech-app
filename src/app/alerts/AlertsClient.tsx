@@ -431,6 +431,11 @@ function AlertCard({
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
               {getAlertSourceLabel(alert.type)}
             </span>
+            {alert.type === "option-scanner" && alert.metrics?.dte != null && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                DTE: {alert.metrics.dte} days
+              </span>
+            )}
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
               {getDeliveryStatusLabel(alert.deliveryStatus)}
             </span>
@@ -438,7 +443,7 @@ function AlertCard({
               {formatDate(alert.createdAt)}
             </span>
           </div>
-          <p className="text-sm mb-2">{alert.reason}</p>
+          <p className="text-sm mb-2 whitespace-pre-line">{alert.reason}</p>
           {alert.suggestedActions && alert.suggestedActions.length > 0 && (
             <div className="mt-2">
               <p className="text-xs font-medium text-gray-600 mb-1">Suggested Actions:</p>
