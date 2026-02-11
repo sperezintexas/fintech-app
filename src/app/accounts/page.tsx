@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { AccountList } from "@/components/AccountList";
 import { AccountForm } from "@/components/AccountForm";
@@ -26,7 +27,9 @@ export default function AccountsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | undefined>();
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AccountsTab>("portfolios");
+  const searchParams = useSearchParams();
+  const initialTab = (searchParams.get("tab") as AccountsTab) || "portfolios";
+  const [activeTab, setActiveTab] = useState<AccountsTab>(initialTab);
   const [activityAccountId, setActivityAccountId] = useState<string>("");
   const [activities, setActivities] = useState<Activity[]>([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
