@@ -39,9 +39,11 @@ export function XToolsConsole() {
 
   const generatePassword = useCallback(() => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+    const bytes = new Uint8Array(64);
+    crypto.getRandomValues(bytes);
     let pw = "";
     for (let i = 0; i < 64; i++) {
-      pw += chars[Math.floor(Math.random() * chars.length)];
+      pw += chars[bytes[i] % chars.length];
     }
     setNewPassword(pw);
   }, []);
