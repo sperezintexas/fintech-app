@@ -20,6 +20,8 @@ import type {
 export type StoredAlert = {
   _id: ObjectId;
   accountId?: string;
+  /** Display name for the account (set when alert is created by scanners). */
+  accountName?: string;
   symbol: string;
   type?: string;
   recommendation: string;
@@ -38,6 +40,8 @@ export type StoredAlert = {
     netPremium?: number;
     netProtectionCost?: number;
     effectiveFloor?: number;
+    /** Unit/cost per share at purchase (option premium or entry); shown in alerts. */
+    unitCost?: number;
     /** Probability of assignment (0–100) for short calls; shown in alerts. */
     assignmentProbability?: number;
   };
@@ -69,6 +73,7 @@ type MetricsLike = {
   dte?: number;
   daysToExpiration?: number;
   entryPrice?: number;
+  unitCost?: number;
   pl?: number;
   netPremium?: number;
   netProtectionCost?: number;
@@ -87,19 +92,22 @@ export function formatScannerAlert(
   const stockPrice = metrics.stockPrice ?? metrics.currentPrice;
   const plPercent = metrics.plPercent ?? metrics.priceChangePercent;
   const dte = metrics.dte ?? metrics.daysToExpiration;
+  const entryOrUnitCost = metrics.unitCost ?? metrics.entryPrice;
 
   const assignmentProb =
     metrics.assignmentProbability != null ? `${metrics.assignmentProbability}%` : "N/A";
 
+  const displayAccount = alert.accountName ?? accountName ?? "Account";
+
   const variables: Record<string, string> = {
-    account: accountName ?? "Account",
+    account: displayAccount,
     symbol: alert.symbol,
     action: alert.recommendation,
     reason: alert.reason,
     severity: (alert.severity ?? "warning").toUpperCase(),
     strategy: mapTypeToStrategy(alert.type),
     currentPrice: formatCurrency(stockPrice),
-    entryPrice: formatCurrency(metrics.entryPrice),
+    entryPrice: formatCurrency(entryOrUnitCost ?? metrics.entryPrice),
     profitPercent: formatPercent(plPercent),
     profitDollars: formatCurrency(metrics.pl ?? metrics.netPremium ?? metrics.netProtectionCost),
     dte: dte != null ? String(dte) : "N/A",

@@ -101,7 +101,7 @@ The watchlist alert system and **Unified Options Scanner** (Option, Covered Call
 
 **Default schedule (Unified Options Scanner):** Weekdays at :15 during market hours (9:15–3:15 ET), cron `15 14-20 * * 1-5` (UTC).
 
-**Setup:** Go to **Setup → Scheduled Jobs** → create recommended jobs (Daily Options Scanner, Watchlist Snapshot, Deliver Alerts, etc.).
+**Setup:** Go to **Automation → Scheduler** (Manage Jobs). Create recommended jobs (Daily Options Scanner, Watchlist Snapshot, Deliver Alerts, etc.). The Manage Jobs table supports sort by Job, Schedule, Next run, Last run, or Status; auto-refresh (default 30s, configurable Off/30s/1m/5m); and failed jobs are highlighted with a red row background.
 
 **Deployment:** Production is **AWS App Runner** (see `docs/aws-app-runner-migration.md`). The Docker image runs **web** and **scheduler** via pm2; no separate worker service. For external cron, use GitHub Actions (`.github/workflows/cron-unified-scanner.yml`) to hit `GET /api/cron/unified-options-scanner` if desired.
 

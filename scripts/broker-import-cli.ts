@@ -7,6 +7,7 @@
  *   pnpm run broker-import [config.json] [--preview[=out.json]]
  *   pnpm run broker-import data/merrill-test/import-config.json --preview
  *   pnpm run broker-import data/merrill-test/import-config.json
+ *   ENV_FILE=.env.prod pnpm run broker-import data/merrill-test/import-config.json   # import into prod DB
  *
  * Config (JSON):
  *   holdings: { path: string, broker?: "merrill" | "fidelity" }
@@ -60,8 +61,9 @@ type ParsedAccount = {
   positions?: unknown[];
 };
 
-function loadEnvLocal(): void {
-  const envPath = path.join(process.cwd(), ".env.local");
+function loadEnv(): void {
+  const envFile = process.env.ENV_FILE || ".env.local";
+  const envPath = path.isAbsolute(envFile) ? envFile : path.join(process.cwd(), envFile);
   if (!fs.existsSync(envPath)) return;
   const content = fs.readFileSync(envPath, "utf-8");
   for (const line of content.split("\n")) {
@@ -70,7 +72,8 @@ function loadEnvLocal(): void {
     const eq = trimmed.indexOf("=");
     if (eq === -1) continue;
     const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1).replace(/\\"/g, '"');
     if (key && process.env[key] === undefined) process.env[key] = value;
   }
 }
@@ -142,7 +145,7 @@ function parseActivities(csv: string, broker: Broker): ParsedAccount[] {
 }
 
 function runPreview(configPath: string, previewOutPath: string | null): void {
-  loadEnvLocal();
+  loadEnv();
   const { config, configDir } = loadConfig(configPath);
   const brokerA = (config.activities.broker ?? "merrill") as Broker;
   const activitiesPath = resolvePath(configDir, config.activities.path);
@@ -195,7 +198,7 @@ function runPreview(configPath: string, previewOutPath: string | null): void {
 }
 
 async function runImport(configPath: string): Promise<void> {
-  loadEnvLocal();
+  loadEnv();
   console.error("Broker import: loading config and files...");
   const { config, configDir } = loadConfig(configPath);
 

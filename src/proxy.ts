@@ -9,15 +9,33 @@ const authProxy = auth((req) => {
   }
 });
 
-export function proxy(req: NextRequest, event: NextFetchEvent) {
+function applySecurityHeaders(res: NextResponse): NextResponse {
+  res.headers.set("X-Content-Type-Options", "nosniff");
+  res.headers.set("X-Frame-Options", "DENY");
+  res.headers.set("X-XSS-Protection", "1; mode=block");
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.headers.set(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https://*.yahoo.com https://api.slack.com https://api.twitter.com https://api.openai.com;"
+  );
+  return res;
+}
+
+export async function proxy(req: NextRequest, event: NextFetchEvent) {
   if (process.env.SKIP_AUTH === "true") {
-    return NextResponse.next();
+    return applySecurityHeaders(NextResponse.next());
   }
-  return (authProxy as unknown as (req: NextRequest, ev: NextFetchEvent) => Promise<Response>)(req, event);
+  const response = await (authProxy as unknown as (req: NextRequest, ev: NextFetchEvent) => Promise<Response>)(
+    req,
+    event
+  );
+  const nextRes = response instanceof NextResponse ? response : NextResponse.next();
+  return applySecurityHeaders(nextRes);
 }
 
 export const config = {
   matcher: [
+    // Run on all routes except static assets and public/auth endpoints (proxy runs on /api/chat, /api/accounts, etc.)
     "/((?!_next/static|_next/image|favicon.ico|api/auth|api/health|health|icon.svg|apple-icon.svg|contact|login-error).*)",
   ],
 };

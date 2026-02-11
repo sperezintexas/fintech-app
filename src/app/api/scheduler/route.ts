@@ -55,9 +55,22 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
   let created = 0;
   const jobNames: string[] = [];
 
+  /** Daily Options Scanner must run only during market hours (9:15 AM–4:15 PM ET). */
+  const DAILY_OPTIONS_SCANNER_CRON = "15 14-20 * * 1-5";
+
   for (const r of recommended) {
     const exists = await jobsColl.findOne({ name: r.name });
-    if (exists) continue;
+    if (exists) {
+      if (r.name === "Daily Options Scanner" && exists.scheduleCron !== DAILY_OPTIONS_SCANNER_CRON) {
+        await jobsColl.updateOne(
+          { name: r.name },
+          { $set: { scheduleCron: DAILY_OPTIONS_SCANNER_CRON, updatedAt: now } }
+        );
+        const existingId = (exists as { _id: ObjectId })._id.toString();
+        await upsertReportJobSchedule(existingId, DAILY_OPTIONS_SCANNER_CRON);
+      }
+      continue;
+    }
 
     const doc: JobDoc = {
       accountId: r.accountId,
@@ -182,6 +195,35 @@ export async function POST(request: NextRequest) {
           message: created > 0 ? `Created ${created} recommended job(s)` : "Recommended jobs already exist",
           created,
           jobs,
+        });
+      }
+
+      case "fixDailyOptionsScannerSchedule": {
+        const db = await getDb();
+        const MARKET_HOURS_CRON = "15 14-20 * * 1-5";
+        const jobsColl = db.collection<JobDoc>("reportJobs");
+        const job = await jobsColl.findOne({ name: "Daily Options Scanner" });
+        if (!job) {
+          return NextResponse.json({
+            success: true,
+            message: "No Daily Options Scanner job found; create it via Create recommended jobs.",
+          });
+        }
+        const jobId = (job as { _id: ObjectId })._id.toString();
+        if (job.scheduleCron === MARKET_HOURS_CRON) {
+          return NextResponse.json({
+            success: true,
+            message: "Daily Options Scanner already set to market hours (9:15 AM–4:15 PM ET).",
+          });
+        }
+        await jobsColl.updateOne(
+          { name: "Daily Options Scanner" },
+          { $set: { scheduleCron: MARKET_HOURS_CRON, updatedAt: new Date().toISOString() } }
+        );
+        await upsertReportJobSchedule(jobId, MARKET_HOURS_CRON);
+        return NextResponse.json({
+          success: true,
+          message: "Daily Options Scanner schedule updated to market hours only (9:15 AM–4:15 PM ET, weekdays).",
         });
       }
 

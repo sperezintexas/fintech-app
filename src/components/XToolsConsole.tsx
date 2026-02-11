@@ -35,6 +35,25 @@ export function XToolsConsole() {
   const [output, setOutput] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+
+  const generatePassword = useCallback(() => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+    const bytes = new Uint8Array(64);
+    crypto.getRandomValues(bytes);
+    let pw = "";
+    for (let i = 0; i < 64; i++) {
+      pw += chars[bytes[i] % chars.length];
+    }
+    setNewPassword(pw);
+  }, []);
+
+  const copyPassword = useCallback(async () => {
+    if (navigator.clipboard && newPassword) {
+      await navigator.clipboard.writeText(newPassword);
+      alert("Password copied!");
+    }
+  }, [newPassword]);
 
   const run = useCallback(async () => {
     let parsed: unknown;
@@ -110,7 +129,40 @@ export function XToolsConsole() {
             {label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={generatePassword}
+          className="px-3 py-1 text-xs bg-green-600 text-white rounded border border-green-600 hover:bg-green-700"
+        >
+          Generate Password
+        </button>
       </div>
+      {newPassword && (
+        <div className="mt-4 p-3 bg-gray-50 rounded-lg border">
+          <label className="block text-xs font-medium text-gray-700 mb-1">New Password (64 chars)</label>
+          <div className="flex gap-2">
+            <input
+              readOnly
+              value={newPassword}
+              className="flex-1 px-3 py-2 text-xs font-mono border border-gray-300 rounded-lg bg-white"
+            />
+            <button
+              type="button"
+              onClick={copyPassword}
+              className="px-4 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 whitespace-nowrap"
+            >
+              Copy
+            </button>
+            <button
+              type="button"
+              onClick={() => setNewPassword("")}
+              className="px-3 py-2 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              New
+            </button>
+          </div>
+        </div>
+      )}
       {error && (
         <div className="mb-2 p-2 rounded bg-red-50 border border-red-200 text-red-800 text-sm">{error}</div>
       )}

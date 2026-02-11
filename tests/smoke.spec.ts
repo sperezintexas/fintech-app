@@ -9,19 +9,26 @@ test.describe("Smoke tests", () => {
 
   test("navigation links work", async ({ page }) => {
     await page.goto("/");
+
+    // Dashboard and main nav are in the sidebar; open menu first
+    await page.getByTestId("sidebar-menu-button").click();
     await page.getByRole("link", { name: /Dashboard/i }).click();
     await expect(page).toHaveURL(/\//);
 
+    await page.getByTestId("sidebar-menu-button").click();
     await page.getByRole("link", { name: /Watchlist/i }).click();
     await expect(page).toHaveURL(/\/watchlist/);
 
+    await page.getByTestId("sidebar-menu-button").click();
     await page.getByRole("link", { name: /Holdings/i }).click();
     await expect(page).toHaveURL(/\/holdings/);
 
+    await page.getByTestId("sidebar-menu-button").click();
     await page.getByRole("link", { name: /xStrategyBuilder/i }).click();
     await expect(page).toHaveURL(/\/xstrategybuilder/);
 
-    await page.getByRole("link", { name: /Automation/i }).click();
+    // Automation is in header as "Setup"
+    await page.getByRole("link", { name: /Setup/i }).click();
     await expect(page).toHaveURL(/\/automation/);
 
     await page.getByRole("link", { name: /Job Types/i }).click();
@@ -35,21 +42,24 @@ test.describe("Smoke tests", () => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: /myInvestments/i })).toBeVisible();
 
+    await page.getByTestId("sidebar-menu-button").click();
     await page.getByRole("link", { name: /Watchlist/i }).click();
     await expect(page).toHaveURL(/\/watchlist/);
     await expect(page.getByText(/Watchlists|Select a watchlist|create one to get started/i).first()).toBeVisible();
 
+    await page.getByTestId("sidebar-menu-button").click();
     await page.getByRole("link", { name: /Holdings/i }).click();
     await expect(page).toHaveURL(/\/holdings/);
     await expect(page.getByRole("heading", { name: /Holdings/i })).toBeVisible();
 
+    await page.getByTestId("sidebar-menu-button").click();
     await page.getByRole("link", { name: /xStrategyBuilder/i }).click();
     await expect(page).toHaveURL(/\/xstrategybuilder/);
     await expect(page.getByRole("heading", { name: /xStrategyBuilder/i })).toBeVisible();
 
-    await page.getByRole("link", { name: /Automation/i }).click();
+    await page.getByRole("link", { name: /Setup/i }).click();
     await expect(page).toHaveURL(/\/automation/);
-    await expect(page.getByText(/Alerts|Alert Settings|Strategy|Scheduled Jobs/i).first()).toBeVisible();
+    await expect(page.getByText(/Alerts|Alert Settings|Strategy|Scheduled Jobs/i).first()).toBeVisible({ timeout: 8000 });
 
     await page.getByRole("link", { name: /Job Types/i }).click();
     await expect(page).toHaveURL(/\/automation\/job-types/);

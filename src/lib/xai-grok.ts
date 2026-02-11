@@ -5,6 +5,8 @@
 
 import OpenAI from "openai";
 import { searchWeb } from "./web-search";
+import { getDb } from "./mongodb";
+import { getJobStatus, runJobNow } from "./scheduler";
 
 export const XAI_MODEL = process.env.XAI_MODEL || "grok-4";
 
@@ -130,6 +132,37 @@ export const COVERED_CALL_ALTERNATIVES_TOOL: OpenAI.Chat.ChatCompletionTool = {
   },
 };
 
+export const LIST_JOBS_TOOL: OpenAI.Chat.ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "list_jobs",
+    description: "List your current scheduled jobs, scanners, and automations. Includes report jobs (e.g. Unified Options Scanner), their cron schedules, status, and next run times. Use when user asks about jobs, schedules, automation, or scanners.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+};
+
+export const TRIGGER_PORTFOLIO_SCAN_TOOL: OpenAI.Chat.ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "trigger_portfolio_scan",
+    description: "Trigger an immediate full portfolio options position evaluation. Runs Unified Options Scanner (all analyzers: options, covered calls, protective puts, straddles), watchlist report, and alert delivery. Use only when user explicitly requests 'run scan', 'evaluate positions now', 'check my options', or similar. Returns job IDs for tracking.",
+    parameters: {
+      type: "object",
+      properties: {
+        accountId: {
+          type: "string",
+          description: "Optional: specific account ID (e.g. '671a...'). Defaults to all/portfolio."
+        }
+      },
+      required: [],
+    },
+  },
+};
+
 export type CoveredCallAlternativesArgs = {
   symbol?: string;
   strike?: number;
@@ -208,6 +241,48 @@ export type GrokWithToolsResult = {
  * Call Grok with tools; handles tool-calling loop for web_search.
  * Pre-injected context (portfolio, news, prices) is passed in userContent.
  */
+async function executeListJobs(): Promise<string> {
+  const status = await getJobStatus();
+  const db = await getDb();
+  const reportJobs = await db.collection("reportJobs").find({status: "active"}).sort({updatedAt: -1}).limit(20).toArray();
+  let result = "*Your Active Scheduled Jobs:*\\n\\n";
+  if (reportJobs.length === 0) {
+    result += "No user-scheduled report jobs found.\\n";
+  } else {
+    for (const job of reportJobs) {
+      result += `• **${job.name}** (${job.jobType}) ${job.accountId ? `| Account: ${job.accountId.slice(0,8)}` : "(Portfolio-wide)"} | Cron: \\\`${job.scheduleCron || 'manual'}\\\` | Channels: ${Array.isArray(job.channels) ? job.channels.join(", ") : "none"}\\n`;
+    }
+  }
+  result += "\\n*Running Agenda Jobs:*\\n";
+  if (status.jobs.length === 0) {
+    result += "No active Agenda jobs.\\n";
+  } else {
+    for (const aj of status.jobs.slice(0, 15)) {
+      const next = aj.nextRunAt ? new Date(aj.nextRunAt).toLocaleString() : "soon";
+      const last = aj.lastRunAt ? new Date(aj.lastRunAt).toLocaleString() : "never";
+      result += `• **${aj.name}** | Next: ${next} | Last: ${last} | Failures: ${aj.failCount}\\n`;
+    }
+  }
+  result += `\\n*View full history: /automation/job-history*`;
+  return result;
+}
+
+async function executeTriggerPortfolioScan(argsStr: string): Promise<string> {
+  let args: { accountId?: string } = {};
+  try {
+    args = JSON.parse(argsStr) as { accountId?: string };
+  } catch {
+    // ignore
+  }
+  const accountId = args.accountId;
+  const dataUnified = accountId ? {accountId} : {};
+  const dataWatchlist = accountId ? {accountId} : {};
+  await runJobNow("unifiedOptionsScanner", dataUnified);
+  await runJobNow("watchlistreport", dataWatchlist);
+  await runJobNow("deliverAlerts", accountId ? {accountId} : {});
+  return `✅ *Portfolio scan triggered successfully!*\\n\\n• Unified Options Scanner (positions)\\n• Watchlist Report\\n• Alert Delivery\\n\\n${accountId ? `Account: ${accountId.slice(0,8)}` : "All accounts"}\\n\\nResults in ~1-2 min. Check *Automation > Job History* or alerts (Slack/X).`;
+}
+
 export async function callGrokWithTools(
   systemPrompt: string,
   userContent: string,
@@ -294,6 +369,10 @@ export async function callGrokWithTools(
         resultContent = await executeWebSearch(args as { query?: string; num_results?: number });
       } else if (name === "covered_call_alternatives") {
         resultContent = await executeCoveredCallAlternatives(args as CoveredCallAlternativesArgs);
+      } else if (name === "list_jobs") {
+        resultContent = await executeListJobs();
+      } else if (name === "trigger_portfolio_scan") {
+        resultContent = await executeTriggerPortfolioScan(tc.function.arguments ?? "{}");
       } else {
         resultContent = JSON.stringify({ error: `Unknown tool: ${name}` });
       }

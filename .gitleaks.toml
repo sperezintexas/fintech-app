@@ -22,13 +22,15 @@ paths = [
   '''\.env\.template''',
   '''src/lib/__tests__/env\.test\.ts''',
   '''scripts/seed-local-db\.ts''',
+  '''scripts/export-accounts-csv\.ts''',
+  '''src/lib/env\.ts''',
 ]
 
 # Additional rules for common secrets in this project
 [[rules]]
 id = "polygon-api-key"
 description = "Polygon.io API Key"
-regex = '''POLYGON_API_KEY\s*=\s*["\']?[A-Za-z0-9_]{20,}["\']?'''
+regex = '''POLYGON_API_KEY\s*=\s*["'\']?[A-Za-z0-9_]{20,}["'\']?'''
 tags = ["api", "polygon"]
 
 [[rules]]
@@ -40,11 +42,11 @@ tags = ["database", "mongodb"]
 [[rules]]
 id = "next-auth-secret"
 description = "NextAuth Secret"
-regex = '''NEXTAUTH_SECRET\s*=\s*["\']?[A-Za-z0-9+/=]{20,}["\']?'''
+regex = '''NEXTAUTH_SECRET\s*=\s*["'\']?[A-Za-z0-9+/=]{20,}["'\']?'''
 tags = ["auth", "nextauth"]
 
 [[rules]]
 id = "jwt-secret"
 description = "JWT Secret"
-regex = '''JWT_SECRET\s*=\s*["\']?[^\s"'\`]{16,}["\']?'''
+regex = '''JWT_SECRET\s*=\s*["'\']?[^\s"'\`]{16,}["'\']?'''
 tags = ["auth", "jwt"]

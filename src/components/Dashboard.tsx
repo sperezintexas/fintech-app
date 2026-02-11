@@ -265,24 +265,28 @@ export function Dashboard() {
             Manage accounts →
           </p>
         </Link>
-        <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
-          <p className="text-gray-500 text-sm">Open Holdings</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">
-            {stats?.positionCount || 0}
-          </p>
-          <p className="text-emerald-600 text-sm mt-2">
-            {stats?.positionCount === 0 ? "No holdings" : "Active"}
-          </p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
-          <p className="text-gray-500 text-sm">Recommendations</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">
-            {stats?.recommendationCount || 0}
-          </p>
-          <p className="text-blue-600 text-sm mt-2">
-            {stats?.recommendationCount === 0 ? "None pending" : "Review pending"}
-          </p>
-        </div>
+        <Link href="/accounts?tab=holdings" className="block hover:shadow-md hover:border-blue-200 transition-all rounded-xl">
+          <div className="bg-white p-5 border border-gray-100 shadow-sm hover:shadow-md">
+            <p className="text-gray-500 text-sm">Open Holdings</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">
+              {stats?.positionCount || 0}
+            </p>
+            <p className="text-emerald-600 text-sm mt-2">
+              {stats?.positionCount === 0 ? "No holdings" : "Active"}
+            </p>
+          </div>
+        </Link>
+        <Link href="/alerts" className="block hover:shadow-md hover:border-blue-200 transition-all rounded-xl">
+          <div className="bg-white p-5 border border-gray-100 shadow-sm hover:shadow-md">
+            <p className="text-gray-500 text-sm">Recommendations</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">
+              {stats?.recommendationCount || 0}
+            </p>
+            <p className="text-blue-600 text-sm mt-2">
+              {stats?.recommendationCount === 0 ? "None pending" : "Review pending"}
+            </p>
+          </div>
+        </Link>
         <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
           <p className="text-gray-500 text-sm">ROI</p>
           <p className={`text-2xl font-bold mt-1 ${(stats?.roiPercent ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>

@@ -618,6 +618,8 @@ export type OptionRecommendation = {
   recommendation: OptionRecommendationAction;
   reason: string;
   metrics: OptionRecommendationMetrics;
+  /** Option premium (cost) per share at purchase; shown in alerts. */
+  unitCost?: number;
   source?: "rules" | "grok";
   preliminaryRecommendation?: OptionRecommendationAction;
   preliminaryReason?: string;

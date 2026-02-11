@@ -14,6 +14,7 @@ export type GrokChatToolsConfig = {
   portfolio: boolean;
   /** When true, pre-fetch recent covered call recommendations when user asks about recommendations/BTC/roll. */
   coveredCallRecs: boolean;
+  jobs: boolean;
 };
 
 export type GrokChatContextConfig = {
@@ -39,6 +40,7 @@ const DEFAULT_TOOLS: GrokChatToolsConfig = {
   marketData: true,
   portfolio: true,
   coveredCallRecs: true,
+  jobs: true,
 };
 
 const DEFAULT_CONTEXT: GrokChatContextConfig = {
@@ -60,6 +62,7 @@ export async function getGrokChatConfig(): Promise<GrokChatConfig> {
         marketData: tools?.marketData ?? DEFAULT_TOOLS.marketData,
         portfolio: tools?.portfolio ?? DEFAULT_TOOLS.portfolio,
         coveredCallRecs: tools?.coveredCallRecs ?? DEFAULT_TOOLS.coveredCallRecs,
+  jobs: tools?.jobs ?? DEFAULT_TOOLS.jobs,
       },
       context: {
         riskProfile: context?.riskProfile ?? DEFAULT_CONTEXT.riskProfile,

@@ -345,6 +345,7 @@ export async function scanOptions(
       source: useGrok ? "grok" : "rules",
       preliminaryRecommendation: r.prelim.recommendation,
       preliminaryReason: r.prelim.reason,
+      unitCost: r.pos.premium,
       metrics: {
         price: r.metrics.price,
         underlyingPrice: r.metrics.underlyingPrice,
@@ -365,6 +366,58 @@ export async function scanOptions(
   return recommendations;
 }
 
+/** Build concise, actionable alert summary for option-scanner BUY_TO_CLOSE (replaces long bullet reason). */
+function buildOptionScannerAlertSummary(rec: OptionRecommendation): string {
+  const sym = rec.underlyingSymbol || rec.symbol;
+  const expDate = rec.expiration ? new Date(rec.expiration + "T12:00:00Z") : null;
+  const expShort = expDate
+    ? expDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    : rec.expiration || "—";
+  const optLabel = rec.optionType === "call" ? "call" : "put";
+  const positionDesc = `${sym} ${expShort} $${rec.strike} ${optLabel}`;
+
+  const credit = (rec.unitCost ?? 0) * 100 * (rec.contracts ?? 1);
+  const currentBid = (rec.metrics?.price ?? 0) * 100 * (rec.contracts ?? 1);
+  const netProfitBtc = (rec.unitCost ?? 0) - (rec.metrics?.price ?? 0);
+  const netProfitDollars = Math.round(netProfitBtc * 100 * (rec.contracts ?? 1));
+  const capturePct =
+    credit > 0 ? Math.round(((credit - currentBid) / credit) * 100) : 0;
+  const bidPerShare = rec.metrics?.price ?? 0;
+  const dte = rec.metrics?.dte ?? 0;
+  const underlying = rec.metrics?.underlyingPrice ?? 0;
+  const isPutOtm = rec.optionType === "put" && underlying > rec.strike;
+  const bidStr = bidPerShare >= 0.01 ? `$${bidPerShare.toFixed(2)}` : `$${bidPerShare.toFixed(3)}`;
+  const creditStr = `$${Math.round(credit)}`;
+  let guidance = `Current bid ${bidStr} is ~${capturePct}% capture ($${netProfitDollars} net profit on ${creditStr} credit). `;
+  guidance += `BTC now if conservative to free margin and avoid gap risk; let expire for full ${creditStr} if aggressive`;
+  guidance += isPutOtm ? " (high OTM prob)." : ".";
+  if (capturePct >= 80 && dte > 0 && rec.metrics?.plPercent != null) {
+    const roiAnnual = Math.round((rec.metrics.plPercent / 100) * (365 / dte) * 100);
+    if (roiAnnual > 0 && roiAnnual < 500) {
+      guidance += ` ROI ~${roiAnnual}% annualized either way.`;
+    } else {
+      guidance += " ROI favorable either way.";
+    }
+  } else {
+    guidance += " ROI favorable either way.";
+  }
+  return `For your ${positionDesc}: ${guidance}`;
+}
+
+async function getAccountDisplayName(db: Awaited<ReturnType<typeof getDb>>, accountId: string): Promise<string | undefined> {
+  try {
+    const acc = await db.collection("accounts").findOne(
+      { _id: new ObjectId(accountId) },
+      { projection: { name: 1, broker: 1 } }
+    );
+    if (!acc) return undefined;
+    const a = acc as { name?: string; broker?: string };
+    return a.broker ?? a.name;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Store recommendations in optionRecommendations collection and optionally create alerts. */
 export async function storeOptionRecommendations(
   recommendations: OptionRecommendation[],
@@ -382,14 +435,17 @@ export async function storeOptionRecommendations(
     stored++;
 
     if (options?.createAlerts && rec.recommendation === "BUY_TO_CLOSE") {
+      const accountName = await getAccountDisplayName(db, rec.accountId);
+      const reason = buildOptionScannerAlertSummary(rec);
       const alert = {
         type: "option-scanner",
         positionId: rec.positionId,
         accountId: rec.accountId,
+        accountName: accountName ?? undefined,
         symbol: rec.symbol,
         recommendation: rec.recommendation,
-        reason: rec.reason,
-        metrics: rec.metrics,
+        reason,
+        metrics: { ...rec.metrics, ...(rec.unitCost != null && { unitCost: rec.unitCost }) },
         severity: "warning",
         createdAt: new Date().toISOString(),
         acknowledged: false,
