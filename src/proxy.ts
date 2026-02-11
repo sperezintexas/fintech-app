@@ -35,7 +35,7 @@ export async function proxy(req: NextRequest, event: NextFetchEvent) {
 
 export const config = {
   matcher: [
-    // Same as old middleware: exclude api, _next, favicon; plus auth public routes
-    "/((?!api|_next/static|_next/image|favicon.ico|health|icon.svg|apple-icon.svg|contact|login-error).*)",
+    // Run on all routes except static assets and public/auth endpoints (proxy runs on /api/chat, /api/accounts, etc.)
+    "/((?!_next/static|_next/image|favicon.ico|api/auth|api/health|health|icon.svg|apple-icon.svg|contact|login-error).*)",
   ],
 };
