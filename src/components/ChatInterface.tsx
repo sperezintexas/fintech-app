@@ -12,7 +12,7 @@ type Message = {
 
 type GrokChatConfig = {
   tools: { webSearch: boolean; marketData: boolean; portfolio: boolean; coveredCallRecs: boolean };
-  context: { riskProfile?: string; strategyGoals?: string; systemPromptOverride?: string };
+  context: { riskProfile?: string; strategyGoals?: string; systemPromptOverride?: string; persona?: string };
 };
 
 const DEFAULT_CONFIG: GrokChatConfig = {
@@ -285,6 +285,26 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
                   className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200"
                 />
               </div>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Persona</label>
+              <select
+                value={config.context.persona ?? "finance-expert"}
+                onChange={(e) =>
+                  setConfig((c) => ({
+                    ...c,
+                    context: { ...c.context, persona: e.target.value || undefined },
+                  }))
+                }
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200"
+              >
+                <option value="finance-expert">Finance Expert (default)</option>
+                <option value="medical-expert">Medical Expert</option>
+                <option value="legal-expert">Legal Expert</option>
+                <option value="tax-expert">Tax Expert</option>
+                <option value="trusted-advisor">Trusted Advisor</option>
+                <option value="">Custom only (override below)</option>
+              </select>
             </div>
             <details className="mt-2">
               <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Advanced: System prompt override</summary>

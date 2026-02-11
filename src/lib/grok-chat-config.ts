@@ -21,6 +21,7 @@ export type GrokChatContextConfig = {
   riskProfile?: "low" | "medium" | "high" | "aggressive";
   strategyGoals?: string;
   systemPromptOverride?: string;
+  persona?: string;
 };
 
 export type GrokChatConfig = {
@@ -47,6 +48,7 @@ const DEFAULT_CONTEXT: GrokChatContextConfig = {
   riskProfile: "medium",
   strategyGoals: "",
   systemPromptOverride: "",
+  persona: "finance-expert",
 };
 
 export async function getGrokChatConfig(): Promise<GrokChatConfig> {
@@ -68,6 +70,7 @@ export async function getGrokChatConfig(): Promise<GrokChatConfig> {
         riskProfile: context?.riskProfile ?? DEFAULT_CONTEXT.riskProfile,
         strategyGoals: context?.strategyGoals ?? DEFAULT_CONTEXT.strategyGoals,
         systemPromptOverride: context?.systemPromptOverride ?? DEFAULT_CONTEXT.systemPromptOverride,
+        persona: context?.persona ?? DEFAULT_CONTEXT.persona,
       },
       updatedAt: doc.updatedAt as string | undefined,
     };

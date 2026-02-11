@@ -6,6 +6,7 @@ import {
   type GrokChatToolsConfig,
   type GrokChatContextConfig,
 } from "@/lib/grok-chat-config";
+import { PERSONAS } from "@/lib/chat-personas";
 import { XAI_MODEL } from "@/lib/xai-grok";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +56,12 @@ export async function PUT(request: NextRequest) {
       }
       if (typeof context.systemPromptOverride === "string") {
         ctx.systemPromptOverride = context.systemPromptOverride.slice(0, 4000);
+      }
+      if (typeof context.persona === "string") {
+        const allowedPersonas = Object.keys(PERSONAS);
+        if (allowedPersonas.includes(context.persona)) {
+          ctx.persona = context.persona.slice(0, 50);
+        }
       }
       if (Object.keys(ctx).length > 0) config.context = ctx;
     }

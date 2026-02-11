@@ -6,6 +6,7 @@ import type { Account } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
 import { callGrokWithTools, WEB_SEARCH_TOOL, COVERED_CALL_ALTERNATIVES_TOOL, LIST_JOBS_TOOL, TRIGGER_PORTFOLIO_SCAN_TOOL } from "@/lib/xai-grok";
 import { getGrokChatConfig } from "@/lib/grok-chat-config";
+import { getPersonaPrompt } from "@/lib/chat-personas";
 import { appendChatHistory } from "@/lib/chat-history";
 import { getRecentCoveredCallRecommendations } from "@/lib/covered-call-analyzer";
 
@@ -448,9 +449,10 @@ export async function POST(request: NextRequest) {
     let model: string | undefined;
 
     try {
-      const basePrompt = ctxConfig.systemPromptOverride?.trim()
-        ? ctxConfig.systemPromptOverride
-        : `You are Grok, a leading financial expert for myInvestments. You advise on maximizing profits using current, mid, and future potential earnings for valuable companies like TESLA. Provide brief, direct answers with no leading intro; offer more details when asked. Focus on moderate and aggressive suggestions, sound options strategies around TSLA, SpaceX proxies, xAI/Grok proxies, and defense investments. When options/positions context shows price near or above strike, advise buy-to-close (BTC) to avoid assignment when appropriate.`;
+    const personaPrompt = ctxConfig.persona ? getPersonaPrompt(ctxConfig.persona) ?? '' : '';
+    const overridePrompt = ctxConfig.systemPromptOverride?.trim() ?? '';
+    const defaultPrompt = getPersonaPrompt('finance-expert') ?? 'You are Grok, a helpful assistant.';
+    const basePrompt = personaPrompt || overridePrompt || defaultPrompt;
 
       const riskLine = ctxConfig.riskProfile
         ? `\nUser risk profile: ${ctxConfig.riskProfile}. Tailor advice accordingly.`
