@@ -209,6 +209,19 @@ export function ContractSelector({
     if (!hasStrike) setStrikeFilter('all');
   }, [chainForSelection, strikeFilter]);
 
+  /** When "Show all strikes" is on and user selects a strike, set limit price to that strike's mid (bid+ask)/2 */
+  useEffect(() => {
+    if (!showAllStrikes || selectedStrike == null || optionChain.length === 0) return;
+    const row = optionChain.find((c) => c.strike === selectedStrike);
+    const c = contractType === 'call' ? row?.call : row?.put;
+    const b = c?.last_quote?.bid ?? c?.premium ?? 0;
+    const a = c?.last_quote?.ask ?? c?.premium ?? 0;
+    const mid = b > 0 && a > 0 ? (b + a) / 2 : c?.premium;
+    if (mid != null && mid > 0) {
+      onLimitPriceChange(mid.toFixed(4));
+    }
+  }, [showAllStrikes, selectedStrike, contractType, optionChain, onLimitPriceChange]);
+
   const isItm = (strike: number) =>
     contractType === 'call' ? strike < stockPrice : strike > stockPrice;
 
@@ -396,17 +409,17 @@ export function ContractSelector({
         <span className="font-medium text-gray-700">Option chain:</span> Live data for selected expiration (all strikes from source). Scanner filters (min OI, min volume) in Setup → Strategy apply to recommendations only.
       </div>
 
-      {/* Controls row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div>
-          <label htmlFor="expiration" className="block text-sm font-medium text-gray-700 mb-1">
-            Expiration date
+      {/* Controls row — compact, mobile-friendly */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+        <div className="min-w-0">
+          <label htmlFor="expiration" className="block text-xs font-medium text-gray-600 mb-0.5">
+            Expiry
           </label>
           <select
             id="expiration"
             value={expiration ?? ''}
             onChange={(e) => onExpirationChange(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="w-full min-w-0 px-2 py-1.5 border border-gray-300 rounded-md text-sm"
             aria-label="Select expiration date"
           >
             {expirations.map((d) => (
@@ -416,9 +429,9 @@ export function ContractSelector({
             ))}
           </select>
         </div>
-        <div>
-          <label htmlFor="strike-filter" className="block text-sm font-medium text-gray-700 mb-1">
-            All Strike Prices
+        <div className="min-w-0">
+          <label htmlFor="strike-filter" className="block text-xs font-medium text-gray-600 mb-0.5">
+            Strike
           </label>
           <select
             id="strike-filter"
@@ -435,10 +448,10 @@ export function ContractSelector({
                 }
               }
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="w-full min-w-0 px-2 py-1.5 border border-gray-300 rounded-md text-sm"
             aria-label="Filter or select strike price"
           >
-            <option value="all">All Strike Prices</option>
+            <option value="all">All</option>
             {chainForSelection.map((c) => (
               <option key={c.strike} value={c.strike}>
                 ${c.strike.toFixed(2)}
@@ -446,25 +459,11 @@ export function ContractSelector({
             ))}
           </select>
         </div>
-        <div className="flex items-end">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showAllStrikes}
-              onChange={(e) => setShowAllStrikes(e.target.checked)}
-              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-              aria-label="Show all strike prices for this expiration"
-            />
-            <span className="text-sm font-medium text-gray-700">Show all strikes</span>
+        <div className="min-w-0">
+          <label htmlFor="limit" className="block text-xs font-medium text-gray-600 mb-0.5">
+            Limit $
           </label>
-          <p className="sr-only">When on, displays every strike for calls and puts for the selected expiration</p>
-        </div>
-        <div>
-          <label htmlFor="limit" className="block text-sm font-medium text-gray-700 mb-1">
-            Limit price
-          </label>
-          <div className="flex items-center gap-1">
-            <span className="text-gray-500 text-sm">$</span>
+          <div className="flex items-center gap-0.5">
             <input
               id="limit"
               type="number"
@@ -473,19 +472,19 @@ export function ContractSelector({
               value={limitPrice}
               onChange={(e) => onLimitPriceChange(e.target.value)}
               placeholder={premium > 0 ? premium.toFixed(4) : '0.0650'}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="w-full min-w-0 px-2 py-1.5 border border-gray-300 rounded-md text-sm"
               aria-label="Limit price"
             />
           </div>
           {bid > 0 && ask > 0 && (
-            <p className="text-xs text-gray-500 mt-0.5">
-              Bid ${bid.toFixed(4)} / Ask ${ask.toFixed(4)}
+            <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 truncate">
+              B ${bid.toFixed(2)} / A ${ask.toFixed(2)}
             </p>
           )}
         </div>
-        <div>
-          <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 mb-1">
-            Quantity
+        <div className="min-w-0">
+          <label htmlFor="quantity" className="block text-xs font-medium text-gray-600 mb-0.5">
+            Qty
           </label>
           <input
             id="quantity"
@@ -494,9 +493,22 @@ export function ContractSelector({
             step={1}
             value={quantity}
             onChange={(e) => onQuantityChange(Math.max(1, parseInt(e.target.value, 10) || 1))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="w-full min-w-0 px-2 py-1.5 border border-gray-300 rounded-md text-sm"
             aria-label="Contract quantity"
           />
+        </div>
+        <div className="col-span-2 sm:col-span-4 flex items-center pt-0.5">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showAllStrikes}
+              onChange={(e) => setShowAllStrikes(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 sm:w-4 sm:h-4"
+              aria-label="Show all strike prices for this expiration"
+            />
+            <span className="text-xs sm:text-sm font-medium text-gray-700">Show all strikes</span>
+          </label>
+          <p className="sr-only">When on, displays every strike for calls and puts for the selected expiration</p>
         </div>
       </div>
 
