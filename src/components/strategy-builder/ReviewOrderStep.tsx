@@ -37,6 +37,51 @@ function mockProbOtm(stockPrice: number, strike: number, isCall: boolean): numbe
   return Math.min(99, Math.round(50 + otmPercent * 2));
 }
 
+/** Semi-circular gauge for probability 0–100% (teal fill, grey track). */
+function ProbOtmGauge({ percent }: { percent: number }) {
+  const r = 24;
+  const cx = 28;
+  const cy = 28;
+  const clamped = Math.min(100, Math.max(0, percent));
+  const angle = (clamped / 100) * 180;
+  const rad = (angle * Math.PI) / 180;
+  const x = cx + r * Math.cos(Math.PI - rad);
+  const y = cy - r * Math.sin(Math.PI - rad);
+  const largeArc = angle > 180 ? 1 : 0;
+  const fillPath =
+    angle <= 0
+      ? ''
+      : angle >= 180
+        ? `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`
+        : `M ${cx - r} ${cy} A ${r} ${r} 0 ${largeArc} 1 ${x} ${y}`;
+  return (
+    <svg
+      width={56}
+      height={32}
+      viewBox="0 0 56 32"
+      className="flex-shrink-0"
+      aria-hidden
+    >
+      <path
+        d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
+        fill="none"
+        stroke="#e5e7eb"
+        strokeWidth={6}
+        strokeLinecap="round"
+      />
+      {fillPath && (
+        <path
+          d={fillPath}
+          fill="none"
+          stroke="#0d9488"
+          strokeWidth={6}
+          strokeLinecap="round"
+        />
+      )}
+    </svg>
+  );
+}
+
 function mapStrategyToWatchlist(strategyId: string, contractType: 'call' | 'put'): { type: string; strategy: string } {
   if (strategyId === 'covered-call') return { type: 'covered-call', strategy: 'covered-call' };
   if (strategyId === 'cash-secured-put') return { type: 'csp', strategy: 'cash-secured-put' };
@@ -319,16 +364,16 @@ export function ReviewOrderStep({
         </table>
       </div>
 
-      {/* 2. Metrics Bar */}
+      {/* 2. Metrics Bar: Bid, BE, Prob OTM with semicircle gauge */}
       <div
-        className="flex flex-wrap gap-6 p-4 bg-gray-50 rounded-xl border border-gray-200"
+        className="flex flex-wrap items-center gap-6 p-4 bg-gray-50 rounded-xl border border-gray-200"
         role="region"
         aria-live="polite"
         aria-label="Order metrics"
       >
         <div>
           <span className="text-xs text-gray-500 uppercase tracking-wider">Bid</span>
-          <p className="text-lg font-bold text-green-700">${bid.toFixed(4)}</p>
+          <p className="text-lg font-bold text-green-700">${bid.toFixed(2)}</p>
         </div>
         <div>
           <span className="text-xs text-gray-500 uppercase tracking-wider">Breakeven (BE)</span>
@@ -336,17 +381,10 @@ export function ReviewOrderStep({
             {breakeven != null ? `$${breakeven.toFixed(2)}` : '—'}
           </p>
         </div>
-        <div>
-          <span className="text-xs text-gray-500 uppercase tracking-wider">Probability OTM</span>
-          <div className="flex items-center gap-2">
-            <div className="w-24 h-3 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-indigo-500 rounded-full transition-all"
-                style={{ width: `${probOtm}%` }}
-              />
-            </div>
-            <span className="text-lg font-bold text-gray-900">{probOtm}%</span>
-          </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500 uppercase tracking-wider">Probability of being OTM</span>
+          <span className="text-lg font-bold text-gray-900">{probOtm}%</span>
+          <ProbOtmGauge percent={probOtm} />
         </div>
       </div>
 

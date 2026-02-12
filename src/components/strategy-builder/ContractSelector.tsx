@@ -105,6 +105,7 @@ export function ContractSelector({
   }>({ cashOnHand: 0, sharesForSymbol: 0 });
   /** Strike filter: 'all' = show all strikes (Yahoo "All Strike Prices"); number = show only that strike */
   const [strikeFilter, setStrikeFilter] = useState<'all' | number>('all');
+  const [showAllStrikes, setShowAllStrikes] = useState(false);
 
   useEffect(() => {
     if (!symbol) return;
@@ -193,17 +194,20 @@ export function ContractSelector({
     return optionChain.filter((c) => c.strike >= min && c.strike <= max);
   }, [optionChain, stockPrice, strategyId]);
 
+  /** Chain to choose from: full chain when "Show all strikes" is on, otherwise range around stock */
+  const chainForSelection = showAllStrikes ? optionChain : filteredChain;
+
   /** Rows to show: all strikes or single strike when "Strike price" dropdown filters to one */
   const displayChain = useMemo(() => {
-    if (strikeFilter === 'all') return filteredChain;
-    return filteredChain.filter((c) => c.strike === strikeFilter);
-  }, [filteredChain, strikeFilter]);
+    if (strikeFilter === 'all') return chainForSelection;
+    return chainForSelection.filter((c) => c.strike === strikeFilter);
+  }, [chainForSelection, strikeFilter]);
 
   useEffect(() => {
     if (strikeFilter === 'all') return;
-    const hasStrike = filteredChain.some((c) => c.strike === strikeFilter);
+    const hasStrike = chainForSelection.some((c) => c.strike === strikeFilter);
     if (!hasStrike) setStrikeFilter('all');
-  }, [filteredChain, strikeFilter]);
+  }, [chainForSelection, strikeFilter]);
 
   const isItm = (strike: number) =>
     contractType === 'call' ? strike < stockPrice : strike > stockPrice;
@@ -349,38 +353,47 @@ export function ContractSelector({
         </div>
       )}
 
-      {/* Price clue: current price + 50 MA ±15% */}
-      <div className="flex flex-wrap items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-        <div>
-          <span className="text-xs text-gray-500 uppercase tracking-wider">Current price</span>
-          <p className="text-lg font-bold text-gray-900">${stockPrice.toFixed(2)}</p>
+      {/* Compact: current price + strike targets ±5/10/15% + 50 MA & +20% when available */}
+      <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+          <div>
+            <span className="text-xs text-gray-500 uppercase tracking-wider">Price</span>
+            <span className="ml-2 text-xl font-bold text-gray-900">${stockPrice.toFixed(2)}</span>
+          </div>
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+            <span className="text-gray-500 font-medium">Strikes:</span>
+            {[
+              [-15, 0.85],
+              [-10, 0.9],
+              [-5, 0.95],
+              [5, 1.05],
+              [10, 1.1],
+              [15, 1.15],
+            ].map(([pct, mult]) => (
+              <span key={String(pct)} className="text-gray-700">
+                {pct > 0 ? '+' : ''}{pct}% <span className="font-medium text-gray-900">${(stockPrice * mult).toFixed(2)}</span>
+              </span>
+            ))}
+          </div>
+          {smaLoading ? (
+            <span className="text-xs text-gray-500">50 MA…</span>
+          ) : smaData ? (
+            <div className="flex flex-wrap items-baseline gap-x-3 text-xs">
+              <span className="text-gray-500">50 MA:</span>
+              <span className="text-red-700">${smaData.sma50Minus15.toFixed(2)}</span>
+              <span className="text-indigo-700 font-medium">${smaData.sma50.toFixed(2)}</span>
+              <span className="text-green-700">${smaData.sma50Plus15.toFixed(2)}</span>
+            </div>
+          ) : null}
+          <div className="text-xs text-gray-600">
+            +20% <span className="font-medium text-indigo-700">${(stockPrice * 1.2).toFixed(2)}</span>
+          </div>
         </div>
-        {smaLoading ? (
-          <span className="text-sm text-gray-500">Loading 50 MA…</span>
-        ) : smaData ? (
-          <>
-            <div>
-              <span className="text-xs text-gray-500 uppercase tracking-wider">50 MA −15%</span>
-              <p className="text-lg font-bold text-red-700">${smaData.sma50Minus15.toFixed(2)}</p>
-            </div>
-            <div>
-              <span className="text-xs text-gray-500 uppercase tracking-wider">50 MA</span>
-              <p className="text-lg font-bold text-indigo-700">${smaData.sma50.toFixed(2)}</p>
-            </div>
-            <div>
-              <span className="text-xs text-gray-500 uppercase tracking-wider">50 MA +15%</span>
-              <p className="text-lg font-bold text-green-700">${smaData.sma50Plus15.toFixed(2)}</p>
-            </div>
-          </>
-        ) : (
-          <span className="text-sm text-gray-500">50 MA unavailable</span>
-        )}
-        <div>
-          <span className="text-xs text-gray-500 uppercase tracking-wider">Target price (+20%)</span>
-          <p className="text-lg font-bold text-indigo-700">
-            ${(stockPrice * 1.2).toFixed(2)}
-          </p>
-        </div>
+      </div>
+
+      {/* Option chain filters note */}
+      <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-600">
+        <span className="font-medium text-gray-700">Option chain:</span> Live data for selected expiration (all strikes from source). Scanner filters (min OI, min volume) in Setup → Strategy apply to recommendations only.
       </div>
 
       {/* Controls row */}
@@ -426,12 +439,25 @@ export function ContractSelector({
             aria-label="Filter or select strike price"
           >
             <option value="all">All Strike Prices</option>
-            {filteredChain.map((c) => (
+            {chainForSelection.map((c) => (
               <option key={c.strike} value={c.strike}>
                 ${c.strike.toFixed(2)}
               </option>
             ))}
           </select>
+        </div>
+        <div className="flex items-end">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showAllStrikes}
+              onChange={(e) => setShowAllStrikes(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              aria-label="Show all strike prices for this expiration"
+            />
+            <span className="text-sm font-medium text-gray-700">Show all strikes</span>
+          </label>
+          <p className="sr-only">When on, displays every strike for calls and puts for the selected expiration</p>
         </div>
         <div>
           <label htmlFor="limit" className="block text-sm font-medium text-gray-700 mb-1">
@@ -472,43 +498,6 @@ export function ContractSelector({
             aria-label="Contract quantity"
           />
         </div>
-      </div>
-
-      {/* Current price, strike targets, and total cost — collapsible sections */}
-      <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-200 grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <details className="group rounded-lg border border-indigo-200/60 bg-white/50" open>
-          <summary className="cursor-pointer list-none py-2 px-3 text-sm font-medium text-indigo-900 hover:text-indigo-700 [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
-            <span>Current price</span>
-            <span className="text-indigo-600 text-xs select-none inline-block transition-transform group-open:rotate-180" aria-hidden>▼</span>
-          </summary>
-          <div className="px-3 pb-3 pt-0">
-            <p className="text-2xl font-bold text-indigo-700">
-              ${stockPrice.toFixed(2)}
-            </p>
-          </div>
-        </details>
-        <details className="group rounded-lg border border-indigo-200/60 bg-white/50">
-          <summary className="cursor-pointer list-none py-2 px-3 text-sm font-medium text-indigo-900 hover:text-indigo-700 [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
-            <span>Strike targets ±5%, ±10%, ±15%</span>
-            <span className="text-indigo-600 text-xs select-none inline-block transition-transform group-open:rotate-180" aria-hidden>▼</span>
-          </summary>
-          <div className="px-3 pb-3 pt-0">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-indigo-700">
-              <span>−15%</span>
-              <span>${(stockPrice * 0.85).toFixed(2)}</span>
-              <span>−10%</span>
-              <span>${(stockPrice * 0.9).toFixed(2)}</span>
-              <span>−5%</span>
-              <span>${(stockPrice * 0.95).toFixed(2)}</span>
-              <span>+5%</span>
-              <span>${(stockPrice * 1.05).toFixed(2)}</span>
-              <span>+10%</span>
-              <span>${(stockPrice * 1.1).toFixed(2)}</span>
-              <span>+15%</span>
-              <span>${(stockPrice * 1.15).toFixed(2)}</span>
-            </div>
-          </div>
-        </details>
       </div>
 
       {/* Contract type toggle */}
@@ -772,6 +761,30 @@ export function ContractSelector({
           </p>
         </div>
       )}
+
+      {/* Expandable: Breakeven (BE) and calculation */}
+      <details className="border border-gray-200 rounded-xl bg-gray-50 overflow-hidden group">
+        <summary className="cursor-pointer p-3 font-medium text-gray-900 hover:bg-gray-100 list-none flex items-center justify-between">
+          <span>Breakeven (BE) & calculation</span>
+          <span className="text-gray-400 group-open:rotate-180 transition-transform" aria-hidden>▼</span>
+        </summary>
+        <div className="px-3 pb-3 pt-0 border-t border-gray-200 space-y-2">
+          {breakeven != null && selectedStrike ? (
+            <>
+              <p className="text-sm font-medium text-gray-900 pt-2">
+                Breakeven: <strong>${breakeven.toFixed(2)}</strong>
+              </p>
+              <p className="text-xs text-gray-600">
+                {contractType === 'call'
+                  ? `Call: BE = Strike + Premium ⇒ $${selectedStrike.toFixed(2)} + $${(premium).toFixed(4)} = $${breakeven.toFixed(2)}. Above this stock price at expiration the call is in the money.`
+                  : `Put: BE = Strike − Premium ⇒ $${selectedStrike.toFixed(2)} − $${(premium).toFixed(4)} = $${breakeven.toFixed(2)}. Below this stock price at expiration the put is in the money.`}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-gray-500 pt-2">Select a strike to see breakeven and formula.</p>
+          )}
+        </div>
+      </details>
 
       {/* Helper tooltips - compact */}
       <details className="text-sm text-gray-600">

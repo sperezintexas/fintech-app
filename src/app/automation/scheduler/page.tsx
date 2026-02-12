@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import type { Job, AlertDeliveryChannel, ReportTemplateId } from "@/types/portfolio";
 import { REPORT_TEMPLATES } from "@/types/portfolio";
-import { cronToHumanInTimezone } from "@/lib/cron-utils";
+import { cronToHumanInTimezone, getCronSchedulePreview } from "@/lib/cron-utils";
 import { formatInTimezone } from "@/lib/date-format";
 
 const _DEFAULT_SCHEDULE_JOB_NAMES = [
@@ -16,6 +16,23 @@ const _DEFAULT_SCHEDULE_JOB_NAMES = [
 ] as const;
 
 const CST = "America/Chicago";
+
+/** Live preview of cron as "Schedule to run" English description (preview only). */
+function ScheduleToRunPreview({ cron }: { cron: string }) {
+  const preview = getCronSchedulePreview(cron, CST, "CST");
+  if (!preview.description && !preview.error) return null;
+  return (
+    <div className="mt-2 p-2 rounded-lg bg-gray-50 border border-gray-200 text-sm">
+      <span className="text-gray-500 font-medium">Schedule to run:</span>{" "}
+      {preview.error ? (
+        <span className="text-red-600">{preview.error}</span>
+      ) : (
+        <span className="text-gray-800">{preview.description}</span>
+      )}
+    </div>
+  );
+}
+
 const SCHEDULE_PRESETS: Array<{ label: string; cron: string }> = (() => {
   const tz = (c: string) => cronToHumanInTimezone(c, CST, "CST");
   return [
@@ -597,7 +614,8 @@ export default function SchedulerPage() {
                         <input type="time" value={jobScheduleTime} onChange={(e) => { const v = e.target.value; setJobScheduleTime(v); setJobForm({ ...jobForm, scheduleCron: scheduleToCron(v, jobScheduleFreq) }); }} className="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono" />
                       </div>
                     </div>
-                    <input value={jobForm.scheduleCron} onChange={(e) => setJobForm({ ...jobForm, scheduleCron: e.target.value })} className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-lg font-mono text-sm" placeholder="0 16 * * 1-5" />
+                    <input value={jobForm.scheduleCron} onChange={(e) => setJobForm({ ...jobForm, scheduleCron: e.target.value })} className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-lg font-mono text-sm" placeholder="0 16 * * 1-5" aria-label="Cron expression" />
+                    <ScheduleToRunPreview cron={jobForm.scheduleCron} />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Channels</label>

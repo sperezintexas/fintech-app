@@ -3,7 +3,7 @@ import { CronExpressionParser } from "cron-parser";
 import { formatInTimezone } from "@/lib/date-format";
 
 /**
- * Converts a cron expression to a human-readable schedule description.
+ * Converts a cron expression to a human-readable schedule description (English, cron is in UTC).
  * Returns the raw cron on parse failure.
  */
 export function cronToHuman(cron: string): string {
@@ -12,6 +12,35 @@ export function cronToHuman(cron: string): string {
   } catch {
     return cron;
   }
+}
+
+export type CronSchedulePreview = {
+  description: string;
+  error?: string;
+};
+
+/**
+ * Eval a cron expression and return an English "Schedule to run" preview.
+ * Shows cronstrue (UTC) plus local TZ translation when a display timezone is given.
+ */
+export function getCronSchedulePreview(
+  cron: string,
+  timeZone: string = "America/Chicago",
+  tzLabel?: string
+): CronSchedulePreview {
+  const trimmed = cron?.trim();
+  if (!trimmed) return { description: "" };
+
+  let utcDesc: string;
+  try {
+    utcDesc = cronstrue.toString(trimmed, { throwExceptionOnParseError: true });
+  } catch {
+    return { description: "", error: "Invalid cron expression" };
+  }
+
+  const inTz = cronToHumanInTimezone(trimmed, timeZone, tzLabel);
+  if (inTz === trimmed) return { description: utcDesc };
+  return { description: `${utcDesc} → ${inTz}` };
 }
 
 const TZ_LABELS: Record<string, string> = {
@@ -50,25 +79,31 @@ export function cronToHumanInTimezone(
             ? "Daily"
             : null;
 
-  const formatTimeUtc = (hourStr: string, minStr: string) => {
+  const firstMin = (m: string | undefined) => (m ?? "0").split(",")[0]?.trim() ?? "0";
+  const formatTimeUtc = (hourStr: string, minStr: string, useTz: string) => {
     const h = parseInt(hourStr, 10);
-    const m = parseInt(minStr || "0", 10);
+    const m = parseInt(minStr, 10);
     const d = new Date(Date.UTC(2025, 0, 6, h, m, 0));
-    return formatInTimezone(d, timeZone, { timeStyle: "short" });
+    return formatInTimezone(d, useTz, { timeStyle: "short" });
   };
 
   try {
     if (hour?.includes(",") && !hour.includes("-")) {
-      const times = hour.split(",").map((h) => formatTimeUtc(h.trim(), min ?? "0"));
+      const times = hour.split(",").map((h) => formatTimeUtc(h.trim(), firstMin(min), timeZone));
       const timeStr = times.join(" & ");
       return freq ? `${freq} at ${timeStr} ${label}` : `At ${timeStr} ${label}`;
     }
     if (hour?.includes("-")) {
       const [h1, h2] = hour.split("-").map((h) => h.trim());
-      const t1 = formatTimeUtc(h1, min ?? "0");
-      const t2 = formatTimeUtc(h2, min ?? "0");
-      const timeStr = `${t1}–${t2}`;
-      return freq ? `${freq} at ${timeStr} ${label}` : `At ${timeStr} ${label}`;
+      const t1Local = formatTimeUtc(h1, firstMin(min), timeZone);
+      const t2Local = formatTimeUtc(h2, firstMin(min), timeZone);
+      const t1Utc = formatTimeUtc(h1, firstMin(min), "UTC");
+      const t2Utc = formatTimeUtc(h2, firstMin(min), "UTC");
+      const timeStr =
+        timeZone === "UTC" || label === "UTC"
+          ? `${t1Local}–${t2Local} ${label}`
+          : `${t1Utc}–${t2Utc} UTC (${t1Local}–${t2Local} ${label})`;
+      return freq ? `${freq} at ${timeStr}` : `At ${timeStr}`;
     }
     const nextIso = getNextRunFromCron(trimmed);
     if (!nextIso) return cronToHuman(trimmed);
