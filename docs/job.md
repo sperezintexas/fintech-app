@@ -1,6 +1,6 @@
-# Job Types Reference
+# Task Types Reference
 
-Job types define the kinds of scheduled or on-demand work the system can run. Each job type has a **handler key** (backend implementation), **purpose**, and optional **configuration**. Jobs are created in **Automation** and configured in **Job Types**.
+Task types define the kinds of scheduled or on-demand work the system can run (formerly "job types"). Each task type has a **handler key** (backend implementation), **purpose**, and optional **configuration**. Tasks are created in **Automation → Scheduler** and types are managed in **Automation → Task types**.
 
 ---
 
@@ -10,18 +10,16 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 |-------------|------|------------------|--------------------|--------------|
 | smartxai | SmartXAI Report | ✓ | ✗ | No |
 | portfoliosummary | Portfolio Summary | ✓ | ✓ | Yes (includeAiInsights) |
-| watchlistreport | Watchlist Report | ✓ | ✗ | No |
+| watchlistreport | Watchlist Report | ✓ | ✓ | No |
 | cleanup | Data Cleanup | ✓ | ✓ | No |
-| daily-analysis | Daily Analysis | ✓ | ✓ | No |
-| OptionScanner | Option Scanner | ✓ | ✗ | Yes |
-| coveredCallScanner | Covered Call Scanner | ✓ | ✗ | Yes |
-| protectivePutScanner | Protective Put Scanner | ✓ | ✗ | Yes |
 | unifiedOptionsScanner | Unified Options Scanner | ✓ | ✓ | Yes |
 | deliverAlerts | Deliver Alerts | ✓ | ✓ | No |
+| riskScanner | Risk Scanner | ✓ | ✓ | No |
+| grok | Grok (custom prompt) | ✓ | ✓ | Yes (prompt) |
 
 ---
 
-## Report & Analysis Job Types
+## Report & Analysis Task Types
 
 ### smartxai
 
@@ -55,37 +53,27 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 
 **Purpose:** Market snapshot + rationale per item. Formats watchlist positions (stocks + options) for Slack/X. Fetches prices and RSI, applies sentiment labels (Oversold, Bearish, Bullish, Overbought), and uses configurable message templates. **Consolidated with daily-analysis:** runs watchlist analysis and creates alerts before building the report.
 
-**Scope:** Account-level only.
+**Scope:** Account or portfolio (one post per watchlist).
 
 **Configuration:**
-- **templateId** (job-level): `concise` | `detailed` | `actionable` | `risk-aware`
+- **templateId** (task-level): `concise` | `detailed` | `actionable` | `risk-aware`
 - **customSlackTemplate** / **customXTemplate**: Override templates. Placeholders: `{date}`, `{reportName}`, `{account}`, `{stocks}`, `{options}`
 
 **Output:** Message body with stocks and options blocks per template. When alerts are created, appends "Alerts created: X (analyzed Y items)".
 
 ---
 
-### daily-analysis
+## Scanner Task Types
 
-**Purpose:** Watchlist analysis only (creates alerts). Runs `analyzeWatchlistItem` for each watchlist item, creates alerts for actionable items. **Prefer Watchlist Report** which now includes this functionality.
+Option Scanner, Covered Call Scanner, and Protective Put Scanner are sub-handlers used inside **unifiedOptionsScanner** (see below). You configure them via the unified task type's nested config.
 
-**Scope:** Account or portfolio.
-
-**Configuration:** None.
-
-**Output:** Summary: analyzed count, alerts created, errors.
-
----
-
-## Scanner Job Types
-
-### OptionScanner
+### OptionScanner (via unifiedOptionsScanner)
 
 **Purpose:** Evaluates option positions (calls and puts) in account holdings. Produces HOLD or BUY_TO_CLOSE recommendations using rule-based logic plus optional Grok for edge cases.
 
-**Scope:** Account-level only.
+**Scope:** Account or portfolio (when run via unifiedOptionsScanner).
 
-**Configuration (defaultConfig or job config):**
+**Configuration (defaultConfig or task config, under `optionScanner`):**
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -111,7 +99,7 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 
 **Scope:** Account-level only.
 
-**Configuration (defaultConfig or job config):**
+**Configuration (defaultConfig or task config, under `coveredCall`):**
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -133,13 +121,13 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 
 ---
 
-### protectivePutScanner
+### protectivePutScanner (via unifiedOptionsScanner)
 
 **Purpose:** Evaluates protective put positions (long stock + long put) and opportunities (long stock without put). Recommends HOLD, SELL_TO_CLOSE, ROLL, BUY_NEW_PUT, or NONE.
 
-**Scope:** Account-level only.
+**Scope:** Account or portfolio when run via unifiedOptionsScanner.
 
-**Configuration (defaultConfig or job config):**
+**Configuration (defaultConfig or task config, under `protectivePut`):**
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -154,7 +142,7 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 
 ### unifiedOptionsScanner
 
-**Purpose:** Runs OptionScanner, CoveredCallScanner, ProtectivePutScanner, and straddle/strangle analysis in one job. One daily job instead of four.
+**Purpose:** Runs OptionScanner, CoveredCallScanner, ProtectivePutScanner, and straddle/strangle analysis in one task. One daily run instead of four separate tasks.
 
 **Scope:** Account or portfolio (supports portfolio when accountId is null).
 
@@ -171,7 +159,25 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 
 ---
 
-## Utility Job Types
+### grok
+
+**Purpose:** Run a custom prompt through Grok and deliver the response to Slack/X. Uses web search so Grok can pull current news, weather, earnings dates, etc. Ideal for custom newsletters, daily briefs, or one-off research tasks.
+
+**Scope:** Account or portfolio.
+
+**Configuration:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| prompt | string (required for task type) | Instructions sent to Grok. Stored in task type `defaultConfig.prompt`; individual tasks can override via `config.prompt`. Max 16,000 chars. |
+
+**Output:** Grok's reply (plain text) is sent to the task's delivery channels (Slack/X). No report link.
+
+**Creating a Grok task type:** In **Automation → Task types**, create a new type with **Handler Key** `grok`, unique **ID** (e.g. `custom-newsletter`), and the **Grok prompt** in the form. Then create scheduled tasks that use this type; optionally set a per-task prompt override in the scheduler.
+
+---
+
+## Utility Task Types
 
 ### deliverAlerts
 
@@ -211,46 +217,46 @@ Job types define the kinds of scheduled or on-demand work the system can run. Ea
 
 ---
 
-## Job Type Metadata (Job Types Page)
+## Task Type Metadata (Task Types Page)
 
-Each job type has:
+Each task type has:
 
-- **id**: Unique identifier (e.g. `smartxai`, `coveredCallScanner-weekly`). Used when creating jobs.
+- **id**: Unique identifier (e.g. `smartxai`, `custom-newsletter`). Used when creating tasks.
 - **handlerKey**: Backend handler. Must match `REPORT_HANDLER_KEYS`.
 - **name**: Display name.
 - **description**: Brief description.
 - **supportsPortfolio**: Can run at portfolio (all accounts) level.
 - **supportsAccount**: Can run at single-account level.
 - **order**: Sort order in UI.
-- **enabled**: If false, jobs using this type cannot run.
-- **defaultConfig**: Type-specific defaults (merged when creating new jobs).
-- **defaultDeliveryChannels**: Default Slack/X for new jobs.
+- **enabled**: If false, tasks using this type cannot run.
+- **defaultConfig**: Type-specific defaults (merged when creating new tasks; required for `grok`).
+- **defaultDeliveryChannels**: Default Slack/X for new tasks.
 - **defaultTemplateId**: Default report template for watchlist/smartxai/portfoliosummary.
 
 ---
 
-## Creating Custom Job Types
+## Creating Custom Task Types
 
-You can create job types with custom IDs (e.g. `smartxai-weekly`, `coveredCallScanner-aggressive`) that reuse an existing handler. The `handlerKey` determines the backend; the `id` is what jobs reference.
+You can create task types with custom IDs (e.g. `smartxai-weekly`, `coveredCallScanner-aggressive`, `custom-newsletter`) that reuse an existing handler. The `handlerKey` determines the backend; the `id` is what tasks reference.
 
-Example: Create `coveredCallScanner-aggressive` with `handlerKey: coveredCallScanner` and `defaultConfig: { minPremium: 2, maxDelta: 0.3 }`. Jobs using this type inherit those defaults.
+Example: Create `coveredCallScanner-aggressive` with `handlerKey: coveredCallScanner` and `defaultConfig: { minPremium: 2, maxDelta: 0.3 }`. Tasks using this type inherit those defaults. For Grok, create a type with `handlerKey: grok` and set **Grok prompt** in defaultConfig.
 
 ---
 
 ## Data Flow
 
-1. **Job Types** (`reportTypes` collection): Define available types and defaults.
-2. **Jobs** (`reportJobs` collection): Reference a job type by `jobType` (id), include `accountId` or null for portfolio, `config` (overrides), `scheduleCron`, `channels`.
-3. **Scheduler** (Agenda): Runs `scheduled-report` jobs; `executeJob` resolves handler from job type and runs the appropriate logic.
-4. **Delivery**: Results sent to Slack/X per job `channels` and `alertPreferences`.
+1. **Task types** (`reportTypes` collection): Define available types and defaults.
+2. **Tasks** (`reportJobs` collection): Reference a task type by `jobType` (id), include `accountId` or null for portfolio, `config` (overrides), `scheduleCron`, `channels`.
+3. **Scheduler** (Agenda): Runs `scheduled-report`; `executeTask` resolves handler from task type and runs the appropriate logic.
+4. **Delivery**: Results sent to Slack/X per task `channels` and `alertPreferences`.
 
 ---
 
 ## Recommended Setup
 
-**Creating the daily jobs:** In **Setup → Scheduled Jobs**, click **Create recommended jobs** to seed the default set (Weekly Portfolio, Daily Options Scanner, Watchlist Snapshot, Risk Scanner, Deliver Alerts, Data Cleanup). All are created as portfolio-level so they appear in the list. If you don’t see **Daily Options Scanner**, run Create recommended jobs once.
+**Creating the daily tasks:** In **Automation → Scheduler**, use **Create recommended jobs** to seed the default set (Weekly Portfolio, Daily Options Scanner, Watchlist Snapshot, Risk Scanner, Deliver Alerts, Data Cleanup). All are created as portfolio-level so they appear in the list. If you don’t see **Daily Options Scanner**, run Create recommended jobs once.
 
-| Job | Type | Schedule (cron) | Purpose |
+| Task | Type | Schedule (cron) | Purpose |
 |-----|------|-----------------|---------|
 | Weekly Portfolio | portfoliosummary | `0 18 * * 0` (Sun 6 PM) | Multi-account overview; enable "Include AI insights" for SmartXAI sentiment |
 | Daily Options | unifiedOptionsScanner | `15 14-20 * * 1-5` (weekdays at :15, 9:15–3:15 ET) | All option recommendations in one run; :15 avoids :00 (e.g. 9am) clashes. Use GitHub Actions cron workflow (`.github/workflows/cron-unified-scanner.yml`) or external cron to call `GET /api/cron/unified-options-scanner`. |
@@ -267,13 +273,13 @@ Example: Create `coveredCallScanner-aggressive` with `handlerKey: coveredCallSca
 
 **Simplification: inline delivery after unified options scanner**
 
-When a job runs **unifiedOptionsScanner**, `executeJob` now calls **processAlertDelivery(accountId)** right after the scan (unless `config.deliverAlertsAfter === false`). So:
+When a task runs **unifiedOptionsScanner**, `executeTask` now calls **processAlertDelivery(accountId)** right after the scan (unless `config.deliverAlertsAfter === false`). So:
 
 - **Unified Options Scanner can run hourly** and post to alerts each run: scan → store recommendations + create alerts → deliver those alerts to Slack/X.
 - You can **drop the separate "Deliver Alerts" cron** (e.g. 4:30 PM) if you only need delivery right after the options scan.
-- Keep a **standalone Deliver Alerts job** if you want to (a) deliver only (e.g. retry failed sends), or (b) run delivery after other jobs (e.g. risk-scanner at 5 PM) without re-running the options scanner.
+- Keep a **standalone Deliver Alerts task** if you want to (a) deliver only (e.g. retry failed sends), or (b) run delivery after other tasks (e.g. risk-scanner at 5 PM) without re-running the options scanner.
 
 **Flow**
 
 1. Scanners (unifiedOptionsScanner, riskScanner, watchlistreport) write recommendations and, when `createAlerts: true`, insert documents into `alerts`.
-2. **processAlertDelivery(accountId)** (used by the deliverAlerts job and now inline after unifiedOptionsScanner) reads undelivered alerts (last 24h, up to 50 per type), applies `AlertConfig` (channels, quiet hours, thresholds), and sends to Slack/X; it updates each alert’s `deliveryStatus` so they are not sent again.
+2. **processAlertDelivery(accountId)** (used by the deliverAlerts task and now inline after unifiedOptionsScanner) reads undelivered alerts (last 24h, up to 50 per type), applies `AlertConfig` (channels, quiet hours, thresholds), and sends to Slack/X; it updates each alert’s `deliveryStatus` so they are not sent again.

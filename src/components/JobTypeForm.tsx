@@ -124,7 +124,7 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
     <form onSubmit={handleSubmit} className="space-y-6">
       <div>
         <label htmlFor="id" className="block text-sm font-medium text-gray-700 mb-2">
-          ID (unique, lowercase, used in job definitions)
+          ID (unique, lowercase, used in task definitions)
         </label>
         <input
           type="text"
@@ -184,7 +184,7 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
           className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-          placeholder="Brief description of this job type"
+          placeholder="Brief description of this task type"
           rows={2}
         />
       </div>
@@ -259,7 +259,7 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
           Default delivery channel(s)
         </label>
         <p className="text-xs text-gray-500 mb-2">
-          Used when creating new jobs and when running this type on demand (e.g. Option Scanner from xStrategyBuilder).
+          Used when creating new tasks and when running this type on demand (e.g. Option Scanner from xStrategyBuilder).
           Select one or both.
         </p>
         <div className="flex flex-wrap gap-2">
@@ -358,7 +358,7 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
           disabled={isLoading || !formData.id || !formData.name}
           className="flex-1 px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isLoading ? "Saving..." : jobType ? "Update Job Type" : "Create Job Type"}
+          {isLoading ? "Saving..." : jobType ? "Update Task Type" : "Create Task Type"}
         </button>
       </div>
     </form>

@@ -346,7 +346,7 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
               <li>• Show my portfolio</li>
               <li>• What am I watching? / How is my watchlist doing?</li>
               <li>• Market news and sentiment</li>
-              <li>• What jobs are scheduled? / When does the options scanner run?</li>
+              <li>• What tasks are scheduled? / When does the options scanner run?</li>
               <li>• Run scan now / Evaluate my options positions</li>
             </ul>
             <p className="mt-4 text-xs text-gray-500">
@@ -362,7 +362,7 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
                 <p><strong>Portfolio &amp; Watchlist:</strong> portfolio, holdings, positions, account, balance, watchlist, watching, tracking</p>
                 <p><strong>Risk Analysis:</strong> risk, var, beta, sharpe, diversification, volatility, stress, analyze portfolio</p>
                 <p><strong>Covered Call Recs:</strong> covered call, my calls, scanner, recommendations, btc, roll, assign, expiration, should I btc/roll/close</p>
-                <p><strong>Schedule Jobs (list/run):</strong> jobs, schedules, automation, scanners, next run, run scan, evaluate positions now, check my options</p>
+                <p><strong>Schedule tasks (list/run):</strong> tasks, schedules, automation, scanners, next run, run scan, evaluate positions now, check my options</p>
               </div>
             </details>
           </div>

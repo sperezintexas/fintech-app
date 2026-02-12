@@ -1,6 +1,6 @@
 # Smart Grok Chat
 
-AI chat for investment advice, powered by xAI Grok. Combines configurable tools (web search, market data, portfolio, covered call recommendations) with a customizable system prompt. Aligns with `.cursor/rules/grokchat/` (core, api-config, monitor-position).
+AI chat for investment advice, powered by xAI Grok. Combines configurable tools (web search, market data, portfolio, covered call recommendations, scheduled tasks) with a customizable system prompt. Aligns with `.cursor/rules/grokchat/` (core, api-config, monitor-position).
 
 ## Overview
 
@@ -9,6 +9,18 @@ AI chat for investment advice, powered by xAI Grok. Combines configurable tools 
 - **History**: `GET /api/chat/history` — load saved messages (per user)
 - **Config**: `GET/PUT /api/chat/config` — tools and context
 - **Storage**: Config in MongoDB `appUtil` collection (`key: grokChatConfig`); chat history in `chatHistory` collection (per user)
+
+## Chat UI
+
+- **Placeholder**: The input shows “Smart Grok Chat — Ask about anything but focus on stocks, market outlook, portfolio, or investment strategies. Powered by xAI [model]” (model from config, e.g. grok-4).
+- **Example prompts**: A collapsible “Example prompts” panel below the input (collapsed by default to save space) groups suggestions by tool:
+  - **Web search**: TSLA news today, NVDA earnings date, Weather Austin, Fed rate decision, Defense sector outlook
+  - **Quotes & market**: TSLA price, AAPL quote, Market outlook, VIX level, SPY and QQQ today
+  - **Portfolio**: Show my portfolio, My holdings, Account balance, Top movers today
+  - **Watchlist**: My watchlist, What am I watching?, Watchlist performance
+  - **Covered calls**: Covered call ideas, Should I BTC my call?, Roll my TSLA call, CC recommendations
+  - **Tasks & scan**: Scheduled tasks, Run scanner now, When does scanner run?, Options positions check
+- Tapping an example fills the input; user can edit or send. Layout is mobile-friendly (wrapping chips, scrollable panel).
 
 ## Tools
 
@@ -31,17 +43,17 @@ Defined in `src/lib/xai-grok.ts` as `WEB_SEARCH_TOOL` (OpenAI-compatible functio
 - **Config**: `tools.webSearch` (default: true). Requires `WEB_SEARCH_API_KEY` or `SERPAPI_API_KEY`.
 - **Examples for Grok**: `TSLA earnings date 2026`, `Tesla stock news today`, `BA defense sector outlook`, `current weather Austin TX`.
 
-### 2. LLM Tools (Schedule Jobs)
+### 2. LLM Tools (Schedule Tasks)
 
-When `tools.jobs` is enabled (default: true), Grok can call:
+When schedule tools are enabled (default: true), Grok can call:
 
 | Tool | Description | When Grok uses it |
 |------|--------------|-------------------|
-| **list_jobs** | List scheduled report jobs (Unified Options Scanner, Watchlist, etc.), cron schedules, status, next run times | User asks about jobs, schedules, automation, scanners, next run |
+| **list_tasks** | List scheduled tasks (Unified Options Scanner, Watchlist, Grok prompts, etc.), cron schedules, status, next run times | User asks about tasks, schedules, automation, scanners, next run |
 | **trigger_portfolio_scan** | Run full portfolio options evaluation now (Unified Options Scanner + watchlist + deliver alerts) | User explicitly asks to run scan, evaluate positions now, check my options |
 
-- **Config**: `tools.jobs` in Grok Chat config (Setup → Chat config or `/api/chat/config`).
-- **Keywords that help trigger**: jobs, schedules, automation, scanners, next run, run scan, evaluate positions now, check my options.
+- **Config**: Tools for tasks are enabled via chat config (Setup → Chat config or `/api/chat/config`).
+- **Keywords that help trigger**: tasks, schedules, automation, scanners, next run, run scan, evaluate positions now, check my options.
 
 ### 3. Server-Side Pre-Fetch Tools (Market Data, Portfolio, Watchlist)
 
@@ -90,7 +102,7 @@ Appended dynamically:
     marketData: boolean;     // default true
     portfolio: boolean;      // default true — portfolio, watchlist, risk analysis
     coveredCallRecs: boolean; // default true — recent Covered Call Scanner recommendations
-    jobs: boolean;           // default true — LLM tools list_jobs, trigger_portfolio_scan (schedules, run scan)
+    // Schedule tools (default on): list_tasks, trigger_portfolio_scan
   };
   context: {
     riskProfile?: "low" | "medium" | "high" | "aggressive";  // default "medium"
@@ -138,22 +150,24 @@ Use these keywords in your message to trigger pre-fetch tools or help Grok choos
 | **Portfolio & Watchlist** | portfolio, holdings, positions, account, balance, watchlist, watching, tracking |
 | **Risk Analysis** | risk, var, beta, sharpe, diversification, volatility, stress, analyze portfolio |
 | **Covered Call Recommendations** | covered call, my calls, scanner, recommendations, btc, roll, assign, expiration, should I btc/roll/close |
-| **Schedule Jobs (list)** | jobs, schedules, automation, scanners, next run, when does X run |
-| **Schedule Jobs (run scan)** | run scan, evaluate positions now, check my options, run options scanner |
+| **Schedule tasks (list)** | tasks, schedules, automation, scanners, next run, when does X run |
+| **Schedule tasks (run scan)** | run scan, evaluate positions now, check my options, run options scanner |
 
-## Example Prompts
+## Example Prompts (by tool)
 
-- *What's the price of TSLA?* — Stock price
-- *What's the market outlook?* — Market news
-- *Show my portfolio* — Portfolio + watchlist
-- *What am I watching?* — Watchlist
-- *Market news and sentiment* — Market news
-- *How is my watchlist doing?* — Portfolio + watchlist with live prices
-- *Should I BTC my TSLA call?* / *Covered call recommendations?* / *Any roll suggestions?* — Triggers Covered Call Recommendations (last 20 from scanner). Combine with “TSLA” for stock + options context. Grok uses pre-injected prices and advises BTC when strike neared (per core.mdc).
-- *What’s my portfolio risk?* — Risk analysis (VaR, beta, diversification, Grok recommendations).
-- *What jobs are scheduled?* / *When does the options scanner run?* — Grok can use list_jobs (when tools.jobs is on).
-- *Run scan now* / *Evaluate my options positions* — Grok can use trigger_portfolio_scan to run the full scan immediately.
-- *TSLA earnings date* / *Tesla FSD news* — Grok can use web_search when context doesn’t include it.
+These match the collapsible example panel in the UI (see **Chat UI** above).
+
+| Tool | Examples |
+|------|----------|
+| **Web search** | TSLA news today, NVDA earnings date, Weather Austin, Fed rate decision, Defense sector outlook |
+| **Quotes & market** | TSLA price, AAPL quote, Market outlook, VIX level, SPY and QQQ today |
+| **Portfolio** | Show my portfolio, My holdings, Account balance, Top movers today |
+| **Watchlist** | My watchlist, What am I watching?, Watchlist performance |
+| **Covered calls** | Covered call ideas, Should I BTC my call?, Roll my TSLA call, CC recommendations |
+| **Tasks & scan** | Scheduled tasks, Run scanner now, When does scanner run?, Options positions check |
+
+**More detail:** *Should I BTC my TSLA call?* triggers Covered Call Recommendations (last 20 from scanner). *What's my portfolio risk?* runs risk analysis (VaR, beta, diversification, Grok). *What tasks are scheduled?* / *When does the options scanner run?* — Grok uses list_tasks. *Run scan now* / *Evaluate my options positions* — Grok can use trigger_portfolio_scan. *TSLA earnings date* / *Tesla FSD news* — Grok uses web_search when context doesn't include it.
+
 
 ## Environment
 

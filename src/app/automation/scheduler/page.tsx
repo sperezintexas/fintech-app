@@ -405,11 +405,11 @@ export default function SchedulerPage() {
           )}
         </div>
 
-        {/* Manage Jobs — table/grid */}
+        {/* Manage Tasks — table/grid */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">Manage Jobs</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Manage Tasks</h3>
               <p className="text-sm text-gray-600">
                 {tasks.length > 0 ? (
                   <span className="text-gray-700 font-medium">{scheduledCount} of {tasks.length} tasks scheduled to run</span>
@@ -431,7 +431,7 @@ export default function SchedulerPage() {
               }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
-              New Job
+              New Task
             </button>
           </div>
           {lastRunResult && (
@@ -556,7 +556,7 @@ export default function SchedulerPage() {
             </div>
           )}
 
-          {/* Edit job modal */}
+          {/* Edit task modal */}
           {showJobForm && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">

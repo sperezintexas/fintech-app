@@ -70,7 +70,7 @@ const SECTIONS = [
       },
       {
         title: "Unified Options Scanner",
-        body: "Runs four scanners in one job: Option Scanner, Covered Call, Protective Put, and Straddle/Strangle. Produces recommendations (HOLD, BUY_TO_CLOSE, SELL_NEW_CALL, ROLL, etc.) and creates alerts for delivery to Slack or X.",
+        body: "Runs four scanners in one task: Option Scanner, Covered Call, Protective Put, and Straddle/Strangle. Produces recommendations (HOLD, BUY_TO_CLOSE, SELL_NEW_CALL, ROLL, etc.) and creates alerts for delivery to Slack or X.",
         links: [],
       },
       {
@@ -91,28 +91,28 @@ const SECTIONS = [
     ],
   },
   {
-    id: "automation-and-jobs",
-    title: "Automation & jobs",
-    description: "Scheduled jobs, alerts, and delivery.",
+    id: "automation-and-tasks",
+    title: "Automation & tasks",
+    description: "Scheduled tasks, alerts, and delivery.",
     cards: [
       {
         title: "Setup (Automation)",
-        body: "Single place for Auth Users (X sign-in), Alert Settings (Slack, X, Push), Strategy settings (option chain filters), and Scheduled Jobs. Use the Scheduler to create and run jobs.",
+        body: "Single place for Auth Users (X sign-in), Alert Settings (Slack, X, Push), Strategy settings (option chain filters), and Scheduled Tasks. Use the Scheduler to create and run tasks.",
         links: [{ label: "Setup", href: "/automation" }],
       },
       {
-        title: "Job types",
-        body: "SmartXAI Report, Portfolio Summary, Watchlist Report, Daily Analysis, Option Scanner, Covered Call Scanner, Protective Put Scanner, Unified Options Scanner, Deliver Alerts, Data Cleanup. Create jobs in Setup → Scheduled Jobs; configure per job type.",
-        links: [{ label: "Job types", href: "/job-types" }, { label: "Scheduler", href: "/automation/scheduler" }],
+        title: "Task types",
+        body: "SmartXAI Report, Portfolio Summary, Watchlist Report, Unified Options Scanner, Deliver Alerts, Risk Scanner, Grok (custom prompt), Data Cleanup. Create tasks in Automation → Scheduler; configure per task type.",
+        links: [{ label: "Task types", href: "/automation/task-types" }, { label: "Scheduler", href: "/automation/scheduler" }],
       },
       {
         title: "Alert delivery",
-        body: "Configure Slack webhook, X target, and push notifications in Setup → Alert Settings. Test each channel. Alerts are sent when jobs run (e.g. Unified Options Scanner + Deliver Alerts).",
+        body: "Configure Slack webhook, X target, and push notifications in Setup → Alert Settings. Test each channel. Alerts are sent when tasks run (e.g. Unified Options Scanner + Deliver Alerts).",
         links: [{ label: "Alert Settings", href: "/automation?tab=settings" }],
       },
       {
         title: "Scheduling (cron)",
-        body: "On App Runner or EC2, Agenda runs inside the app and fires scheduled jobs from MongoDB—no GitHub or external cron needed. Create jobs in Setup → Scheduled Jobs; they run automatically. The cron API routes are only for serverless or optional manual triggers.",
+        body: "On App Runner or EC2, Agenda runs inside the app and fires scheduled tasks from MongoDB—no GitHub or external cron needed. Create tasks in Automation → Scheduler; they run automatically. The cron API routes are only for serverless or optional manual triggers.",
         links: [],
       },
     ],
@@ -124,7 +124,7 @@ const SECTIONS = [
     cards: [
       {
         title: "Setup tabs",
-        body: "Auth Users, Alert Settings, Strategy (option chain filters), Scheduled Jobs, Job run history, Job types, Login history, xTools Console, Calculators (mortgage and mortgage affordability).",
+        body: "Auth Users, Alert Settings, Strategy (option chain filters), Scheduled Tasks, Task run history, Task types, Login history, xTools Console, Calculators (mortgage and mortgage affordability).",
         links: [{ label: "Setup", href: "/automation" }, { label: "Calculators", href: "/automation/calculators" }],
       },
       {
