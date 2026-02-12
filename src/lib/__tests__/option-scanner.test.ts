@@ -63,7 +63,7 @@ describe("Option Scanner", () => {
       const result = applyOptionRules(
         {
           dte: 21,
-          plPercent: -10,
+          plPercent: 5,
           intrinsicValue: 0,
           timeValue: 2,
           premium: 2,
@@ -95,7 +95,7 @@ describe("Option Scanner", () => {
       const result = applyOptionRules(
         {
           dte: 10,
-          plPercent: -5,
+          plPercent: 0,
           intrinsicValue: 0,
           timeValue: 1.5,
           premium: 5,
@@ -107,11 +107,43 @@ describe("Option Scanner", () => {
       expect(result.reason).toContain("Time value");
     });
 
-    it("returns BUY_TO_CLOSE for DTE 8-13 with no other holds", () => {
+    it("returns HOLD for loss position when DTE < 7 (do not BTC at loss)", () => {
+      const result = applyOptionRules(
+        {
+          dte: 5,
+          plPercent: -40,
+          intrinsicValue: 0,
+          timeValue: 0.5,
+          premium: 5,
+          optionType: "put",
+        },
+        {}
+      );
+      expect(result.recommendation).toBe("HOLD");
+      expect(result.reason).toMatch(/loss|Avoid BTC|bid.*below entry/i);
+    });
+
+    it("returns HOLD for loss position when DTE 8–9 (do not BTC at loss)", () => {
       const result = applyOptionRules(
         {
           dte: 8,
           plPercent: -20,
+          intrinsicValue: 0,
+          timeValue: 0.5,
+          premium: 5,
+          optionType: "call",
+        },
+        {}
+      );
+      expect(result.recommendation).toBe("HOLD");
+      expect(result.reason).toMatch(/loss|Do not close|bid.*below entry/i);
+    });
+
+    it("returns BUY_TO_CLOSE for DTE 8-13 when profitable", () => {
+      const result = applyOptionRules(
+        {
+          dte: 8,
+          plPercent: 15,
           intrinsicValue: 0,
           timeValue: 0.5,
           premium: 5,
@@ -495,6 +527,51 @@ describe("Option Scanner", () => {
       expect(stored).toBe(1);
       expect(alertsCreated).toBe(0);
       expect(mockInsertOne).toHaveBeenCalledTimes(1);
+    });
+
+    it("alert body for underwater BUY_TO_CLOSE uses loss wording and no ROI favorable", async () => {
+      const mockInsertOne = vi.fn().mockResolvedValue({ insertedId: "id1" });
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          insertOne: mockInsertOne,
+        }),
+      } as never);
+
+      const recommendations = [
+        {
+          positionId: "pos1",
+          accountId: "acc1",
+          symbol: "LUNR 2026-02-20 P $19",
+          underlyingSymbol: "LUNR",
+          strike: 19,
+          expiration: "2026-02-20",
+          optionType: "put" as const,
+          contracts: 1,
+          unitCost: 1.32,
+          recommendation: "BUY_TO_CLOSE" as const,
+          reason: "Stop loss",
+          metrics: {
+            price: 3.8,
+            underlyingPrice: 15.7,
+            dte: 8,
+            pl: -248,
+            plPercent: -188,
+            intrinsicValue: 3.3,
+            timeValue: 0.5,
+          },
+          createdAt: new Date().toISOString(),
+        },
+      ];
+
+      await storeOptionRecommendations(recommendations, { createAlerts: true });
+
+      const alertCall = mockInsertOne.mock.calls.find(
+        (c) => Array.isArray(c) && (c[0] as { type?: string })?.type === "option-scanner"
+      );
+      expect(alertCall).toBeDefined();
+      const reason = (alertCall as [ { reason: string } ])[0].reason;
+      expect(reason).toMatch(/net loss|Avoid BTC|bid falls below your entry|\$1\.32/i);
+      expect(reason).not.toMatch(/ROI favorable either way|BTC now if conservative/);
     });
   });
 });

@@ -83,7 +83,7 @@ export function applyOptionRules(
   const { dte, plPercent, intrinsicValue, timeValue, premium, impliedVolatility, optionType } =
     metrics;
 
-  // BTC: Stop loss
+  // BTC: Stop loss (extreme loss only; user may still prefer to hold or roll)
   if (plPercent <= (cfg.btcStopLossPercent ?? -50)) {
     return {
       recommendation: "BUY_TO_CLOSE",
@@ -91,7 +91,28 @@ export function applyOptionRules(
     };
   }
 
-  // BTC: DTE < 7 (time decay risk)
+  // HOLD when position is at a loss: do not recommend BTC for time-based reasons (locks in loss).
+  // User should wait for bid to fall below entry before considering BTC, or hold to expiration / roll.
+  if (plPercent < 0) {
+    if (dte < (cfg.btcDteMax ?? 7)) {
+      return {
+        recommendation: "HOLD",
+        reason: `Position at a loss (${plPercent.toFixed(0)}%). Avoid BTC at current price; consider holding to expiration or rolling. BTC when bid falls below entry.`,
+      };
+    }
+    if (dte < 10) {
+      return {
+        recommendation: "HOLD",
+        reason: `Position at a loss (${plPercent.toFixed(0)}%). Do not close at a loss; BTC when bid below entry or hold/roll.`,
+      };
+    }
+    return {
+      recommendation: "HOLD",
+      reason: `Position at a loss (${plPercent.toFixed(0)}%). Avoid BTC until bid falls below your entry.`,
+    };
+  }
+
+  // BTC: DTE < 7 (time decay risk) — only when profitable or flat
   if (dte < (cfg.btcDteMax ?? 7)) {
     return {
       recommendation: "BUY_TO_CLOSE",
@@ -99,7 +120,15 @@ export function applyOptionRules(
     };
   }
 
-  // BTC: OTM with no intrinsic value and high IV for puts
+  // BTC: DTE 8–9 approaching expiry — only when not underwater (handled above)
+  if (dte < 10) {
+    return {
+      recommendation: "BUY_TO_CLOSE",
+      reason: `DTE ${dte} days approaching expiry`,
+    };
+  }
+
+  // BTC: OTM with no intrinsic value and high IV for puts — only when not underwater
   const highVol = (impliedVolatility ?? 0) > (cfg.highVolatilityPercent ?? 30);
   if (optionType === "put" && intrinsicValue <= 0 && highVol && marketConditions?.vixLevel === "elevated") {
     return {
@@ -130,14 +159,6 @@ export function applyOptionRules(
     return {
       recommendation: "HOLD",
       reason: `Time value ${timeValuePercent.toFixed(0)}% of premium`,
-    };
-  }
-
-  // Default: HOLD for moderate DTE, BTC for very low
-  if (dte < 10) {
-    return {
-      recommendation: "BUY_TO_CLOSE",
-      reason: `DTE ${dte} days approaching expiry`,
     };
   }
 
@@ -376,10 +397,12 @@ function buildOptionScannerAlertSummary(rec: OptionRecommendation): string {
   const optLabel = rec.optionType === "call" ? "call" : "put";
   const positionDesc = `${sym} ${expShort} $${rec.strike} ${optLabel}`;
 
-  const credit = (rec.unitCost ?? 0) * 100 * (rec.contracts ?? 1);
+  const entryPerShare = rec.unitCost ?? 0;
+  const credit = entryPerShare * 100 * (rec.contracts ?? 1);
   const currentBid = (rec.metrics?.price ?? 0) * 100 * (rec.contracts ?? 1);
-  const netProfitBtc = (rec.unitCost ?? 0) - (rec.metrics?.price ?? 0);
+  const netProfitBtc = entryPerShare - (rec.metrics?.price ?? 0);
   const netProfitDollars = Math.round(netProfitBtc * 100 * (rec.contracts ?? 1));
+  const isUnderwater = netProfitDollars < 0;
   const capturePct =
     credit > 0 ? Math.round(((credit - currentBid) / credit) * 100) : 0;
   const bidPerShare = rec.metrics?.price ?? 0;
@@ -388,18 +411,26 @@ function buildOptionScannerAlertSummary(rec: OptionRecommendation): string {
   const isPutOtm = rec.optionType === "put" && underlying > rec.strike;
   const bidStr = bidPerShare >= 0.01 ? `$${bidPerShare.toFixed(2)}` : `$${bidPerShare.toFixed(3)}`;
   const creditStr = `$${Math.round(credit)}`;
-  let guidance = `Current bid ${bidStr} is ~${capturePct}% capture ($${netProfitDollars} net profit on ${creditStr} credit). `;
-  guidance += `BTC now if conservative to free margin and avoid gap risk; let expire for full ${creditStr} if aggressive`;
-  guidance += isPutOtm ? " (high OTM prob)." : ".";
-  if (capturePct >= 80 && dte > 0 && rec.metrics?.plPercent != null) {
-    const roiAnnual = Math.round((rec.metrics.plPercent / 100) * (365 / dte) * 100);
-    if (roiAnnual > 0 && roiAnnual < 500) {
-      guidance += ` ROI ~${roiAnnual}% annualized either way.`;
+  const entryStr = entryPerShare >= 0.01 ? `$${entryPerShare.toFixed(2)}` : `$${entryPerShare.toFixed(3)}`;
+
+  let guidance: string;
+  if (isUnderwater) {
+    guidance = `Current bid ${bidStr} is above your entry ${entryStr} ($${Math.abs(netProfitDollars)} net loss on ${creditStr} credit). `;
+    guidance += `Avoid BTC at current price—locks in loss. Consider holding to expiration or rolling; BTC when bid falls below your entry (${entryStr}) to reduce loss.`;
+  } else {
+    guidance = `Current bid ${bidStr} is ~${capturePct}% capture ($${netProfitDollars} net profit on ${creditStr} credit). `;
+    guidance += `BTC now if conservative to free margin and avoid gap risk; let expire for full ${creditStr} if aggressive`;
+    guidance += isPutOtm ? " (high OTM prob)." : ".";
+    if (capturePct >= 80 && dte > 0 && rec.metrics?.plPercent != null && rec.metrics.plPercent > 0) {
+      const roiAnnual = Math.round((rec.metrics.plPercent / 100) * (365 / dte) * 100);
+      if (roiAnnual > 0 && roiAnnual < 500) {
+        guidance += ` ROI ~${roiAnnual}% annualized either way.`;
+      } else {
+        guidance += " ROI favorable either way.";
+      }
     } else {
       guidance += " ROI favorable either way.";
     }
-  } else {
-    guidance += " ROI favorable either way.";
   }
   return `For your ${positionDesc}: ${guidance}`;
 }
