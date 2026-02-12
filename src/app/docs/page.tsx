@@ -124,8 +124,8 @@ const SECTIONS = [
     cards: [
       {
         title: "Setup tabs",
-        body: "Auth Users: manage X allowed usernames for sign-in. Alert Settings: delivery channels and templates. Strategy: option chain filters (min OI, volume) for xStrategyBuilder. Scheduled Jobs: create and manage jobs.",
-        links: [{ label: "Setup", href: "/automation" }],
+        body: "Auth Users, Alert Settings, Strategy (option chain filters), Scheduled Jobs, Job run history, Job types, Login history, xTools Console, Calculators (mortgage and mortgage affordability).",
+        links: [{ label: "Setup", href: "/automation" }, { label: "Calculators", href: "/automation/calculators" }],
       },
       {
         title: "Auth Users (X sign-in)",

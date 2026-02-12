@@ -96,6 +96,7 @@ Appended dynamically:
     riskProfile?: "low" | "medium" | "high" | "aggressive";  // default "medium"
     strategyGoals?: string;   // max 2000 chars
     systemPromptOverride?: string;  // max 4000 chars
+    persona?: string;        // default "finance-expert" — finance-expert | medical-expert | legal-expert | tax-expert | trusted-advisor
   };
 }
 ```
