@@ -15,7 +15,7 @@ import { NextRequest } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb, getMongoUri, getMongoDbName } from "./mongodb";
 import { getAgendaClient } from "./agenda-client";
-import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, Job } from "@/types/portfolio";
+import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, Task } from "@/types/portfolio";
 import { getReportTemplate } from "@/types/portfolio";
 import { analyzeWatchlistItem, MarketData } from "./watchlist-rules";
 import { getMultipleTickerOHLC, getBatchPriceAndRSI } from "./yahoo";
@@ -283,7 +283,7 @@ export function defineJobs(agenda: Agenda) {
     if (!jobId) return;
     try {
       await withRetry(
-        () => executeJob(jobId),
+        () => executeTask(jobId),
         { jobName: "scheduled-report" }
       );
     } catch (error) {
@@ -418,11 +418,11 @@ function toErrorMessage(e: unknown): string {
 
 async function setJobLastRunError(
   db: Awaited<ReturnType<typeof getDb>>,
-  jobId: string,
+  taskId: string,
   error: string
 ): Promise<void> {
   await db.collection("reportJobs").updateOne(
-    { _id: new ObjectId(jobId) },
+    { _id: new ObjectId(taskId) },
     {
       $set: {
         lastRunAt: new Date().toISOString(),
@@ -433,8 +433,8 @@ async function setJobLastRunError(
   );
 }
 
-/** Execute a job synchronously (used by Run Now and scheduled runs). Returns { success, error?, deliveredChannels?, failedChannels?, summary? }. */
-export async function executeJob(jobId: string): Promise<{
+/** Execute a report task by ID (used by Run Now and scheduled runs). Returns { success, error?, deliveredChannels?, failedChannels?, summary? }. */
+export async function executeTask(taskId: string): Promise<{
   success: boolean;
   error?: string;
   deliveredChannels?: string[];
@@ -443,21 +443,21 @@ export async function executeJob(jobId: string): Promise<{
 }> {
   const db = await getDb();
   try {
-    const job = (await db.collection("reportJobs").findOne({ _id: new ObjectId(jobId) })) as (Job & { _id: ObjectId }) | null;
-    if (!job) return { success: false, error: "Job not found" };
-    if (job.status !== "active") {
-      await setJobLastRunError(db, jobId, "Job is paused");
-      return { success: false, error: "Job is paused" };
+    const task = (await db.collection("reportJobs").findOne({ _id: new ObjectId(taskId) })) as (Task & { _id: ObjectId }) | null;
+    if (!task) return { success: false, error: "Task not found" };
+    if (task.status !== "active") {
+      await setJobLastRunError(db, taskId, "Task is paused");
+      return { success: false, error: "Task is paused" };
     }
 
     const deliveredChannels: string[] = [];
     const failedChannels: { channel: string; error: string }[] = [];
 
-    // Resolve handler from job type
-    const typeDoc = await db.collection("reportTypes").findOne({ id: job.jobType }) as { handlerKey?: string } | null;
-    const handlerKey = typeDoc?.handlerKey ?? job.jobType;
+    // Resolve handler from task type
+    const typeDoc = await db.collection("reportTypes").findOne({ id: task.jobType }) as { handlerKey?: string } | null;
+    const handlerKey = typeDoc?.handlerKey ?? task.jobType;
 
-    let title = job.name;
+    let title = task.name;
     let bodyText = "";
     let reportLink: string | null = null;
     let xTitle: string | null = null;
@@ -468,27 +468,27 @@ export async function executeJob(jobId: string): Promise<{
     let slackAttachmentsForPost: Array<{ color: string; text: string }> | undefined;
     /** Optional Slack Block Kit blocks (preferred for unified scanner). */
     let slackBlocksForPost: SlackBlock[] | undefined;
-    /** Notes for job run history (e.g. unified scanner stats + breakdown). */
-    let lastRunNotesForJob: string | undefined;
+    /** Notes for task run history (e.g. unified scanner stats + breakdown). */
+    let lastRunNotesForTask: string | undefined;
 
     if (handlerKey === "smartxai") {
       try {
         const { POST: generateSmartXAI } = await import("@/app/api/reports/smartxai/route");
-        const res = await generateSmartXAI({ json: async () => ({ accountId: job.accountId }) } as unknown as NextRequest);
+        const res = await generateSmartXAI({ json: async () => ({ accountId: task.accountId }) } as unknown as NextRequest);
         const payload = (await res.json()) as {
           success?: boolean;
           report?: { _id: string; title: string; summary: Record<string, unknown> };
         };
 
         if (payload.success && payload.report) {
-          const accountDoc = job.accountId
-            ? await db.collection("accounts").findOne({ _id: new ObjectId(job.accountId) })
+          const accountDoc = task.accountId
+            ? await db.collection("accounts").findOne({ _id: new ObjectId(task.accountId) })
             : null;
           const accountName = (accountDoc as { name?: string } | null)?.name ?? "Account";
 
           const reportTitle = payload.report.title;
-          title = `${reportTitle} – ${job.name} – ${accountName}`;
-          xTitle = `${reportTitle} – ${job.name}`;
+          title = `${reportTitle} – ${task.name} – ${accountName}`;
+          xTitle = `${reportTitle} – ${task.name}`;
           reportLink = `/reports/${payload.report._id}`;
           const summary = payload.report.summary as {
             totalPositions: number;
@@ -527,7 +527,7 @@ export async function executeJob(jobId: string): Promise<{
     } else if (handlerKey === "portfoliosummary") {
       try {
         const { POST: generatePortfolioSummary } = await import("@/app/api/reports/portfoliosummary/route");
-        const res = await generatePortfolioSummary({ json: async () => ({ accountId: job.accountId }) } as unknown as NextRequest);
+        const res = await generatePortfolioSummary({ json: async () => ({ accountId: task.accountId }) } as unknown as NextRequest);
         const payload = (await res.json()) as {
           success?: boolean;
           report?: {
@@ -660,11 +660,11 @@ export async function executeJob(jobId: string): Promise<{
           );
 
           // Optional: include AI insights (SmartXAI sentiment) when config.includeAiInsights is true
-          const includeAiInsights = (job.config as { includeAiInsights?: boolean } | undefined)?.includeAiInsights;
+          const includeAiInsights = (task.config as { includeAiInsights?: boolean } | undefined)?.includeAiInsights;
           if (includeAiInsights) {
             try {
               const { POST: generateSmartXAI } = await import("@/app/api/reports/smartxai/route");
-              const smartRes = await generateSmartXAI({ json: async () => ({ accountId: job.accountId }) } as unknown as NextRequest);
+              const smartRes = await generateSmartXAI({ json: async () => ({ accountId: task.accountId }) } as unknown as NextRequest);
               const smartPayload = (await smartRes.json()) as {
                 success?: boolean;
                 report?: { summary?: { bullishCount?: number; neutralCount?: number; bearishCount?: number } };
@@ -693,9 +693,9 @@ export async function executeJob(jobId: string): Promise<{
       try {
         const d = new Date();
         const dateStr = `${d.toISOString().slice(0, 10)} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-        const template = getReportTemplate(job.templateId ?? "concise");
-        const slackTemplate = job.customSlackTemplate ?? template.slackTemplate;
-        const xTemplate = job.customXTemplate ?? template.xTemplate;
+        const template = getReportTemplate(task.templateId ?? "concise");
+        const slackTemplate = task.customSlackTemplate ?? template.slackTemplate;
+        const xTemplate = task.customXTemplate ?? template.xTemplate;
 
         // Watchlist items use watchlistId (not accountId). Always use one post per watchlist.
         const analysisResult = await runWatchlistAnalysis(undefined);
@@ -728,7 +728,7 @@ export async function executeJob(jobId: string): Promise<{
             const noOptions = "";
             const body = slackTemplate
               .replace(/\{date\}/g, dateStr)
-              .replace(/\{reportName\}/g, job.name)
+              .replace(/\{reportName\}/g, task.name)
               .replace(/\{account\}/g, w.name)
               .replace(/\{stocks\}/g, stocksBlock)
               .replace(/\{options\}/g, noOptions);
@@ -740,10 +740,10 @@ export async function executeJob(jobId: string): Promise<{
                 : stocksBlock;
             const xBody = xTemplate
               .replace(/\{date\}/g, dateStr)
-              .replace(/\{reportName\}/g, job.name)
+              .replace(/\{reportName\}/g, task.name)
               .replace(/\{stocks\}/g, xStocksBlock)
               .replace(/\{options\}/g, noOptions);
-            posts.push({ title: `${job.name} – ${w.name}`, bodyText: body, xBodyText: xBody });
+            posts.push({ title: `${task.name} – ${w.name}`, bodyText: body, xBodyText: xBody });
         }
         if (posts.length > 0) {
           if (analysisResult.alertsCreated > 0) {
@@ -753,11 +753,11 @@ export async function executeJob(jobId: string): Promise<{
           watchlistPosts = posts;
         } else {
           bodyText = "Watchlist report: no watchlists with items.";
-          title = job.name;
+          title = task.name;
         }
       } catch (e) {
         console.error("Failed to generate Watchlist report for scheduled job:", e);
-        title = job.name;
+        title = task.name;
         bodyText = `Failed to generate Watchlist report: ${e instanceof Error ? e.message : String(e)}`;
       }
     } else if (handlerKey === "cleanup") {
@@ -810,8 +810,8 @@ export async function executeJob(jobId: string): Promise<{
     } else if (handlerKey === "unifiedOptionsScanner") {
       try {
         const startTime = Date.now();
-        const accountId = job.accountId ?? undefined;
-        let config = job.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
+        const accountId = task.accountId ?? undefined;
+        let config = task.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
         if (accountId) {
           const strategySettings = await db
             .collection<{ accountId: string; excludeWatchlist?: boolean }>("strategySettings")
@@ -825,10 +825,10 @@ export async function executeJob(jobId: string): Promise<{
           config = { ...config, coveredCall: { ...config?.coveredCall, includeWatchlist: false } };
         }
         const result = await runUnifiedOptionsScanner(accountId, config);
-        title = job.name;
+        title = task.name;
 
         let deliverySummary: { delivered: number; failed: number; skipped: number } | undefined;
-        const configObj = job.config as { deliverAlertsAfter?: boolean } | undefined;
+        const configObj = task.config as { deliverAlertsAfter?: boolean } | undefined;
         if (configObj?.deliverAlertsAfter !== false) {
           try {
             deliverySummary = await processAlertDelivery(accountId);
@@ -851,17 +851,17 @@ export async function executeJob(jobId: string): Promise<{
         } else if (report.errorAttachment) {
           slackAttachmentsForPost = [{ color: "danger", text: report.errorAttachment }];
         }
-        lastRunNotesForJob = formatUnifiedOptionsScannerRunNotes(result, durationSeconds);
+        lastRunNotesForTask = formatUnifiedOptionsScannerRunNotes(result, durationSeconds);
       } catch (e) {
         console.error("Failed to run Unified Options Scanner:", e);
-        title = job.name;
+        title = task.name;
         bodyText = `Failed: ${toErrorMessage(e)}`;
       }
     } else if (handlerKey === "riskScanner") {
       try {
-        const accountId = job.accountId ?? undefined;
+        const accountId = task.accountId ?? undefined;
         const result = await runRiskScanner(accountId);
-        title = job.name;
+        title = task.name;
         bodyText = [
           `Risk Scanner complete`,
           `• Risk level: ${result.riskLevel}`,
@@ -871,14 +871,14 @@ export async function executeJob(jobId: string): Promise<{
         ].join("\n");
       } catch (e) {
         console.error("Failed to run Risk Scanner:", e);
-        title = job.name;
+        title = task.name;
         bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
       }
     } else if (handlerKey === "deliverAlerts") {
       try {
-        const accountId = job.accountId ?? undefined;
+        const accountId = task.accountId ?? undefined;
         const result = await processAlertDelivery(accountId);
-        title = job.name;
+        title = task.name;
         bodyText = [
           `Alert Delivery complete`,
           `• Processed: ${result.processed}`,
@@ -888,16 +888,16 @@ export async function executeJob(jobId: string): Promise<{
         ].join("\n");
       } catch (e) {
         console.error("Failed to run Deliver Alerts:", e);
-        title = job.name;
+        title = task.name;
         bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
       }
     } else {
-      bodyText += `Unknown job type: ${job.jobType} (handler: ${handlerKey})`;
+      bodyText += `Unknown job type: ${task.jobType} (handler: ${handlerKey})`;
     }
 
     // Deliver (Slack only for now; push/X are placeholders)
-    let prefs = await db.collection("alertPreferences").findOne({ accountId: job.accountId });
-    if (!prefs && job.accountId === null) {
+    let prefs = await db.collection("alertPreferences").findOne({ accountId: task.accountId });
+    if (!prefs && task.accountId === null) {
       const firstAcc = await db.collection("accounts").findOne({});
       if (firstAcc) {
         prefs = await db.collection("alertPreferences").findOne({ accountId: (firstAcc as { _id: ObjectId })._id.toString() });
@@ -926,7 +926,7 @@ export async function executeJob(jobId: string): Promise<{
             },
           ];
 
-    if (job.channels.includes("slack")) {
+    if (task.channels.includes("slack")) {
       if (!slackConfig?.target) {
         const err = "Slack not configured. Go to Automation → Settings → Alert Settings and add a Slack webhook URL.";
         failedChannels.push({ channel: "Slack", error: err });
@@ -957,7 +957,7 @@ export async function executeJob(jobId: string): Promise<{
           if (!slackRes.ok) {
             const errBody = await slackRes.text();
             const err = `Slack webhook failed (${slackRes.status}): ${errBody.slice(0, 200)}`;
-            await setJobLastRunError(db, jobId, err);
+            await setJobLastRunError(db, taskId, err);
             return { success: false, error: err };
           }
         }
@@ -970,7 +970,7 @@ export async function executeJob(jobId: string): Promise<{
       }
     }
 
-    if (job.channels.includes("twitter") && twitterConfig?.target) {
+    if (task.channels.includes("twitter") && twitterConfig?.target) {
       // Watchlist report: cap X posts per run to avoid rate limits (e.g. 5 watchlists max to X)
       const maxXPosts = handlerKey === "watchlistreport" ? 5 : postsToSend.length;
       const postsForX = postsToSend.slice(0, maxXPosts);
@@ -995,7 +995,7 @@ export async function executeJob(jobId: string): Promise<{
       if (xPosted > 0) deliveredChannels.push("X");
     }
 
-    if (job.channels.includes("push")) {
+    if (task.channels.includes("push")) {
       console.log("Push delivery selected but not implemented server-side yet.");
     }
 
@@ -1008,9 +1008,9 @@ export async function executeJob(jobId: string): Promise<{
       updatedAt: new Date().toISOString(),
       lastRunError: lastRunErrorToSet,
     };
-    if (lastRunNotesForJob != null) updatePayload.lastRunNotes = lastRunNotesForJob;
+    if (lastRunNotesForTask != null) updatePayload.lastRunNotes = lastRunNotesForTask;
     await db.collection("reportJobs").updateOne(
-      { _id: new ObjectId(jobId) },
+      { _id: new ObjectId(taskId) },
       { $set: updatePayload }
     );
     const hasOutput = Boolean(bodyText && bodyText.trim().length > 0);
@@ -1023,9 +1023,9 @@ export async function executeJob(jobId: string): Promise<{
     };
   } catch (e) {
     const msg = toErrorMessage(e);
-    console.error("executeJob failed:", e);
+    console.error("executeTask failed:", e);
     try {
-      await setJobLastRunError(db, jobId, msg);
+      await setJobLastRunError(db, taskId, msg);
     } catch {
       // ignore if jobId invalid or db unavailable
     }
@@ -1225,18 +1225,21 @@ async function runWatchlistAnalysis(accountId?: string): Promise<{
   return { analyzed, alertsCreated, errors };
 }
 
-/** Schedule a report job by ID (used when creating/updating jobs in reportJobs). Cron is interpreted in UTC. */
-export async function upsertReportJobSchedule(jobId: string, cron: string): Promise<void> {
+/** Schedule a report task by ID (used when creating/updating tasks in reportJobs). Cron is interpreted in UTC. */
+export async function upsertReportTaskSchedule(taskId: string, cron: string): Promise<void> {
   const ag = await getAgendaClient();
-  await ag.cancel({ name: "scheduled-report", "data.jobId": jobId });
-  await ag.every(cron, "scheduled-report", { jobId }, { timezone: "UTC" });
+  await ag.cancel({ name: "scheduled-report", "data.jobId": taskId });
+  await ag.every(cron, "scheduled-report", { jobId: taskId }, { timezone: "UTC" });
 }
 
-/** Cancel scheduled-report jobs for a given report job ID. */
-export async function cancelReportJobSchedule(jobId: string): Promise<void> {
+/** Cancel scheduled-report Agenda jobs for a given report task ID. */
+export async function cancelReportTaskSchedule(taskId: string): Promise<void> {
   const ag = await getAgendaClient();
-  await ag.cancel({ name: "scheduled-report", "data.jobId": jobId });
+  await ag.cancel({ name: "scheduled-report", "data.jobId": taskId });
 }
+
+/** @deprecated Use executeTask */
+export const executeJob = executeTask;
 
 /** Schedule a recurring job (cron or human interval). Uses agenda-client; safe to call from web. */
 export async function scheduleJob(

@@ -552,42 +552,49 @@ export type ReportDefinition = {
   updatedAt: string;
 };
 
-// Scheduled Jobs (job type + config, no report definitions)
-export type JobStatus = "active" | "paused";
+// Scheduled Tasks (task type + config; stored in reportJobs collection)
+export type TaskStatus = "active" | "paused";
 
-/** Type-specific job config (JSON). Validated by Zod per jobType. */
-export type JobConfig = Record<string, unknown>;
+/** Type-specific task config (JSON). Validated by Zod per taskType. */
+export type TaskConfig = Record<string, unknown>;
 
-export type Job = {
+export type Task = {
   _id: string;
   /** null = portfolio (all accounts) */
   accountId: string | null;
   name: string;
-  /** Job type id from jobTypes/reportTypes collection (e.g. smartxai, OptionScanner) */
+  /** Task type id from reportTypes collection (e.g. smartxai, unifiedOptionsScanner) */
   jobType: string;
   /** Message template (Handlebars/Mustache) for alert/report messages */
   messageTemplate?: string;
   /** Type-specific config (coveredCallScanner, csp-analysis, etc.) */
-  config?: JobConfig;
+  config?: TaskConfig;
   /** Message template for watchlist/smartxai/portfoliosummary (legacy) */
   templateId?: ReportTemplateId;
   customSlackTemplate?: string;
   customXTemplate?: string;
-  /** Scanner config for OptionScanner job type (legacy) */
+  /** Scanner config for OptionScanner task type (legacy) */
   scannerConfig?: OptionScannerConfig;
   scheduleCron: string;
   /** Delivery channels (slack, push, twitter, email) */
   channels: AlertDeliveryChannel[];
-  status: JobStatus;
+  status: TaskStatus;
   lastRunAt?: string;
   /** Set when last run failed (e.g. handler or delivery error). */
   lastRunError?: string;
-  /** Run summary/notes for job run history (e.g. unified scanner stats + breakdown). */
+  /** Run summary/notes for task run history (e.g. unified scanner stats + breakdown). */
   lastRunNotes?: string;
   nextRunAt?: string;
   createdAt: string;
   updatedAt: string;
 };
+
+/** @deprecated Use Task */
+export type Job = Task;
+/** @deprecated Use TaskStatus */
+export type JobStatus = TaskStatus;
+/** @deprecated Use TaskConfig */
+export type JobConfig = TaskConfig;
 
 
 // Option Scanner Types

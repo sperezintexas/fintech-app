@@ -11,7 +11,7 @@ import {
   runJobNow,
   getJobStatus,
   cancelJob,
-  upsertReportJobSchedule,
+  upsertReportTaskSchedule,
 } from "@/lib/scheduler";
 import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
 
@@ -75,7 +75,7 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
           { $set: { scheduleCron: expectedCron, updatedAt: now } }
         );
         const existingId = (exists as { _id: ObjectId })._id.toString();
-        await upsertReportJobSchedule(existingId, expectedCron);
+        await upsertReportTaskSchedule(existingId, expectedCron);
       }
       continue;
     }
@@ -95,7 +95,7 @@ async function createRecommendedJobs(): Promise<{ created: number; jobs: string[
 
     const result = await jobsColl.insertOne(doc as JobDoc & { _id?: ObjectId });
     const jobId = result.insertedId.toString();
-    await upsertReportJobSchedule(jobId, r.scheduleCron);
+    await upsertReportTaskSchedule(jobId, r.scheduleCron);
     created++;
     jobNames.push(r.name);
   }
@@ -213,7 +213,7 @@ export async function POST(request: NextRequest) {
             { _id: (job as { _id: ObjectId })._id },
             { $set: { scheduleCron: expectedCron, updatedAt: now } }
           );
-          await upsertReportJobSchedule(jobId, expectedCron);
+          await upsertReportTaskSchedule(jobId, expectedCron);
           updated.push(job.name);
         }
         return NextResponse.json({

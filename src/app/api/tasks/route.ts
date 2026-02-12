@@ -6,13 +6,13 @@ import { getNextRunFromCron } from "@/lib/cron-utils";
 import { upsertReportTaskSchedule } from "@/lib/scheduler";
 import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
 import { validateJobConfig } from "@/lib/job-config-schemas";
-import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, JobConfig } from "@/types/portfolio";
+import type { Task, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, TaskConfig } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
-type JobDoc = Omit<Job, "_id"> & { _id: ObjectId };
+type TaskDoc = Omit<Task, "_id"> & { _id: ObjectId };
 
-// GET /api/jobs?accountId=... (omit for portfolio-level) | ?all=1 (all jobs for schedule management)
+// GET /api/tasks?accountId=... (omit for portfolio-level) | ?all=1 (all tasks for schedule management)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -27,20 +27,20 @@ export async function GET(request: NextRequest) {
           ? { accountId: null }
           : { accountId: accountIdParam };
 
-    const jobs = await db
-      .collection<JobDoc>("reportJobs")
+    const tasks = await db
+      .collection<TaskDoc>("reportJobs")
       .find(query)
       .sort({ createdAt: -1 })
       .toArray();
 
-    const nextRunByJobId = new Map<string, string>();
+    const nextRunByTaskId = new Map<string, string>();
     try {
       const agenda = await getAgendaClient();
       const scheduledReports = await agenda.jobs({ name: "scheduled-report" });
       for (const job of scheduledReports) {
         const jid = (job.attrs.data as { jobId?: string })?.jobId;
         if (jid && job.attrs.nextRunAt) {
-          nextRunByJobId.set(jid, job.attrs.nextRunAt.toISOString());
+          nextRunByTaskId.set(jid, job.attrs.nextRunAt.toISOString());
         }
       }
     } catch (agendaErr) {
@@ -48,27 +48,27 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      jobs.map((j) => {
-        const id = j._id.toString();
-        let nextRunAt = nextRunByJobId.get(id) ?? j.nextRunAt ?? undefined;
-        if (!nextRunAt && (j.status === "active" || !j.status) && j.scheduleCron?.trim()) {
-          const fromCron = getNextRunFromCron(j.scheduleCron);
+      tasks.map((t) => {
+        const id = t._id.toString();
+        let nextRunAt = nextRunByTaskId.get(id) ?? t.nextRunAt ?? undefined;
+        if (!nextRunAt && (t.status === "active" || !t.status) && t.scheduleCron?.trim()) {
+          const fromCron = getNextRunFromCron(t.scheduleCron);
           if (fromCron) nextRunAt = fromCron;
         }
         return {
-          ...j,
+          ...t,
           _id: id,
           nextRunAt,
         };
       })
     );
   } catch (error) {
-    console.error("Failed to fetch jobs:", error);
-    return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
+    console.error("Failed to fetch tasks:", error);
+    return NextResponse.json({ error: "Failed to fetch tasks" }, { status: 500 });
   }
 }
 
-// POST /api/jobs
+// POST /api/tasks
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       name?: string;
       jobType?: string;
       messageTemplate?: string;
-      config?: JobConfig;
+      config?: TaskConfig;
       templateId?: ReportTemplateId;
       customSlackTemplate?: string;
       customXTemplate?: string;
@@ -117,29 +117,29 @@ export async function POST(request: NextRequest) {
       handlerKey?: string;
     } | null;
     if (!typeDoc || !typeDoc.enabled) {
-      return NextResponse.json({ error: "Invalid or disabled job type" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid or disabled task type" }, { status: 400 });
     }
 
-    let validatedConfig: JobConfig | undefined;
+    let validatedConfig: TaskConfig | undefined;
     try {
       validatedConfig = validateJobConfig(
         jobType,
         typeDoc.handlerKey ?? jobType,
         body.config
-      ) as JobConfig | undefined;
+      ) as TaskConfig | undefined;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Invalid config";
       return NextResponse.json({ error: `Config validation failed: ${msg}` }, { status: 400 });
     }
     if (accountId === null && !typeDoc.supportsPortfolio) {
-      return NextResponse.json({ error: "This job type does not support portfolio-level jobs" }, { status: 400 });
+      return NextResponse.json({ error: "This task type does not support portfolio-level tasks" }, { status: 400 });
     }
     if (accountId && !typeDoc.supportsAccount) {
-      return NextResponse.json({ error: "This job type does not support account-level jobs" }, { status: 400 });
+      return NextResponse.json({ error: "This task type does not support account-level tasks" }, { status: 400 });
     }
 
     const now = new Date().toISOString();
-    const jobDoc: Omit<JobDoc, "_id"> = {
+    const taskDoc: Omit<TaskDoc, "_id"> = {
       accountId,
       name,
       jobType,
@@ -156,16 +156,16 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     };
 
-    const result = await db.collection<JobDoc>("reportJobs").insertOne(jobDoc as JobDoc);
-    const jobId = result.insertedId.toString();
+    const result = await db.collection<TaskDoc>("reportJobs").insertOne(taskDoc as TaskDoc);
+    const taskId = result.insertedId.toString();
 
     if (status === "active") {
-      await upsertReportTaskSchedule(jobId, scheduleCron);
+      await upsertReportTaskSchedule(taskId, scheduleCron);
     }
 
-    return NextResponse.json({ ...jobDoc, _id: jobId }, { status: 201 });
+    return NextResponse.json({ ...taskDoc, _id: taskId }, { status: 201 });
   } catch (error) {
-    console.error("Failed to create job:", error);
-    return NextResponse.json({ error: "Failed to create job" }, { status: 500 });
+    console.error("Failed to create task:", error);
+    return NextResponse.json({ error: "Failed to create task" }, { status: 500 });
   }
 }

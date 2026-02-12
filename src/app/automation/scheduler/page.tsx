@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import type { Job, AlertDeliveryChannel, ReportTemplateId } from "@/types/portfolio";
+import type { Task, AlertDeliveryChannel, ReportTemplateId } from "@/types/portfolio";
 import { REPORT_TEMPLATES } from "@/types/portfolio";
 import { cronToHumanInTimezone, getCronSchedulePreview } from "@/lib/cron-utils";
 import { formatInTimezone } from "@/lib/date-format";
@@ -77,7 +77,7 @@ type JobTypeItem = {
 };
 
 export default function SchedulerPage() {
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [jobTypes, setJobTypes] = useState<JobTypeItem[]>([]);
   const [showJobForm, setShowJobForm] = useState(false);
   const [jobFormError, setJobFormError] = useState("");
@@ -123,10 +123,10 @@ export default function SchedulerPage() {
   const [sortKey, setSortKey] = useState<'name' | 'scheduleCron' | 'nextRunAt' | 'lastRunAt' | 'status'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  const sortedJobs = useMemo(() => {
-    return [...jobs].sort((a, b) => {
-      const getVal = (j: Job, k: string) => {
-        const val = (j as Record<string, unknown>)[k];
+  const sortedTasks = useMemo(() => {
+    return [...tasks].sort((a, b) => {
+      const getVal = (x: Task, k: string) => {
+        const val = (x as Record<string, unknown>)[k];
         if (['nextRunAt', 'lastRunAt'].includes(k)) {
           return val ? new Date(val as string).getTime() : -Infinity;
         }
@@ -138,7 +138,7 @@ export default function SchedulerPage() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [jobs, sortKey, sortDir]);
+  }, [tasks, sortKey, sortDir]);
 
   const toggleSort = (newKey: 'name' | 'scheduleCron' | 'nextRunAt' | 'lastRunAt' | 'status') => {
     if (sortKey !== newKey) {
@@ -160,11 +160,11 @@ export default function SchedulerPage() {
     return `${minute} ${hour} * * *`;
   };
 
-  const fetchJobs = useCallback(async () => {
-    const res = await fetch("/api/jobs?all=1");
+  const fetchTasks = useCallback(async () => {
+    const res = await fetch("/api/tasks?all=1");
     if (res.ok) {
       const data = await res.json();
-      setJobs(Array.isArray(data) ? data : []);
+      setTasks(Array.isArray(data) ? data : []);
     }
   }, []);
 
@@ -192,8 +192,8 @@ export default function SchedulerPage() {
   }, []);
 
   useEffect(() => {
-    fetchJobs();
-  }, [fetchJobs]);
+    fetchTasks();
+  }, [fetchTasks]);
 
   useEffect(() => {
     fetchJobTypes();
@@ -205,10 +205,10 @@ export default function SchedulerPage() {
     if (refreshInterval === 0) return;
     const id = setInterval(async () => {
       await fetchSchedulerStatus();
-      await fetchJobs();
+      await fetchTasks();
     }, refreshInterval * 1000);
     return () => clearInterval(id);
-  }, [refreshInterval, fetchSchedulerStatus, fetchJobs]);
+  }, [refreshInterval, fetchSchedulerStatus, fetchTasks]);
 
   const handleSchedulerAction = async (action: string, jobName?: string) => {
     setSchedulerLoading(true);
@@ -223,7 +223,7 @@ export default function SchedulerPage() {
       if (res.ok) {
         setSchedulerMessage(data.message || "Action completed");
         await fetchSchedulerStatus();
-        await fetchJobs();
+        await fetchTasks();
       } else {
         setSchedulerMessage(`Error: ${data.error ?? "Action failed"}`);
       }
@@ -234,10 +234,10 @@ export default function SchedulerPage() {
     }
   };
 
-  const openEditJob = (j: Job) => {
-    setEditingJobId(j._id);
+  const openEditTask = (t: Task) => {
+    setEditingJobId(t._id);
     setJobFormError("");
-    const cronParts = (j.scheduleCron ?? "0 16 * * 1-5").trim().split(/\s+/);
+    const cronParts = (t.scheduleCron ?? "0 16 * * 1-5").trim().split(/\s+/);
     if (cronParts.length >= 5) {
       const minute = (cronParts[0] ?? "0").split(",")[0] ?? "0";
       const hourRaw = (cronParts[1] ?? "16").split(",")[0] ?? "16";
@@ -246,24 +246,24 @@ export default function SchedulerPage() {
       setJobScheduleFreq(dow === "0" ? "sunday" : dow === "*" ? "daily" : "weekdays");
     }
     setJobForm({
-      name: j.name,
-      jobType: j.jobType,
-      messageTemplate: j.messageTemplate ?? "",
-      templateId: j.templateId ?? "concise",
-      customSlackTemplate: j.customSlackTemplate ?? "",
-      scannerConfig: j.scannerConfig,
-      config: j.config,
-      scheduleCron: j.scheduleCron ?? "0 16 * * 1-5",
-      channels: j.channels ?? ["slack"],
-      status: j.status ?? "active",
+      name: t.name,
+      jobType: t.jobType,
+      messageTemplate: t.messageTemplate ?? "",
+      templateId: t.templateId ?? "concise",
+      customSlackTemplate: t.customSlackTemplate ?? "",
+      scannerConfig: t.scannerConfig,
+      config: t.config,
+      scheduleCron: t.scheduleCron ?? "0 16 * * 1-5",
+      channels: t.channels ?? ["slack"],
+      status: t.status ?? "active",
     });
     setShowJobForm(true);
   };
 
-  const saveJob = async () => {
+  const saveTask = async () => {
     const name = jobForm.name.trim();
-    if (!name) return setJobFormError("Job name is required");
-    if (!jobForm.jobType) return setJobFormError("Select a job type");
+    if (!name) return setJobFormError("Task name is required");
+    if (!jobForm.jobType) return setJobFormError("Select a task type");
     if (!jobForm.scheduleCron.trim()) return setJobFormError("Cron schedule is required");
     if (!(jobForm.channels ?? []).length) return setJobFormError("Select at least one delivery channel");
     setJobFormSaving(true);
@@ -283,7 +283,7 @@ export default function SchedulerPage() {
         status: jobForm.status,
       };
       const res = await fetch(
-        editingJobId ? `/api/jobs/${editingJobId}` : "/api/jobs",
+        editingJobId ? `/api/tasks/${editingJobId}` : "/api/tasks",
         {
           method: editingJobId ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -292,65 +292,65 @@ export default function SchedulerPage() {
       );
       const data = await res.json();
       if (!res.ok) {
-        setJobFormError(data.error || "Failed to save job");
+        setJobFormError(data.error || "Failed to save task");
         return;
       }
       setShowJobForm(false);
       setEditingJobId(null);
-      await fetchJobs();
+      await fetchTasks();
     } catch {
-      setJobFormError("Failed to save job");
+      setJobFormError("Failed to save task");
     } finally {
       setJobFormSaving(false);
     }
   };
 
-  const deleteJob = async (id: string) => {
-    if (!confirm("Delete this scheduled job?")) return;
+  const deleteTask = async (id: string) => {
+    if (!confirm("Delete this scheduled task?")) return;
     try {
-      const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
-      if (res.ok) await fetchJobs();
+      const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+      if (res.ok) await fetchTasks();
     } catch {
       // ignore
     }
   };
 
-  const runJobNow = async (jobId: string, jobName?: string) => {
+  const runTaskNow = async (taskId: string, taskName?: string) => {
     setLastRunResult(null);
     setSchedulerMessage("");
-    const name = jobName ?? jobs.find((j) => j._id === jobId)?.name ?? "Job";
+    const name = taskName ?? tasks.find((x) => x._id === taskId)?.name ?? "Task";
     try {
-      const res = await fetch(`/api/jobs/${jobId}`, { method: "POST" });
+      const res = await fetch(`/api/tasks/${taskId}`, { method: "POST" });
       const data = (await res.json()) as { success?: boolean; message?: string; error?: string; summary?: string };
       if (res.ok && data.success) {
-        setSchedulerMessage(data.message ?? "Job completed.");
-        setLastRunResult({ jobName: name, message: data.message ?? "Job completed.", summary: data.summary, isError: false });
+        setSchedulerMessage(data.message ?? "Task completed.");
+        setLastRunResult({ jobName: name, message: data.message ?? "Task completed.", summary: data.summary, isError: false });
         setTimeout(() => { setSchedulerMessage(""); setLastRunResult(null); }, 15000);
       } else {
-        const errMsg = `Error: ${data.error ?? "Failed to run job"}`;
+        const errMsg = `Error: ${data.error ?? "Failed to run task"}`;
         setSchedulerMessage(errMsg);
         setLastRunResult({ jobName: name, message: errMsg, isError: true });
       }
-      await fetchJobs();
+      await fetchTasks();
     } catch {
-      setSchedulerMessage("Error: Failed to run job");
-      setLastRunResult({ jobName: name, message: "Error: Failed to run job", isError: true });
+      setSchedulerMessage("Error: Failed to run task");
+      setLastRunResult({ jobName: name, message: "Error: Failed to run task", isError: true });
     }
   };
 
   const portfolioJobTypes = jobTypes.filter((t) => t.enabled && t.supportsPortfolio);
-  const scheduledCount = jobs.filter((j) => j.nextRunAt).length;
-  const needsScheduleFix = jobs.some((j) => {
-    const expected = j.jobType ? RECOMMENDED_CRON_BY_JOB_TYPE[j.jobType] : undefined;
-    return expected != null && (j.scheduleCron?.trim() ?? "") !== expected;
+  const scheduledCount = tasks.filter((t) => t.nextRunAt).length;
+  const needsScheduleFix = tasks.some((t) => {
+    const expected = t.jobType ? RECOMMENDED_CRON_BY_JOB_TYPE[t.jobType] : undefined;
+    return expected != null && (t.scheduleCron?.trim() ?? "") !== expected;
   });
 
   return (
     <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Scheduler</h2>
-          <p className="text-gray-600 mt-1 text-sm">Portfolio-level jobs: when run, each job can use data across all accounts. Manage jobs in the table below.</p>
-          <p className="text-gray-500 mt-1 text-xs">Schedules are stored in UTC. Next/Last run are shown in Central. Use <strong>Fix all schedules</strong> to set all jobs with a recommended schedule to the correct cron.</p>
+          <p className="text-gray-600 mt-1 text-sm">Portfolio-level tasks: when run, each task can use data across all accounts. Manage tasks in the table below.</p>
+          <p className="text-gray-500 mt-1 text-xs">Schedules are stored in UTC. Next/Last run are shown in Central. Use <strong>Fix all schedules</strong> to set all tasks with a recommended schedule to the correct cron.</p>
         </div>
 
         {/* Toolbar: quick actions */}
@@ -360,7 +360,7 @@ export default function SchedulerPage() {
             disabled={schedulerLoading}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium"
           >
-            Create Recommended Jobs
+            Create Recommended Tasks
           </button>
           <button
             onClick={() => handleSchedulerAction("runPortfolio")}
@@ -411,12 +411,12 @@ export default function SchedulerPage() {
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-1">Manage Jobs</h3>
               <p className="text-sm text-gray-600">
-                {jobs.length > 0 ? (
-                  <span className="text-gray-700 font-medium">{scheduledCount} of {jobs.length} jobs scheduled to run</span>
+                {tasks.length > 0 ? (
+                  <span className="text-gray-700 font-medium">{scheduledCount} of {tasks.length} tasks scheduled to run</span>
                 ) : (
-                  "Create, edit, and run report jobs."
+                  "Create, edit, and run report tasks."
                 )}
-                {" "}Each job uses a job type (see <Link href="/automation/job-types" className="text-blue-600 hover:underline">Job types</Link>).
+                {" "}Each task uses a task type (see <Link href="/automation/task-types" className="text-blue-600 hover:underline">Task types</Link>).
               </p>
             </div>
             <button
@@ -442,11 +442,11 @@ export default function SchedulerPage() {
           )}
 
           {portfolioJobTypes.length === 0 && jobTypes.length > 0 ? (
-            <div className="text-center py-10 text-gray-500">No portfolio job types enabled. Enable a job type that supports portfolio in Job types.</div>
+            <div className="text-center py-10 text-gray-500">No portfolio task types enabled. Enable a task type that supports portfolio in Task types.</div>
           ) : jobTypes.length === 0 ? (
-            <div className="text-center py-10 text-gray-500">Loading job types…</div>
-          ) : jobs.length === 0 ? (
-            <div className="text-center py-10 text-gray-500">No jobs yet. Click &quot;New Job&quot; to create one.</div>
+            <div className="text-center py-10 text-gray-500">Loading task types…</div>
+          ) : tasks.length === 0 ? (
+            <div className="text-center py-10 text-gray-500">No tasks yet. Click &quot;New Task&quot; to create one.</div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-gray-200">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -456,7 +456,7 @@ export default function SchedulerPage() {
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-72 cursor-pointer hover:bg-gray-50 select-none"
                       onClick={() => toggleSort('name')}
                     >
-                      Job {sortKey === 'name' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                      Task {sortKey === 'name' && <span className="ml-1 text-xs font-bold">{sortDir === 'asc' ? '↑' : '↓'}</span>}
                     </th>
                     <th
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-50 select-none whitespace-nowrap"
@@ -488,17 +488,17 @@ export default function SchedulerPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
-                  {sortedJobs.map((j) => {
-                    const typeInfo = jobTypes.find((t) => t.id === j.jobType);
-                    const typeName = typeInfo?.name ?? j.jobType;
-                    const cron = (j.scheduleCron ?? "0 16 * * 1-5").trim();
+                  {sortedTasks.map((t) => {
+                    const typeInfo = jobTypes.find((x) => x.id === t.jobType);
+                    const typeName = typeInfo?.name ?? t.jobType;
+                    const cron = (t.scheduleCron ?? "0 16 * * 1-5").trim();
                     const scheduleLabel = cronToHumanInTimezone(cron, CST, "CST");
-                    const nextRunFriendly = formatCst(j.nextRunAt ?? null);
-                    const lastRunFriendly = formatCst(j.lastRunAt ?? null);
+                    const nextRunFriendly = formatCst(t.nextRunAt ?? null);
+                    const lastRunFriendly = formatCst(t.lastRunAt ?? null);
                     return (
-                      <tr key={j._id} className={`hover:bg-gray-50/50 ${(j.status as string) === 'failed' ? 'bg-red-50/80 border-l-4 border-red-400' : ''}`}>
+                      <tr key={t._id} className={`hover:bg-gray-50/50 ${(t.status as string) === 'failed' ? 'bg-red-50/80 border-l-4 border-red-400' : ''}`}>
                         <td className="px-4 py-3 w-72">
-                          <div className="font-medium text-gray-900 mb-1">{j.name}</div>
+                          <div className="font-medium text-gray-900 mb-1">{t.name}</div>
                           <div className="text-sm text-gray-700 mb-1">{typeName}</div>
                           {typeInfo?.description && (
                             <div className="text-xs text-gray-500 line-clamp-2" title={typeInfo.description}>{typeInfo.description}</div>
@@ -509,17 +509,17 @@ export default function SchedulerPage() {
                         <td className="px-4 py-3 text-gray-600 text-xs hidden md:table-cell">{lastRunFriendly}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                            (j.status as string) === 'failed' ? 'bg-red-100 text-red-800' :
-                            (j.status ?? "active") === "active" ? "bg-green-100 text-green-800" :
+                            (t.status as string) === 'failed' ? 'bg-red-100 text-red-800' :
+                            (t.status ?? "active") === "active" ? "bg-green-100 text-green-800" :
                             "bg-gray-100 text-gray-700"
                           }`}>
-                            {(j.status as string) === 'failed' ? 'Failed' : j.status ?? "active"}
+                            {(t.status as string) === 'failed' ? 'Failed' : t.status ?? "active"}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-0.5">
                             <button
-                              onClick={() => runJobNow(j._id, j.name)}
+                              onClick={() => runTaskNow(t._id, t.name)}
                               className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                               title="Run now"
                             >
@@ -529,7 +529,7 @@ export default function SchedulerPage() {
                               </svg>
                             </button>
                             <button
-                              onClick={() => openEditJob(j)}
+                              onClick={() => openEditTask(t)}
                               className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                               title="Edit"
                             >
@@ -538,7 +538,7 @@ export default function SchedulerPage() {
                               </svg>
                             </button>
                             <button
-                              onClick={() => deleteJob(j._id)}
+                              onClick={() => deleteTask(t._id)}
                               className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                               title="Delete"
                             >
@@ -561,7 +561,7 @@ export default function SchedulerPage() {
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-lg font-semibold">{editingJobId ? "Edit Job" : "New Job"}</h4>
+                  <h4 className="text-lg font-semibold">{editingJobId ? "Edit Task" : "New Task"}</h4>
                   <button onClick={() => { setShowJobForm(false); setEditingJobId(null); }} className="text-gray-400 hover:text-gray-600">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
@@ -569,11 +569,11 @@ export default function SchedulerPage() {
                 {jobFormError && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{jobFormError}</div>}
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Job Name</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Task Name</label>
                     <input value={jobForm.name} onChange={(e) => setJobForm({ ...jobForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="e.g. Daily close report" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Job Type</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Task Type</label>
                     <select value={jobForm.jobType} onChange={(e) => setJobForm({ ...jobForm, jobType: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white">
                       {portfolioJobTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
@@ -641,7 +641,7 @@ export default function SchedulerPage() {
                   </div>
                   <div className="flex justify-end gap-2 pt-2">
                     <button onClick={() => { setShowJobForm(false); setEditingJobId(null); }} className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                    <button onClick={saveJob} disabled={jobFormSaving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{jobFormSaving ? "Saving..." : "Save"}</button>
+                    <button onClick={saveTask} disabled={jobFormSaving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{jobFormSaving ? "Saving..." : "Save"}</button>
                   </div>
                 </div>
               </div>

@@ -132,11 +132,11 @@ export const COVERED_CALL_ALTERNATIVES_TOOL: OpenAI.Chat.ChatCompletionTool = {
   },
 };
 
-export const LIST_JOBS_TOOL: OpenAI.Chat.ChatCompletionTool = {
+export const LIST_TASKS_TOOL: OpenAI.Chat.ChatCompletionTool = {
   type: "function",
   function: {
-    name: "list_jobs",
-    description: "List your current scheduled jobs, scanners, and automations. Includes report jobs (e.g. Unified Options Scanner), their cron schedules, status, and next run times. Use when user asks about jobs, schedules, automation, or scanners.",
+    name: "list_tasks",
+    description: "List your current scheduled tasks, scanners, and automations. Includes report tasks (e.g. Unified Options Scanner), their cron schedules, status, and next run times. Use when user asks about tasks, schedules, automation, or scanners.",
     parameters: {
       type: "object",
       properties: {},
@@ -245,12 +245,12 @@ async function executeListJobs(): Promise<string> {
   const status = await getJobStatus();
   const db = await getDb();
   const reportJobs = await db.collection("reportJobs").find({status: "active"}).sort({updatedAt: -1}).limit(20).toArray();
-  let result = "*Your Active Scheduled Jobs:*\\n\\n";
+  let result = "*Your Active Scheduled Tasks:*\\n\\n";
   if (reportJobs.length === 0) {
-    result += "No user-scheduled report jobs found.\\n";
+    result += "No user-scheduled report tasks found.\\n";
   } else {
-    for (const job of reportJobs) {
-      result += `• **${job.name}** (${job.jobType}) ${job.accountId ? `| Account: ${job.accountId.slice(0,8)}` : "(Portfolio-wide)"} | Cron: \\\`${job.scheduleCron || 'manual'}\\\` | Channels: ${Array.isArray(job.channels) ? job.channels.join(", ") : "none"}\\n`;
+    for (const task of reportJobs) {
+      result += `• **${task.name}** (${task.jobType}) ${task.accountId ? `| Account: ${task.accountId.slice(0,8)}` : "(Portfolio-wide)"} | Cron: \\\`${task.scheduleCron || 'manual'}\\\` | Channels: ${Array.isArray(task.channels) ? task.channels.join(", ") : "none"}\\n`;
     }
   }
   result += "\\n*Running Agenda Jobs:*\\n";
@@ -263,7 +263,7 @@ async function executeListJobs(): Promise<string> {
       result += `• **${aj.name}** | Next: ${next} | Last: ${last} | Failures: ${aj.failCount}\\n`;
     }
   }
-  result += `\\n*View full history: /automation/job-history*`;
+  result += `\\n*View full history: /automation/task-history*`;
   return result;
 }
 
@@ -280,7 +280,7 @@ async function executeTriggerPortfolioScan(argsStr: string): Promise<string> {
   await runJobNow("unifiedOptionsScanner", dataUnified);
   await runJobNow("watchlistreport", dataWatchlist);
   await runJobNow("deliverAlerts", accountId ? {accountId} : {});
-  return `✅ *Portfolio scan triggered successfully!*\\n\\n• Unified Options Scanner (positions)\\n• Watchlist Report\\n• Alert Delivery\\n\\n${accountId ? `Account: ${accountId.slice(0,8)}` : "All accounts"}\\n\\nResults in ~1-2 min. Check *Automation > Job History* or alerts (Slack/X).`;
+  return `✅ *Portfolio scan triggered successfully!*\\n\\n• Unified Options Scanner (positions)\\n• Watchlist Report\\n• Alert Delivery\\n\\n${accountId ? `Account: ${accountId.slice(0,8)}` : "All accounts"}\\n\\nResults in ~1-2 min. Check *Automation > Task History* or alerts (Slack/X).`;
 }
 
 export async function callGrokWithTools(
@@ -369,7 +369,7 @@ export async function callGrokWithTools(
         resultContent = await executeWebSearch(args as { query?: string; num_results?: number });
       } else if (name === "covered_call_alternatives") {
         resultContent = await executeCoveredCallAlternatives(args as CoveredCallAlternativesArgs);
-      } else if (name === "list_jobs") {
+      } else if (name === "list_tasks") {
         resultContent = await executeListJobs();
       } else if (name === "trigger_portfolio_scan") {
         resultContent = await executeTriggerPortfolioScan(tc.function.arguments ?? "{}");

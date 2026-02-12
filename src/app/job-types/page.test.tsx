@@ -11,12 +11,12 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("Job Types Redirect Page", () => {
-  it("redirects to /automation/job-types", () => {
+  it("redirects to /automation/task-types", () => {
     try {
       render(<JobTypesRedirect />);
     } catch (e) {
       expect((e as Error).message).toBe("REDIRECT");
     }
-    expect(redirectMock).toHaveBeenCalledWith("/automation/job-types");
+    expect(redirectMock).toHaveBeenCalledWith("/automation/task-types");
   });
 });

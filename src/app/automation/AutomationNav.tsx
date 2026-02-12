@@ -10,8 +10,8 @@ export function AutomationNav() {
 
   const isBase = pathname === "/automation";
   const isScheduler = pathname === "/automation/scheduler";
-  const isJobHistory = pathname === "/automation/job-history";
-  const isJobTypes = pathname === "/automation/job-types";
+  const isTaskHistory = pathname === "/automation/task-history";
+  const isTaskTypes = pathname === "/automation/task-types";
   const isLoginHistory = pathname === "/automation/login-history";
   const isXTools = pathname === "/automation/xtools";
   const isCalculators = pathname === "/automation/calculators";
@@ -20,7 +20,7 @@ export function AutomationNav() {
   const activeAuth = isBase && tabParam !== "settings" && tabParam !== "strategy" && tabParam !== "jobs" && tabParam !== "separation";
   const activeSettings = isBase && tabParam === "settings";
   const activeStrategy = isBase && tabParam === "strategy";
-  const activeJobs = isScheduler || (isBase && tabParam === "jobs");
+  const activeTasks = isScheduler || (isBase && tabParam === "tasks");
 
   return (
     <nav className="flex flex-wrap gap-4 border-b border-gray-200 mb-6">
@@ -59,26 +59,26 @@ export function AutomationNav() {
       <Link
         href="/automation/scheduler"
         className={`py-3 px-1 border-b-2 font-medium text-sm ${
-          activeJobs ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
+          activeTasks ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
         }`}
       >
-        Scheduled Jobs
+        Scheduled Tasks
       </Link>
       <Link
-        href="/automation/job-history"
+        href="/automation/task-history"
         className={`py-3 px-1 border-b-2 font-medium text-sm ${
-          isJobHistory ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
+          isTaskHistory ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
         }`}
       >
-        Job run history
+        Task run history
       </Link>
       <Link
-        href="/automation/job-types"
+        href="/automation/task-types"
         className={`py-3 px-1 border-b-2 font-medium text-sm ${
-          isJobTypes ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
+          isTaskTypes ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
         }`}
       >
-        Job types
+        Task types
       </Link>
       <Link
         href="/automation/login-history"

@@ -31,7 +31,7 @@ describe("Automation Page", () => {
       if (url.includes("/api/accounts")) return Promise.resolve({ ok: true, json: async () => mockAccounts } as Response);
       if (url.includes("/api/alerts")) return Promise.resolve({ ok: true, json: async () => [] } as Response);
       if (url.includes("/api/report-types")) return Promise.resolve({ ok: true, json: async () => mockReportTypes } as Response);
-      if (url.includes("/api/jobs")) return Promise.resolve({ ok: true, json: async () => [] } as Response);
+      if (url.includes("/api/jobs") || url.includes("/api/tasks")) return Promise.resolve({ ok: true, json: async () => [] } as Response);
       if (url.includes("/api/alert-templates")) return Promise.resolve({ ok: true, json: async () => ({ templates: {} }) } as Response);
       if (url.includes("/api/report-templates")) return Promise.resolve({ ok: true, json: async () => ({ templates: {} }) } as Response);
       if (url.includes("/api/app-config"))
@@ -61,7 +61,7 @@ describe("Automation Page", () => {
     });
     expect(screen.getByText("Alert Settings")).toBeInTheDocument();
     expect(screen.getByText("Strategy")).toBeInTheDocument();
-    expect(screen.getByText("Scheduled Jobs")).toBeInTheDocument();
+    expect(screen.getByText("Scheduled Tasks")).toBeInTheDocument();
   });
 
   it("renders Auth Users tab content by default", async () => {
@@ -94,7 +94,7 @@ describe("Automation Page", () => {
     mockSearchParams.delete("tab");
   });
 
-  it("renders Job run history and Job types links in nav", async () => {
+  it("renders Task run history and Task types links in nav", async () => {
     render(
       <AutomationLayout>
         <AutomationPage />
@@ -102,9 +102,9 @@ describe("Automation Page", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Scheduled Jobs")).toBeInTheDocument();
+      expect(screen.getByText("Scheduled Tasks")).toBeInTheDocument();
     });
-    expect(screen.getAllByRole("link", { name: /Job run history/ }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByRole("link", { name: /Job types/ }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("link", { name: /Task run history/ }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("link", { name: /Task types/ }).length).toBeGreaterThanOrEqual(1);
   });
 });
