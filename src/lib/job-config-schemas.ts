@@ -88,6 +88,15 @@ export function parseUnifiedOptionsScannerConfig(
   return unifiedOptionsScannerConfigSchema.parse(config);
 }
 
+/** Grok custom prompt (task type defaultConfig or task config override). Prompt required for report type defaultConfig; optional for task config (empty = use type default). */
+export const grokConfigSchema = z
+  .object({
+    prompt: z.string().max(16000).optional(),
+  })
+  .strict();
+
+export type GrokConfig = z.infer<typeof grokConfigSchema>;
+
 /** Validate config by job type handler key. Returns parsed config or throws. */
 export function validateJobConfig(
   jobType: string,
@@ -99,6 +108,12 @@ export function validateJobConfig(
   }
   if (handlerKey === "unifiedOptionsScanner") {
     return unifiedOptionsScannerConfigSchema.parse(config) as Record<string, unknown>;
+  }
+  if (handlerKey === "grok") {
+    const parsed = grokConfigSchema.parse(config) as { prompt?: string };
+    const prompt = parsed?.prompt?.trim();
+    if (!prompt) return undefined; // task uses type default
+    return { prompt } as Record<string, unknown>;
   }
   return config as Record<string, unknown>;
 }

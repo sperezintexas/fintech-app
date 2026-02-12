@@ -26,6 +26,7 @@ import { formatUnifiedOptionsScannerReport, formatUnifiedOptionsScannerRunNotes,
 import { shouldRunPurge, runPurge } from "./cleanup-storage";
 import { runRiskScanner } from "./risk-scanner";
 import { getHeldSymbols } from "./holdings";
+import { callGrokWithTools, WEB_SEARCH_TOOL } from "./xai-grok";
 import {
   refreshHoldingsPricesStock,
   refreshHoldingsPricesOptions,
@@ -871,6 +872,29 @@ export async function executeTask(taskId: string): Promise<{
         ].join("\n");
       } catch (e) {
         console.error("Failed to run Risk Scanner:", e);
+        title = task.name;
+        bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else if (handlerKey === "grok") {
+      try {
+        const typeDocWithConfig = typeDoc as { defaultConfig?: { prompt?: string } } | null;
+        const taskConfig = task.config as { prompt?: string } | undefined;
+        const prompt =
+          (taskConfig?.prompt?.trim() || typeDocWithConfig?.defaultConfig?.prompt?.trim() || "").trim();
+        if (!prompt) {
+          bodyText = "Grok task has no prompt. Set a prompt in Task types (default config) or on the task.";
+          title = task.name;
+        } else {
+          const result = await callGrokWithTools(
+            "You are a helpful assistant. Follow the user's instructions precisely and format your response as requested. Use web search when the user asks for current information (e.g. news, weather, dates, headlines).",
+            prompt,
+            { tools: [WEB_SEARCH_TOOL] }
+          );
+          title = task.name;
+          bodyText = result.text || "No response from Grok.";
+        }
+      } catch (e) {
+        console.error("Failed to run Grok task:", e);
         title = task.name;
         bodyText = `Failed: ${e instanceof Error ? e.message : String(e)}`;
       }

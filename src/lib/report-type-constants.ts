@@ -7,6 +7,7 @@ export const REPORT_HANDLER_KEYS = [
   "unifiedOptionsScanner",
   "deliverAlerts",
   "riskScanner",
+  "grok",
 ] as const;
 
 export type ReportHandlerKey = (typeof REPORT_HANDLER_KEYS)[number];

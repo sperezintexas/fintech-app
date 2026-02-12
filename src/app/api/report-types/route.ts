@@ -135,6 +135,15 @@ export async function POST(request: NextRequest) {
       );
     }
     if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+    if (handlerKey === "grok") {
+      const prompt = (body.defaultConfig as { prompt?: string } | undefined)?.prompt?.trim();
+      if (!prompt) {
+        return NextResponse.json(
+          { error: "Grok task type requires a default prompt in default config" },
+          { status: 400 }
+        );
+      }
+    }
 
     let defaultConfig: Record<string, unknown> | undefined;
     if (body.defaultConfig !== undefined) {

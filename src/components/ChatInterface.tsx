@@ -337,7 +337,7 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
           <div className="text-center py-12 text-gray-500">
             <p className="text-lg font-medium mb-2">Smart Grok Chat</p>
             <p className="text-sm max-w-md mx-auto">
-              Ask about stocks, market outlook, portfolio, or investment strategies. Powered by yahooFinance data and xAI {modelInUse}.
+              Ask about anything but focus on stocks, market outlook, portfolio, or investment strategies. Powered by xAI {modelInUse}.
             </p>
             <p className="text-xs mt-2 text-gray-400">Try:</p>
             <ul className="mt-3 text-sm space-y-1 text-gray-600">
@@ -441,7 +441,7 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about stocks, market, or portfolio..."
+            placeholder={`Smart Grok Chat — Ask about anything but focus on stocks, market outlook, portfolio, or investment strategies. Powered by xAI ${modelInUse}`}
             className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
             disabled={loading}
             maxLength={2000}
@@ -462,6 +462,38 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
             Stats
           </button>
         </div>
+        <details className="mt-2 group">
+          <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
+            <span className="inline-block transition-transform group-open:rotate-90">▶</span>
+            Example prompts
+          </summary>
+          <div className="mt-2 p-3 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-700 space-y-3 max-h-[50vh] overflow-y-auto">
+            {[
+              { tool: "Web search", prompts: ["TSLA news today", "NVDA earnings date", "Weather Austin", "Fed rate decision", "Defense sector outlook"] },
+              { tool: "Quotes & market", prompts: ["TSLA price", "AAPL quote", "Market outlook", "VIX level", "SPY and QQQ today"] },
+              { tool: "Portfolio", prompts: ["Show my portfolio", "My holdings", "Account balance", "Top movers today"] },
+              { tool: "Watchlist", prompts: ["My watchlist", "What am I watching?", "Watchlist performance"] },
+              { tool: "Covered calls", prompts: ["Covered call ideas", "Should I BTC my call?", "Roll my TSLA call", "CC recommendations"] },
+              { tool: "Tasks & scan", prompts: ["Scheduled tasks", "Run scanner now", "When does scanner run?", "Options positions check"] },
+            ].map(({ tool, prompts }) => (
+              <div key={tool}>
+                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">{tool}</p>
+                <div className="flex flex-wrap gap-1">
+                  {prompts.map((text) => (
+                    <button
+                      key={text}
+                      type="button"
+                      onClick={() => setInput(text)}
+                      className="px-2 py-1 rounded bg-gray-200/70 hover:bg-gray-300 text-gray-800 text-xs leading-tight break-words"
+                    >
+                      {text}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
         {statsOpen && (
           <div className="mt-3 p-3 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-700">
             <p className="font-medium text-gray-800 mb-2">Grok status</p>

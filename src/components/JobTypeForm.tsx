@@ -310,6 +310,27 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
         </div>
       )}
 
+      {/* Grok task type: custom prompt (stored in defaultConfig.prompt) */}
+      {formData.handlerKey === "grok" && (
+        <div>
+          <label htmlFor="grok-prompt" className="block text-sm font-medium text-gray-700 mb-2">
+            Grok prompt
+          </label>
+          <p className="text-xs text-gray-500 mb-2">
+            Instructions sent to Grok when this task runs. Grok can use web search for current news, weather, etc.
+          </p>
+          <textarea
+            id="grok-prompt"
+            value={((formData.defaultConfig as { prompt?: string })?.prompt) ?? ""}
+            onChange={(e) => _setConfig({ prompt: e.target.value })}
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-sans"
+            placeholder="e.g. Provide a concise summary of the top news stories from the past 24 hours, focusing on politics, technology, and science. Include one key takeaway for each story. Format as a Custom Newsletter with date, edition, and sources from Grok's web lookups."
+            rows={6}
+            required
+          />
+        </div>
+      )}
+
       {/* Type-specific default config (unifiedOptionsScanner uses nested config; no form here) */}
 
       {jobType && (

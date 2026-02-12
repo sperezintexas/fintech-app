@@ -584,6 +584,19 @@ export default function SchedulerPage() {
                       <span className="text-sm text-gray-700">Include AI insights</span>
                     </label>
                   )}
+                  {jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey === "grok" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Prompt override (optional)</label>
+                      <p className="text-xs text-gray-500 mb-1">Leave empty to use the task type&apos;s default prompt.</p>
+                      <textarea
+                        value={(jobForm.config?.prompt as string) ?? ""}
+                        onChange={(e) => setJobForm({ ...jobForm, config: { ...jobForm.config, prompt: e.target.value } })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                        placeholder="Override prompt for this task…"
+                        rows={3}
+                      />
+                    </div>
+                  )}
                   {["watchlistreport", "smartxai", "portfoliosummary"].includes(jobTypes.find((t) => t.id === jobForm.jobType)?.handlerKey ?? "") && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Message template</label>
