@@ -34,7 +34,7 @@ async function main() {
   defineJobs(agenda);
 
   agenda.on("ready", () => console.log("[smart-scheduler] Agenda ready"));
-  agenda.on("error", (err) => console.error("[smart-scheduler] Agenda error:", err));
+  agenda.on("error", (err: Error) => console.error("[smart-scheduler] Agenda error:", err));
 
   await agenda.start();
   console.log("[smart-scheduler] Started");

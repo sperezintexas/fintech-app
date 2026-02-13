@@ -37,7 +37,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/pnpm-lock.yaml ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps ./apps
 COPY --from=builder --chown=nextjs:nodejs /app/config ./config
 
-# pm2-runtime for multi-process (web + scheduler)
+# pm2-runtime for multi-process (web + scheduler). Use full path so platforms that run "node <cmd>" don't resolve pm2-runtime to /app/pm2-runtime.
 RUN corepack enable && corepack prepare pnpm@9 --activate && npm install -g pm2@5
 COPY --chown=nextjs:nodejs ecosystem.config.js ./
 
@@ -50,4 +50,6 @@ ENV PORT=3000
 
 EXPOSE 3000
 
-CMD ["pm2-runtime", "start", "ecosystem.config.js"]
+# ENTRYPOINT ensures we exec pm2-runtime directly; CMD args are passed to it (avoids "node pm2-runtime" → Cannot find module '/app/pm2-runtime').
+ENTRYPOINT ["/usr/local/bin/pm2-runtime"]
+CMD ["start", "ecosystem.config.js"]

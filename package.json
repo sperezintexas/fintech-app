@@ -1,6 +1,6 @@
 {
   "name": "myinvestments",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "private": true,
   "packageManager": "pnpm@9.0.0",
   "scripts": {
@@ -28,6 +28,9 @@
   "license": "ISC",
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "agenda": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.0.10",
