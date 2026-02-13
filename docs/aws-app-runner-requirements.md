@@ -109,7 +109,7 @@ After this, the repo `myinvestments` in ECR must have the `latest` (or a specifi
 7. **Health check:** Set **path** to `/api/health/live` (returns 200 immediately; use `/api/health` only if you want full DB/scheduler checks and can afford a longer timeout).
 8. **CPU:** 1 vCPU. **Memory:** 2 GB (or more if needed).
 9. **Environment variables:** Add the same vars as in `.env.prod`:
-   `MONGODB_URI`, `MONGODB_DB`, `AUTH_SECRET`, `NEXTAUTH_URL`, `X_CLIENT_ID`, `X_CLIENT_SECRET`, `XAI_API_KEY`, `WEB_SEARCH_API_KEY`, `CRON_SECRET`, `SLACK_WEBHOOK_URL`.
+   `MONGODB_URI`, `MONGODB_DB`, `AUTH_SECRET`, `NEXTAUTH_URL`, `X_CLIENT_ID`, `X_CLIENT_SECRET`, `XAI_API_KEY`, `WEB_SEARCH_API_KEY`, `CRON_SECRET`, `SLACK_WEBHOOK_URL`. For X alert posting, optionally add `X_BEARER_TOKEN`, `X_CONSUMER_KEY`, `X_CONSUMER_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` (see `.env.example`).
    (Or reference Secrets Manager if you used `scripts/aws-secrets-from-env.sh`.)
 10. **Create service.** Wait until status is **Running**.
 11. Copy **Service ARN** and **Service URL** (e.g. `https://xxxxx.us-east-1.awsapprunner.com`).

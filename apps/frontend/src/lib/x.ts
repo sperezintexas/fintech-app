@@ -23,26 +23,33 @@ function formatRateLimitError(e: RateLimitError): string {
 let cachedClient: TwitterApi | null = null;
 let clientPromise: Promise<TwitterApi> | null = null;
 
-/** Posting uses OAuth only (X_OAUTH2_ACCESS_TOKEN or OAuth 1.0a). X_BEARER_TOKEN is ignored for posting. Verifies posting as X_POST_AS_USERNAME (default atxbogart). */
+/** Posting uses OAuth 1.0a (consumer + access token from portal) or fallback OAuth 2. X_BEARER_TOKEN is ignored for posting. Verifies posting as X_POST_AS_USERNAME (default atxbogart). */
 async function getXClient(): Promise<TwitterApi> {
   if (cachedClient) return cachedClient;
   if (clientPromise) return clientPromise;
 
   clientPromise = (async (): Promise<TwitterApi> => {
-    const oauth2Token = process.env.X_OAUTH2_ACCESS_TOKEN?.trim();
-    // Posting: use X_CONSUMER_KEY/X_SECRET_KEY (OAuth 1.0a for X). X_API_KEY/X_API_SECRET are for Grok chat, not posting.
-    const appKey = process.env.X_CONSUMER_KEY || process.env.X_API_KEY;
-    const appSecret = process.env.X_SECRET_KEY || process.env.X_API_SECRET;
-    const accessToken = process.env.X_ACCESS_TOKEN;
-    const accessSecret = process.env.X_ACCESS_TOKEN_SECRET || process.env.X_ACCESS_SECRET;
+    const consumerKey = process.env.X_CONSUMER_KEY?.trim();
+    const consumerSecret = process.env.X_CONSUMER_SECRET?.trim();
+    const accessToken = process.env.X_ACCESS_TOKEN?.trim();
+    const accessTokenSecret = process.env.X_ACCESS_TOKEN_SECRET?.trim();
+    const clientId = process.env.X_CLIENT_ID?.trim();
+    const clientSecret = process.env.X_CLIENT_SECRET?.trim();
     let client: TwitterApi;
-    if (oauth2Token) {
-      client = new TwitterApi(oauth2Token);
-    } else if (appKey && appSecret && accessToken && accessSecret) {
-      client = new TwitterApi({ appKey, appSecret, accessToken, accessSecret });
+    if (consumerKey && consumerSecret && accessToken && accessTokenSecret) {
+      // OAuth 1.0a: consumer (app) + access token (user) — from portal Keys and tokens.
+      client = new TwitterApi({
+        appKey: consumerKey,
+        appSecret: consumerSecret,
+        accessToken,
+        accessSecret: accessTokenSecret,
+      });
+    } else if (clientId && clientSecret) {
+      // Fallback: OAuth 2 user token (clientSecret as single token if you have one).
+      client = new TwitterApi(clientSecret);
     } else {
       throw new Error(
-        "Missing X credentials for posting. Set X_OAUTH2_ACCESS_TOKEN (OAuth 2.0) or X_CONSUMER_KEY, X_SECRET_KEY, X_ACCESS_TOKEN, X_ACCESS_SECRET (OAuth 1.0a for X). X_API_KEY/X_API_SECRET are for Grok chat."
+        "Missing X posting credentials. In portal Keys and tokens set: X_CONSUMER_KEY, X_CONSUMER_SECRET (API Key/Secret), X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET (Authentication Tokens, Read and write)."
       );
     }
     let me: { data?: { username?: string } };
@@ -118,7 +125,7 @@ export async function postToXTweet(rawText: string): Promise<{ id: string; text:
       throw new Error(formatRateLimitError(err));
     if (err?.code === 403) {
       throw new Error(
-        "X API 403 Forbidden: Bearer token is app-only (read-only). To post, use OAuth 1.0a (X_CONSUMER_KEY, X_SECRET_KEY, X_ACCESS_TOKEN, X_ACCESS_SECRET) or OAuth 2.0 user token."
+        "X API 403 Forbidden: Bearer token is app-only (read-only). To post, set X_CONSUMER_KEY, X_CONSUMER_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET (portal Keys and tokens)."
       );
     }
     throw e;

@@ -19,7 +19,7 @@ function loadEnvFile(): void {
   const envFile = process.env.ENV_FILE || ".env.local";
   const envPath = path.isAbsolute(envFile) ? envFile : path.join(process.cwd(), envFile);
   if (!fs.existsSync(envPath)) {
-    throw new Error(`${envFile} not found at ${envPath}. Create it from .env.example and set OAuth credentials for posting (X_OAUTH2_ACCESS_TOKEN or OAuth 1.0a vars).`);
+    throw new Error(`${envFile} not found at ${envPath}. Create it from .env.example and set OAuth credentials for posting (X_CONSUMER_KEY/SECRET + X_ACCESS_TOKEN/SECRET from portal Keys and tokens).`);
   }
   const content = fs.readFileSync(envPath, "utf-8");
   for (const line of content.split("\n")) {

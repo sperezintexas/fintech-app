@@ -14,6 +14,7 @@
     "test:coverage": "pnpm -C apps/frontend run test:coverage",
     "test:scanner": "pnpm -C apps/frontend run test:scanner",
     "test:x-hello": "pnpm -C apps/frontend run test:x-hello",
+    "test:x-post-cli": "pnpm -C apps/frontend exec node scripts/test-x-post-cli.mjs",
     "test:e2e": "pnpm -C apps/frontend run test:e2e",
     "test:e2e:ui": "pnpm -C apps/frontend run test:e2e:ui",
     "start:scheduler": "TS_NODE_PROJECT=apps/smart-scheduler/tsconfig.json node -r tsconfig-paths/register -r ts-node/register apps/smart-scheduler/src/index.ts",

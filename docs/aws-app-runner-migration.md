@@ -13,7 +13,7 @@ App Runner runs the app from a Docker image in ECR. CI builds the image, pushes 
    - **Instance role:** For ECR pull (App Runner provides a default or use custom).
    - **CPU / memory:** e.g. 1 vCPU, 2 GB (adjust as needed).
    - **Port:** 3000 (matches Dockerfile).
-   - **Environment variables:** Set in service config (Console → Service → Configuration → Edit → Environment variables). Same keys: `MONGODB_URI`, `MONGODB_DB`, `AUTH_SECRET`, `NEXTAUTH_URL`, `X_CLIENT_ID`, `X_CLIENT_SECRET`, `XAI_API_KEY`, `WEB_SEARCH_API_KEY`, `CRON_SECRET`, `SLACK_WEBHOOK_URL`. For a custom domain (e.g. `https://example.com`), set `NEXTAUTH_URL`, `AUTH_URL`, and `NEXT_PUBLIC_APP_URL` to that URL. No script — set once in Console or via CLI when creating/updating the service.
+   - **Environment variables:** Set in service config (Console → Service → Configuration → Edit → Environment variables). Same keys: `MONGODB_URI`, `MONGODB_DB`, `AUTH_SECRET`, `NEXTAUTH_URL`, `X_CLIENT_ID`, `X_CLIENT_SECRET`, `XAI_API_KEY`, `WEB_SEARCH_API_KEY`, `CRON_SECRET`, `SLACK_WEBHOOK_URL`. For X alert posting, optionally add `X_BEARER_TOKEN`, `X_CONSUMER_KEY`, `X_CONSUMER_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` (see `.env.example`). For a custom domain (e.g. `https://example.com`), set `NEXTAUTH_URL`, `AUTH_URL`, and `NEXT_PUBLIC_APP_URL` to that URL. No script — set once in Console or via CLI when creating/updating the service.
    - **Auto-deploy:** Optional. If you turn off “Deploy new image when available”, CI will trigger deploy via `aws apprunner start-deployment`.
 
 2. **IAM** (for GitHub Actions):
