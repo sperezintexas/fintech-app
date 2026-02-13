@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { POST } from "./route";
 import { getDb } from "@/lib/mongodb";
 import { getRiskDisclosure } from "@/lib/watchlist-rules";
 
@@ -11,6 +10,18 @@ vi.mock("@/lib/mongodb", () => ({
 vi.mock("@/lib/watchlist-rules", () => ({
   getRiskDisclosure: vi.fn(),
 }));
+
+vi.mock("@/lib/require-session", () => ({
+  requireSession: vi.fn().mockResolvedValue({ user: { id: "test", name: "Test" } }),
+}));
+
+vi.mock("yahoo-finance2", () => ({
+  default: vi.fn().mockImplementation(() => ({
+    quote: vi.fn().mockResolvedValue({ regularMarketPrice: 150 }),
+  })),
+}));
+
+import { POST } from "./route";
 
 describe("POST /api/watchlist", () => {
   beforeEach(() => {

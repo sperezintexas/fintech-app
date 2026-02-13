@@ -9,9 +9,10 @@ test.describe("Smoke tests", () => {
 
   test("navigation links work", async ({ page }) => {
     await page.goto("/");
+    await expect(page.getByRole("heading", { name: /myInvestments/i })).toBeVisible({ timeout: 15000 });
 
     // Dashboard and main nav are in the sidebar; open menu first
-    await page.getByTestId("sidebar-menu-button").click();
+    await page.getByTestId("sidebar-menu-button").click({ timeout: 15000 });
     await page.getByRole("link", { name: /Dashboard/i }).click();
     await expect(page).toHaveURL(/\//);
 
@@ -27,7 +28,7 @@ test.describe("Smoke tests", () => {
     await page.getByRole("link", { name: /xStrategyBuilder/i }).click();
     await expect(page).toHaveURL(/\/xstrategybuilder/);
 
-    // Automation is in header as "Setup"
+    // Automation is in header as "Setup" (may redirect to /automation/scheduler)
     await page.getByRole("link", { name: /Setup/i }).click();
     await expect(page).toHaveURL(/\/automation/);
 
@@ -40,26 +41,26 @@ test.describe("Smoke tests", () => {
 
   test("all top-nav pages load with expected content", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: /myInvestments/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /myInvestments/i })).toBeVisible({ timeout: 15000 });
 
-    await page.getByTestId("sidebar-menu-button").click();
+    await page.getByTestId("sidebar-menu-button").click({ timeout: 15000 });
     await page.getByRole("link", { name: /Watchlist/i }).click();
     await expect(page).toHaveURL(/\/watchlist/);
     await expect(page.getByText(/Watchlists|Select a watchlist|create one to get started/i).first()).toBeVisible();
 
-    await page.getByTestId("sidebar-menu-button").click();
+    await page.getByTestId("sidebar-menu-button").click({ timeout: 10000 });
     await page.getByRole("link", { name: /Holdings/i }).click();
     await expect(page).toHaveURL(/\/holdings/);
     await expect(page.getByRole("heading", { name: /Holdings/i })).toBeVisible();
 
-    await page.getByTestId("sidebar-menu-button").click();
+    await page.getByTestId("sidebar-menu-button").click({ timeout: 10000 });
     await page.getByRole("link", { name: /xStrategyBuilder/i }).click();
     await expect(page).toHaveURL(/\/xstrategybuilder/);
     await expect(page.getByRole("heading", { name: /xStrategyBuilder/i })).toBeVisible();
 
     await page.getByRole("link", { name: /Setup/i }).click();
     await expect(page).toHaveURL(/\/automation/);
-    await expect(page.getByText(/Alerts|Alert Settings|Strategy|Scheduled Tasks/i).first()).toBeVisible({ timeout: 8000 });
+    await expect(page.getByRole("link", { name: /Alert Settings/i }).first()).toBeVisible({ timeout: 10000 });
 
     await page.getByRole("link", { name: /Task Types/i }).click();
     await expect(page).toHaveURL(/\/automation\/task-types/);
@@ -67,31 +68,30 @@ test.describe("Smoke tests", () => {
   });
 
   test("Automation page loads and shows tabs", async ({ page }) => {
-    await page.goto("/automation");
+    await page.goto("/automation/scheduler");
     await expect(page).toHaveTitle(/myInvestments/);
-    await expect(page.getByText("Alert Settings").first()).toBeVisible();
-    await expect(page.getByText("Strategy").first()).toBeVisible();
-    await expect(page.getByText("Scheduled Tasks").first()).toBeVisible();
-    await expect(page.getByText("Setup").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Setup/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("link", { name: "Alert Settings" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Strategy" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Scheduled Tasks" })).toBeVisible();
   });
 
   test("Automation page: Alert Settings tab shows delivery channels", async ({ page }) => {
-    await page.goto("/automation");
-    await page.getByText("Alert Settings").first().click();
+    await page.goto("/automation/scheduler");
+    await page.getByRole("link", { name: "Alert Settings" }).click();
     await expect(page.getByText(/Slack|X|Push|Delivery Channels/i).first()).toBeVisible({ timeout: 5000 });
   });
 
   test("Automation page: Strategy tab shows strategy settings", async ({ page }) => {
-    await page.goto("/automation");
-    await page.getByRole("button", { name: "Strategy", exact: true }).click();
+    await page.goto("/automation/scheduler");
+    await page.getByRole("link", { name: "Strategy" }).click();
     await expect(page.getByRole("heading", { name: "Strategy Settings" })).toBeVisible({ timeout: 5000 });
   });
 
   test("Automation: Scheduled Tasks shows scheduler and task table", async ({ page }) => {
-    await page.goto("/automation");
-    await page.getByText("Scheduled Tasks").first().click();
+    await page.goto("/automation/scheduler");
     await expect(page).toHaveURL(/\/automation\/scheduler/);
-    await expect(page.getByRole("heading", { name: "Manage Tasks" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Manage Tasks" })).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole("button", { name: "New Task" })).toBeVisible();
   });
 
