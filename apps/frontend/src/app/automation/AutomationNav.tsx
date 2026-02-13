@@ -18,10 +18,11 @@ export function AutomationNav() {
   const isGoals = pathname === "/automation/goals";
 
   const activeSeparation = isBase && tabParam === "separation";
-  const activeAuth = isBase && tabParam !== "settings" && tabParam !== "strategy" && tabParam !== "tasks" && tabParam !== "separation" && tabParam !== "chat";
+  const activeAuth = isBase && tabParam !== "settings" && tabParam !== "strategy" && tabParam !== "tasks" && tabParam !== "separation" && tabParam !== "chat" && tabParam !== "brokers";
   const activeSettings = isBase && tabParam === "settings";
   const activeStrategy = isBase && tabParam === "strategy";
   const activeChat = isBase && tabParam === "chat";
+  const activeBrokers = isBase && tabParam === "brokers";
   const activeTasks = isScheduler || (isBase && tabParam === "tasks");
 
   return (
@@ -65,6 +66,14 @@ export function AutomationNav() {
         }`}
       >
         AI Chat
+      </Link>
+      <Link
+        href="/automation?tab=brokers"
+        className={`py-3 px-1 border-b-2 font-medium text-sm ${
+          activeBrokers ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
+        }`}
+      >
+        Brokers
       </Link>
       <Link
         href="/automation/goals"

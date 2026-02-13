@@ -1,17 +1,76 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import type { Portfolio } from "@/types/portfolio";
+import type { Broker, Portfolio } from "@/types/portfolio";
 
 const BROKER_ICONS: Record<string, string> = {
   Merrill: "/merrill-icon.svg",
   Fidelity: "/fidelity-icon.svg",
 };
 
+const BUILTIN_BROKER_NAMES = ["merrill", "fidelity"] as const;
+
+function BuiltinBrokerLogo({ brokerType }: { brokerType: "Merrill" | "Fidelity" }) {
+  const [pngFailed, setPngFailed] = useState(false);
+  const name = brokerType.toLowerCase();
+  const svgSrc = BROKER_ICONS[brokerType];
+  if (!pngFailed) {
+    return (
+      <img
+        src={`/api/brokers/logo/${name}`}
+        alt=""
+        className="w-8 h-8 rounded object-contain shrink-0 bg-gray-100 ring-1 ring-gray-200/80"
+        onError={() => setPngFailed(true)}
+      />
+    );
+  }
+  if (svgSrc) {
+    return (
+      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden bg-gray-100 ring-1 ring-gray-200/80">
+        <Image src={svgSrc} alt={brokerType} width={24} height={24} className="w-6 h-6" />
+      </div>
+    );
+  }
+  return (
+    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden bg-gray-100 ring-1 ring-gray-200/80 text-xs font-medium text-gray-600">
+      {brokerType.charAt(0)}
+    </div>
+  );
+}
+
 type PortfolioCardProps = {
   portfolio: Portfolio;
+  brokers?: Broker[];
 };
+
+function AccountBrokerLogo({
+  account,
+  brokers,
+}: {
+  account: Portfolio["accounts"][number];
+  brokers: Broker[];
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const broker = account.brokerId ? brokers.find((b) => b._id === account.brokerId) : undefined;
+  if (!broker) return null;
+  if (imgFailed) {
+    return (
+      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden bg-gray-100 ring-1 ring-gray-200/80 text-xs font-medium text-gray-600">
+        {(broker.name ?? "?").charAt(0).toUpperCase()}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={`/api/brokers/${broker._id}/logo`}
+      alt=""
+      className="w-8 h-8 rounded object-contain shrink-0 bg-gray-100 ring-1 ring-gray-200/80"
+      onError={() => setImgFailed(true)}
+    />
+  );
+}
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -51,8 +110,24 @@ function SymbolIcon({ ticker }: { ticker: string }) {
   );
 }
 
-export function PortfolioCard({ portfolio }: PortfolioCardProps) {
+function CompanyLogoOrInitial({ ticker }: { ticker: string }) {
+  const [failed, setFailed] = useState(false);
+  const s = (ticker || "").trim().toUpperCase();
+  if (!s) return <SymbolIcon ticker="" />;
+  if (failed) return <SymbolIcon ticker={s} />;
+  return (
+    <img
+      src={`/api/ticker/${encodeURIComponent(s)}/logo`}
+      alt=""
+      className="w-9 h-9 rounded-lg object-contain shrink-0 bg-gray-50 ring-1 ring-black/5"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+export function PortfolioCard({ portfolio, brokers = [] }: PortfolioCardProps) {
   const isPositive = portfolio.dailyChange >= 0;
+  const brokerMap = new Map(brokers.map((b) => [b._id, b]));
 
   return (
     <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
@@ -110,7 +185,11 @@ export function PortfolioCard({ portfolio }: PortfolioCardProps) {
                 className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-colors cursor-pointer group"
               >
                 <div className="flex items-center gap-3">
-                  {account.brokerType && BROKER_ICONS[account.brokerType] ? (
+                  {account.brokerId && brokerMap.has(account.brokerId) ? (
+                    <AccountBrokerLogo account={account} brokers={brokers} />
+                  ) : account.brokerType && BUILTIN_BROKER_NAMES.includes(account.brokerType.toLowerCase() as (typeof BUILTIN_BROKER_NAMES)[number]) ? (
+                    <BuiltinBrokerLogo brokerType={account.brokerType} />
+                  ) : account.brokerType && BROKER_ICONS[account.brokerType] ? (
                     <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden bg-gray-100 ring-1 ring-gray-200/80">
                       <Image
                         src={BROKER_ICONS[account.brokerType]}
@@ -187,11 +266,12 @@ export function PortfolioCard({ portfolio }: PortfolioCardProps) {
             .filter((pos) => pos.type === "stock")
             .slice(0, 4)
             .map((position) => (
-              <div
+              <Link
                 key={position._id}
-                className="p-3 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex gap-3"
+                href={`/xstrategybuilder?symbol=${encodeURIComponent((position.ticker ?? "").toUpperCase())}`}
+                className="p-3 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex gap-3 hover:from-gray-100 hover:to-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
               >
-                <SymbolIcon ticker={position.ticker ?? ""} />
+                <CompanyLogoOrInitial ticker={position.ticker ?? ""} />
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-gray-800">{position.ticker}</p>
                   <p className="text-sm text-gray-600">
@@ -201,7 +281,7 @@ export function PortfolioCard({ portfolio }: PortfolioCardProps) {
                     {formatCurrency((position.shares || 0) * (position.currentPrice || 0))}
                   </p>
                 </div>
-              </div>
+              </Link>
             ))}
         </div>
       </div>

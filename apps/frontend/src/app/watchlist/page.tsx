@@ -88,6 +88,40 @@ function duplicateKey(item: WatchlistItem): string {
   return `${s}|${u}|${t}|${strike}|${exp}`;
 }
 
+function CompanyLogo({
+  logoUrl,
+  symbol,
+  size = "sm",
+}: {
+  logoUrl?: string | null;
+  symbol: string;
+  size?: "sm" | "md";
+}) {
+  const [failed, setFailed] = useState(false);
+  const initial = (symbol?.charAt(0) ?? "?").toUpperCase();
+  const sizeClass = size === "sm" ? "w-6 h-6" : "w-8 h-8";
+  const textSize = size === "sm" ? "text-xs" : "text-sm";
+
+  if (logoUrl && !failed) {
+    return (
+      <img
+        src={logoUrl}
+        alt=""
+        className={`${sizeClass} rounded object-contain shrink-0 bg-gray-50`}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${sizeClass} rounded-full bg-gray-200 flex items-center justify-center shrink-0 ${textSize} font-medium text-gray-600`}
+      title={symbol}
+    >
+      {initial}
+    </div>
+  );
+}
+
 export default function WatchlistPage() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [selectedWatchlistId, setSelectedWatchlistId] = useState<string | null>(null);
@@ -108,6 +142,9 @@ export default function WatchlistPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [removingDuplicates, setRemovingDuplicates] = useState(false);
   const [removingAllDuplicates, setRemovingAllDuplicates] = useState(false);
+  const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
+  const [editingNotesValue, setEditingNotesValue] = useState("");
+  const [savingNotesId, setSavingNotesId] = useState<string | null>(null);
 
   const [watchlistForm, setWatchlistForm] = useState({ name: "", purpose: "" });
   const [itemForm, setItemForm] = useState({
@@ -328,6 +365,26 @@ export default function WatchlistPage() {
       setError(err instanceof Error ? err.message : "Failed to remove");
     } finally {
       setIsDeleting(undefined);
+    }
+  };
+
+  const saveNotes = async (itemId: string, notes: string) => {
+    setSavingNotesId(itemId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/watchlist/${itemId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: notes.trim() || undefined }),
+      });
+      if (!res.ok) throw new Error("Failed to update notes");
+      setEditingNotesId(null);
+      setEditingNotesValue("");
+      await fetchItems();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update notes");
+    } finally {
+      setSavingNotesId(null);
     }
   };
 
@@ -919,7 +976,8 @@ export default function WatchlistPage() {
                           {sortedItems.map((item) => {
                             const themeSymbol = item.type !== "stock" ? item.underlyingSymbol : item.symbol;
                             const theme = getThemeDescription(themeSymbol);
-                            const rationaleNotes = [item.rationale, item.notes].filter(Boolean).join(" · ") || "—";
+                            const rationale = item.rationale?.trim() || "";
+                            const notes = item.notes?.trim() || "";
                             const entryVal = item.type === "stock" ? item.quantity * item.entryPrice : item.quantity * 100 * item.entryPrice;
                             return (
                               <div
@@ -927,15 +985,18 @@ export default function WatchlistPage() {
                                 className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm"
                               >
                                 <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <span className="font-semibold text-gray-900" title={item.symbol}>
-                                      {item.symbol}
-                                    </span>
-                                    {item.companyDescription && (
-                                      <p className="text-xs text-gray-500 truncate mt-0.5" title={item.companyDescription}>
-                                        {item.companyDescription}
-                                      </p>
-                                    )}
+                                  <div className="min-w-0 flex-1 flex items-center gap-2">
+                                    <CompanyLogo logoUrl={item.companyLogoUrl} symbol={item.symbol} size="md" />
+                                    <div className="min-w-0">
+                                      <span className="font-semibold text-gray-900" title={item.symbol}>
+                                        {item.symbol}
+                                      </span>
+                                      {item.companyDescription && (
+                                        <p className="text-xs text-gray-500 truncate mt-0.5" title={item.companyDescription}>
+                                          {item.companyDescription}
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
                                   <button
                                     type="button"
@@ -961,9 +1022,18 @@ export default function WatchlistPage() {
                                 {theme && (
                                   <p className="text-xs text-blue-600 truncate mt-0.5" title={theme}>{theme}</p>
                                 )}
-                                <p className="text-xs text-gray-500 line-clamp-2 mt-1.5" title={rationaleNotes}>
-                                  {rationaleNotes}
-                                </p>
+                                {rationale ? (
+                                  <p className="text-xs text-gray-600 line-clamp-2 mt-1.5" title={rationale}>
+                                    <span className="font-medium text-gray-500">Rationale: </span>{rationale}
+                                  </p>
+                                ) : null}
+                                {notes ? (
+                                  <p className="text-xs text-gray-500 line-clamp-2 mt-0.5" title={notes}>
+                                    <span className="font-medium text-gray-500">Notes: </span>{notes}
+                                  </p>
+                                ) : rationale ? null : (
+                                  <p className="text-xs text-gray-400 mt-1.5">No rationale or notes yet. Run Watchlist Report for rationale; add notes when adding the item or edit on desktop.</p>
+                                )}
                               </div>
                             );
                           })}
@@ -981,6 +1051,15 @@ export default function WatchlistPage() {
                                 >
                                   Symbol {sortKey === "symbol" && (sortDir === "asc" ? "↑" : "↓")}
                                 </th>
+                                <th className="text-left py-2.5 px-2 font-medium text-gray-600 min-w-[120px]">
+                                  Company
+                                </th>
+                                <th className="text-left py-2.5 px-2 font-medium text-gray-600 whitespace-nowrap">
+                                  Quote
+                                </th>
+                                <th className="text-left py-2.5 px-2 font-medium text-gray-600 min-w-[100px]">
+                                  Theme
+                                </th>
                                 <th
                                   className="text-left py-2.5 px-2 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
                                   onClick={() => handleSort("typeStrategy")}
@@ -995,8 +1074,11 @@ export default function WatchlistPage() {
                                 >
                                   Entry {sortKey === "entry" && (sortDir === "asc" ? "↑" : "↓")}
                                 </th>
-                                <th className="text-left py-2.5 px-2 font-medium text-gray-600">
-                                  Rationale / Notes
+                                <th className="text-left py-2.5 px-2 font-medium text-gray-600 min-w-[120px]" title="From Watchlist Report / daily analysis">
+                                  Rationale
+                                </th>
+                                <th className="text-left py-2.5 px-2 font-medium text-gray-600 min-w-[140px]">
+                                  Notes
                                 </th>
                                 <th className="text-center py-2.5 px-2 font-medium text-gray-600 w-10"></th>
                               </tr>
@@ -1005,34 +1087,47 @@ export default function WatchlistPage() {
                               {sortedItems.map((item) => {
                                 const themeSymbol = item.type !== "stock" ? item.underlyingSymbol : item.symbol;
                                 const theme = getThemeDescription(themeSymbol);
-                                const rationaleNotes = [item.rationale, item.notes].filter(Boolean).join(" · ") || "—";
+                                const rationale = item.rationale?.trim() || "—";
+                                const notes = item.notes?.trim() || "";
+                                const isEditingNotes = editingNotesId === item._id;
                                 return (
                                   <tr
                                     key={item._id}
                                     className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                                   >
                                     <td className="py-2 px-2 align-top w-[1%]">
-                                      <div className="flex flex-col gap-0.5 min-w-0 max-w-[200px] lg:max-w-[280px]">
-                                        <span className="font-medium truncate" title={item.symbol}>{item.symbol}</span>
-                                        {item.companyDescription && (
-                                          <span className="text-xs text-gray-500 leading-tight truncate" title={item.companyDescription}>
-                                            {item.companyDescription}
-                                          </span>
-                                        )}
-                                        {item.companyOverview && (
-                                          <p className="text-xs text-gray-600 leading-snug line-clamp-2 mt-0.5" title={item.companyOverview}>
-                                            {item.companyOverview}
-                                          </p>
-                                        )}
-                                        {item.symbolDetails && (
-                                          <SymbolDetailsLine d={item.symbolDetails} />
-                                        )}
-                                        {theme && (
-                                          <span className="text-xs text-blue-600 leading-tight truncate" title={theme}>
-                                            {theme}
-                                          </span>
-                                        )}
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <CompanyLogo logoUrl={item.companyLogoUrl} symbol={item.symbol} size="sm" />
+                                        <span className="font-medium truncate max-w-[100px]" title={item.symbol}>{item.symbol}</span>
                                       </div>
+                                    </td>
+                                    <td className="py-2 px-2 align-top min-w-0 max-w-[180px] lg:max-w-[220px]">
+                                      {item.companyDescription ? (
+                                        <span className="text-xs text-gray-600 block truncate" title={item.companyDescription}>
+                                          {item.companyDescription}
+                                        </span>
+                                      ) : null}
+                                      {item.companyOverview ? (
+                                        <p className="text-xs text-gray-500 leading-snug line-clamp-2 mt-0.5 truncate" title={item.companyOverview}>
+                                          {item.companyOverview}
+                                        </p>
+                                      ) : !item.companyDescription ? (
+                                        <span className="text-xs text-gray-400">—</span>
+                                      ) : null}
+                                    </td>
+                                    <td className="py-2 px-2 align-top whitespace-nowrap">
+                                      {item.symbolDetails ? (
+                                        <SymbolDetailsLine d={item.symbolDetails} />
+                                      ) : (
+                                        <span className="text-xs text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                    <td className="py-2 px-2 align-top min-w-0 max-w-[140px]">
+                                      {theme ? (
+                                        <span className="text-xs text-blue-600 truncate block" title={theme}>{theme}</span>
+                                      ) : (
+                                        <span className="text-xs text-gray-400">—</span>
+                                      )}
                                     </td>
                                     <td className="py-2 px-2 text-gray-600 whitespace-nowrap">
                                       {getTypeLabel(item.type)} · {getStrategyLabel(item.strategy)}
@@ -1040,8 +1135,55 @@ export default function WatchlistPage() {
                                     <td className="py-2 px-2 text-right whitespace-nowrap">
                                       {formatCurrency(item.type === "stock" ? item.quantity * item.entryPrice : item.quantity * 100 * item.entryPrice)}
                                     </td>
-                                    <td className="py-2 px-2 text-gray-600 max-w-[200px] lg:max-w-[280px]" title={rationaleNotes}>
-                                      <span className="line-clamp-2 text-sm">{rationaleNotes}</span>
+                                    <td className="py-2 px-2 text-gray-600 max-w-[180px] lg:max-w-[240px]" title={rationale}>
+                                      <span className="line-clamp-2 text-xs">{rationale}</span>
+                                    </td>
+                                    <td className="py-2 px-2 align-top max-w-[180px] lg:max-w-[240px]">
+                                      {isEditingNotes ? (
+                                        <div className="flex flex-col gap-1">
+                                          <textarea
+                                            value={editingNotesValue}
+                                            onChange={(e) => setEditingNotesValue(e.target.value)}
+                                            className="w-full px-2 py-1 text-xs border border-gray-200 rounded resize-none"
+                                            rows={2}
+                                            placeholder="Add notes…"
+                                            autoFocus
+                                          />
+                                          <div className="flex gap-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => saveNotes(item._id, editingNotesValue)}
+                                              disabled={savingNotesId === item._id}
+                                              className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                            >
+                                              {savingNotesId === item._id ? "…" : "Save"}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => { setEditingNotesId(null); setEditingNotesValue(""); }}
+                                              className="text-xs px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-start gap-1 min-w-0">
+                                          <span className="line-clamp-2 text-xs text-gray-600 flex-1 min-w-0" title={notes || undefined}>
+                                            {notes || <span className="text-gray-400">—</span>}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => { setEditingNotesId(item._id); setEditingNotesValue(notes); }}
+                                            className="shrink-0 p-0.5 text-gray-400 hover:text-blue-600 rounded"
+                                            title="Edit notes"
+                                          >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                            </svg>
+                                          </button>
+                                        </div>
+                                      )}
                                     </td>
                                     <td className="py-2 px-2 text-center">
                                       <button
@@ -1066,6 +1208,11 @@ export default function WatchlistPage() {
                     )}
                   </>
                 )}
+              <p className="mt-3 text-[10px] text-gray-400">
+                <a href="https://www.allinvestview.com/tools/ticker-logos/" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500">
+                  Logos by AllInvestView
+                </a>
+              </p>
               </div>
         </div>
       </main>

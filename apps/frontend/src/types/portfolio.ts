@@ -110,6 +110,16 @@ export type Recommendation = {
 /** Broker type for import/export format (Merrill = generic/Merrill CSV; Fidelity = Fidelity CSV). */
 export type BrokerType = "Merrill" | "Fidelity";
 
+/** User-managed broker (name); accounts can reference for display. Logo from disk (Merrill/Fidelity) or color initial in UI. */
+export type Broker = {
+  _id: string;
+  name: string;
+  /** Display order (lower first). */
+  order?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type Account = {
   _id: string;
   name: string;
@@ -117,6 +127,8 @@ export type Account = {
   accountRef?: string;
   /** Broker type so import/export uses the right CSV format. */
   brokerType?: BrokerType;
+  /** Reference to a Broker (for logo/name display). */
+  brokerId?: string;
   balance: number;
   riskLevel: RiskLevel;
   strategy: Strategy;
@@ -215,6 +227,8 @@ export type WatchlistItem = {
   companyDescription?: string;
   /** Company business summary (e.g. longBusinessSummary from Yahoo); enriched by API when loading watchlist */
   companyOverview?: string;
+  /** Company logo URL (e.g. from Ticker Logos CDN); enriched by API when loading watchlist */
+  companyLogoUrl?: string;
   /** Live quote details (price, day change, volume, range); enriched by API when loading watchlist */
   symbolDetails?: SymbolDetails;
   addedAt: string;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { STRATEGIES, OUTLOOKS } from '@/lib/strategy-builder';
 import { ContractSelector, type OptionChainRow } from './ContractSelector';
 import { ReviewOrderStep } from './ReviewOrderStep';
@@ -39,14 +39,16 @@ function Button({
 }
 
 type StrategyWizardProps = {
+  initialSymbol?: string;
   onSymbolSelected?: (quote: TickerQuote | null) => void;
   onOutlookChange?: (outlook: Outlook | null) => void;
   onStrategyChange?: (strategyId: string | null) => void;
 };
 
-export function StrategyWizard({ onSymbolSelected, onOutlookChange, onStrategyChange }: StrategyWizardProps) {
+export function StrategyWizard({ initialSymbol, onSymbolSelected, onOutlookChange, onStrategyChange }: StrategyWizardProps) {
   const [step, setStep] = useState(1);
   const STEPS = ['Symbol', 'Outlook', 'Strategy', 'Contract', 'Review order'];
+  const didApplyInitialSymbol = useRef(false);
 
   // Step 1: Symbol
   const [symbolQuery, setSymbolQuery] = useState('');
@@ -116,7 +118,7 @@ export function StrategyWizard({ onSymbolSelected, onOutlookChange, onStrategyCh
       .finally(() => setTopWatchlistLoading(false));
   }, [step]);
 
-  const fetchQuote = async (sym: string) => {
+  const fetchQuote = useCallback(async (sym: string) => {
     setSymbolLoading(true);
     try {
       const res = await fetch(`/api/ticker/${encodeURIComponent(sym.toUpperCase())}`);
@@ -136,7 +138,15 @@ export function StrategyWizard({ onSymbolSelected, onOutlookChange, onStrategyCh
     } finally {
       setSymbolLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const sym = initialSymbol?.trim();
+    if (sym && !didApplyInitialSymbol.current) {
+      didApplyInitialSymbol.current = true;
+      fetchQuote(sym);
+    }
+  }, [initialSymbol, fetchQuote]);
 
   const fetchExpirations = useCallback(async (sym: string) => {
     try {

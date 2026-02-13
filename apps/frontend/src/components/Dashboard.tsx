@@ -17,7 +17,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { PortfolioCard } from "./PortfolioCard";
-import type { Portfolio, Position } from "@/types/portfolio";
+import type { Broker, Portfolio, Position } from "@/types/portfolio";
 
 type DashboardStats = {
   totalValue: number;
@@ -77,6 +77,7 @@ function allocationByAssetClass(portfolio: Portfolio): { name: string; value: nu
 
 export function Dashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [brokers, setBrokers] = useState<Broker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +99,18 @@ export function Dashboard() {
     } catch (err) {
       console.error("Dashboard fetch error:", err);
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
+    }
+  }, []);
+
+  const fetchBrokers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/brokers");
+      if (res.ok) {
+        const data = await res.json();
+        setBrokers(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      setBrokers([]);
     }
   }, []);
 
@@ -131,16 +144,22 @@ export function Dashboard() {
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      await fetchDashboard();
+      await Promise.all([fetchDashboard(), fetchBrokers()]);
       setIsLoading(false);
     };
 
     loadData();
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") fetchDashboard();
+      if (document.visibilityState === "visible") {
+        fetchDashboard();
+        fetchBrokers();
+      }
     };
-    const handleFocus = () => fetchDashboard();
+    const handleFocus = () => {
+      fetchDashboard();
+      fetchBrokers();
+    };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleFocus);
@@ -148,7 +167,7 @@ export function Dashboard() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleFocus);
     };
-  }, [fetchDashboard]);
+  }, [fetchDashboard, fetchBrokers]);
 
   // Auto-refresh every 60 seconds (only if enabled)
   useEffect(() => {
@@ -359,7 +378,7 @@ export function Dashboard() {
         {/* Portfolio - Takes 2 columns */}
         <div className="lg:col-span-2">
           {portfolio ? (
-            <PortfolioCard portfolio={portfolio} />
+            <PortfolioCard portfolio={portfolio} brokers={brokers} />
           ) : (
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
               <h2 className="text-xl font-semibold text-gray-800 mb-4">

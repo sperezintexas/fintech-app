@@ -7,7 +7,7 @@ import { AccountList } from "@/components/AccountList";
 import { AccountForm } from "@/components/AccountForm";
 import { MyHoldingsTable } from "@/components/MyHoldingsTable";
 import { downloadCsv } from "@/lib/csv-export";
-import type { Account, Activity, RiskLevel, Strategy } from "@/types/portfolio";
+import type { Account, Activity, Broker, RiskLevel, Strategy } from "@/types/portfolio";
 
 type ActivitySortKey = "date" | "symbol" | "type" | "quantity" | "unitPrice" | "fee" | "comment";
 
@@ -17,6 +17,7 @@ type FormData = {
   name: string;
   accountRef: string;
   brokerType: "" | "Merrill" | "Fidelity";
+  brokerId: string;
   balance: number;
   riskLevel: RiskLevel;
   strategy: Strategy;
@@ -24,6 +25,7 @@ type FormData = {
 
 export function AccountsContent() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [brokers, setBrokers] = useState<Broker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | undefined>();
@@ -56,8 +58,24 @@ export function AccountsContent() {
     }
   };
 
+  const fetchBrokers = async () => {
+    try {
+      const res = await fetch("/api/brokers");
+      if (res.ok) {
+        const data = await res.json();
+        setBrokers(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      setBrokers([]);
+    }
+  };
+
   useEffect(() => {
     fetchAccounts();
+  }, []);
+
+  useEffect(() => {
+    fetchBrokers();
   }, []);
 
   const fetchActivities = useCallback(async (accountId: string) => {
@@ -256,6 +274,7 @@ export function AccountsContent() {
             </h3>
             <AccountForm
               account={editingAccount}
+              brokers={brokers}
               onSubmit={handleSubmit}
               onCancel={handleCancel}
               isLoading={isSaving}
@@ -392,6 +411,7 @@ export function AccountsContent() {
         ) : (
           <AccountList
             accounts={accounts}
+            brokers={brokers}
             onEdit={handleEdit}
             onDelete={handleDelete}
             isDeleting={isDeleting}

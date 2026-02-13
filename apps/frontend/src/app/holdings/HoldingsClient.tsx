@@ -5,13 +5,9 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 type ActivitySortKey = "date" | "symbol" | "type" | "quantity" | "unitPrice" | "fee" | "comment";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { Account, Activity, BrokerType, Position, WatchlistAlert } from "@/types/portfolio";
+import type { Account, Activity, Broker, Position, WatchlistAlert } from "@/types/portfolio";
 import { AppHeader } from "@/components/AppHeader";
 
-const BROKER_CONFIG: Record<BrokerType, { name: string; url: string }> = {
-  Merrill: { name: "Merrill Edge", url: "https://www.merrilledge.com/" },
-  Fidelity: { name: "Fidelity", url: "https://www.fidelity.com/" },
-};
 import { BuyToCloseModal } from "@/components/BuyToCloseModal";
 import { PositionForm } from "@/components/PositionForm";
 import { PositionList } from "@/components/PositionList";
@@ -132,6 +128,7 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [activitySortBy, setActivitySortBy] = useState<ActivitySortKey | null>(null);
   const [activitySortDir, setActivitySortDir] = useState<"asc" | "desc">("asc");
+  const [brokers, setBrokers] = useState<Broker[]>([]);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -153,6 +150,18 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
       setAccountsLoading(false);
     }
   }, [selectedAccountId, urlAccountId]);
+
+  const fetchBrokers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/brokers");
+      if (res.ok) {
+        const data = await res.json();
+        setBrokers(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      setBrokers([]);
+    }
+  }, []);
 
   const fetchHoldings = useCallback(async () => {
     if (!selectedAccountId) return;
@@ -202,6 +211,10 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
   useEffect(() => {
     if (initialAccounts.length === 0) fetchAccounts();
   }, [initialAccounts.length, fetchAccounts]);
+
+  useEffect(() => {
+    fetchBrokers();
+  }, [fetchBrokers]);
 
   useEffect(() => {
     fetchHoldings();
@@ -514,6 +527,25 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 mb-4">
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                {(selectedAccount?.brokerId && brokers.find((b) => b._id === selectedAccount.brokerId) ? (
+                  <img
+                    src={`/api/brokers/${selectedAccount.brokerId}/logo`}
+                    alt=""
+                    className="w-8 h-8 rounded object-contain bg-gray-50 shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                ) : (selectedAccount?.brokerType === "Merrill" || selectedAccount?.brokerType === "Fidelity") ? (
+                  <img
+                    src={`/api/brokers/logo/${selectedAccount.brokerType.toLowerCase()}`}
+                    alt=""
+                    className="w-8 h-8 rounded object-contain bg-gray-50 shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                ) : null)}
                 <label htmlFor="account-select" className="text-sm font-medium text-gray-700 shrink-0">
                   Account:
                 </label>
@@ -540,25 +572,6 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
                       {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(selectedAccount.balance)}
                     </span>
                   </span>
-                )}
-                {selectedAccount?.brokerType && BROKER_CONFIG[selectedAccount.brokerType] && (
-                  <>
-                    <span className="text-xs text-gray-400 hidden sm:inline">|</span>
-                    <span className="text-xs text-gray-600">
-                      {BROKER_CONFIG[selectedAccount.brokerType].name}
-                    </span>
-                    <a
-                      href={BROKER_CONFIG[selectedAccount.brokerType].url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                      Open
-                    </a>
-                  </>
                 )}
               </div>
             </div>

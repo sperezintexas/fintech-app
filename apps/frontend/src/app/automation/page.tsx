@@ -8,6 +8,7 @@ import type {
   AlertTemplateId,
   AlertFrequency,
   AlertSeverity,
+  Broker,
   StrategySettings,
 } from "@/types/portfolio";
 import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS } from "@/types/portfolio";
@@ -33,7 +34,7 @@ function AutomationContent() {
 
   // Alert preferences state
   const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState<"separation" | "auth-users" | "settings" | "strategy" | "chat">("auth-users");
+  const [activeTab, setActiveTab] = useState<"separation" | "auth-users" | "settings" | "strategy" | "chat" | "brokers">("auth-users");
 
   // Default Setup to Scheduled Tasks when visiting /automation with no tab
   useEffect(() => {
@@ -48,7 +49,7 @@ function AutomationContent() {
   }, [pathname, tabParam, router]);
 
   useEffect(() => {
-    if (tabParam === "separation" || tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users" || tabParam === "chat") {
+    if (tabParam === "separation" || tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users" || tabParam === "chat" || tabParam === "brokers") {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
@@ -91,6 +92,14 @@ function AutomationContent() {
   const [authUsersNewUsername, setAuthUsersNewUsername] = useState("");
   const [authUsersAdding, setAuthUsersAdding] = useState(false);
   const [authUsersSeedResult, setAuthUsersSeedResult] = useState<string | null>(null);
+
+  // Brokers (for account association + logo on manage accounts)
+  const [brokers, setBrokers] = useState<Broker[]>([]);
+  const [brokersLoading, setBrokersLoading] = useState(false);
+  const [brokersError, setBrokersError] = useState<string | null>(null);
+  const [brokerForm, setBrokerForm] = useState({ name: "" });
+  const [editingBroker, setEditingBroker] = useState<Broker | null>(null);
+  const [brokersSaving, setBrokersSaving] = useState(false);
 
   const { timezone: displayTimezone, formatDate, setTimezone: setDisplayTimezone } = useDisplayTimezone();
   const [profileTimezone, setProfileTimezone] = useState(displayTimezone);
@@ -147,6 +156,30 @@ function AutomationContent() {
   useEffect(() => {
     if (activeTab === "auth-users") fetchAuthUsers();
   }, [activeTab, fetchAuthUsers]);
+
+  const fetchBrokers = useCallback(async () => {
+    setBrokersLoading(true);
+    setBrokersError(null);
+    try {
+      const res = await fetch("/api/brokers");
+      if (!res.ok) {
+        setBrokersError("Failed to load brokers");
+        setBrokers([]);
+        return;
+      }
+      const data = await res.json();
+      setBrokers(Array.isArray(data) ? data : []);
+    } catch {
+      setBrokersError("Failed to load brokers");
+      setBrokers([]);
+    } finally {
+      setBrokersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "brokers") fetchBrokers();
+  }, [activeTab, fetchBrokers]);
 
   // Check push notification permission on mount
   useEffect(() => {
@@ -820,6 +853,135 @@ function AutomationContent() {
                           }
                         }}
                         className="text-red-600 hover:text-red-800 text-sm font-medium"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Brokers tab — manage brokers for account logos */}
+        {activeTab === "brokers" && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Brokers</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Add brokers to show logos on Manage Accounts. Assign a broker to each account when creating or editing the account.
+              </p>
+              {brokersError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm">{brokersError}</div>
+              )}
+              <form
+                className="flex flex-wrap gap-3 mb-6 p-4 rounded-xl border border-gray-200 bg-gray-50/50"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const name = brokerForm.name.trim();
+                  if (!name || brokersSaving) return;
+                  setBrokersSaving(true);
+                  setBrokersError(null);
+                  try {
+                    const url = editingBroker
+                      ? `/api/brokers/${editingBroker._id}`
+                      : "/api/brokers";
+                    const res = await fetch(url, {
+                      method: editingBroker ? "PUT" : "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name }),
+                    });
+                    const data = (await res.json()) as { error?: string };
+                    if (!res.ok) {
+                      setBrokersError(data.error ?? "Failed to save");
+                      return;
+                    }
+                    setBrokerForm({ name: "" });
+                    setEditingBroker(null);
+                    await fetchBrokers();
+                  } finally {
+                    setBrokersSaving(false);
+                  }
+                }}
+              >
+                <input
+                  type="text"
+                  value={brokerForm.name}
+                  onChange={(e) => setBrokerForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Broker name (e.g. Merrill, Fidelity)"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 w-48"
+                  required
+                />
+                <button
+                  type="submit"
+                  disabled={brokersSaving || !brokerForm.name.trim()}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium"
+                >
+                  {brokersSaving ? "Saving…" : editingBroker ? "Update" : "Add"}
+                </button>
+                {editingBroker && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingBroker(null);
+                      setBrokerForm({ name: "" });
+                    }}
+                    className="px-4 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </form>
+              {brokersLoading ? (
+                <p className="text-gray-500">Loading…</p>
+              ) : brokers.length === 0 ? (
+                <p className="text-gray-500">No brokers yet. Add one above, then assign to accounts in Manage Accounts.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {brokers.map((b) => (
+                    <li
+                      key={b._id}
+                      className="flex items-center gap-4 p-3 rounded-lg border border-gray-200 bg-gray-50/50"
+                    >
+                      <div className="w-8 h-8 rounded object-contain bg-white shrink-0 flex items-center justify-center overflow-hidden relative">
+                        <img
+                          src={`/api/brokers/${b._id}/logo`}
+                          alt=""
+                          className="w-full h-full object-contain"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = "none";
+                            (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
+                          }}
+                        />
+                        <div className="hidden w-full h-full rounded-full bg-gray-300 flex items-center justify-center text-sm font-medium text-gray-600 absolute inset-0">
+                          {(b.name ?? "?").charAt(0).toUpperCase()}
+                        </div>
+                      </div>
+                      <span className="font-medium text-gray-800 flex-1">{b.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingBroker(b);
+                          setBrokerForm({ name: b.name });
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!confirm(`Remove broker "${b.name}"? Accounts using it will keep the reference but show no logo until reassigned.`)) return;
+                          try {
+                            const res = await fetch(`/api/brokers/${b._id}`, { method: "DELETE" });
+                            if (res.ok) await fetchBrokers();
+                            else setBrokersError("Failed to remove");
+                          } catch {
+                            setBrokersError("Request failed");
+                          }
+                        }}
+                        className="text-sm text-red-600 hover:text-red-800 font-medium"
                       >
                         Remove
                       </button>

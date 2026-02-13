@@ -31,10 +31,12 @@ export async function POST(request: NextRequest) {
 
     const brokerType =
       body.brokerType === "Merrill" || body.brokerType === "Fidelity" ? body.brokerType : undefined;
+    const brokerId = typeof body.brokerId === "string" && body.brokerId.trim() ? body.brokerId.trim() : undefined;
     const newAccount: Omit<Account, "_id"> = {
       name: body.name,
       ...(body.accountRef != null && body.accountRef !== "" && { accountRef: String(body.accountRef).trim() }),
       ...(brokerType && { brokerType }),
+      ...(brokerId && { brokerId }),
       balance: body.balance || 0,
       riskLevel: body.riskLevel || "medium",
       strategy: body.strategy || "balanced",

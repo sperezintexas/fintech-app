@@ -75,6 +75,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         unset.brokerType = 1;
       }
     }
+    if (body.brokerId !== undefined) {
+      const bid = typeof body.brokerId === "string" && body.brokerId.trim() ? body.brokerId.trim() : null;
+      if (bid) updateData.brokerId = bid;
+      else unset.brokerId = 1;
+    }
     if (Object.keys(unset).length > 0) {
       (updateOps as Record<string, unknown>).$unset = unset;
     }

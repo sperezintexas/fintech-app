@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AppHeader } from '@/components/AppHeader';
 import { StrategyWizard } from '@/components/strategy-builder/StrategyWizard';
 import { OUTLOOKS, STRATEGIES } from '@/lib/strategy-builder';
@@ -10,6 +11,8 @@ type TickerQuote = { symbol: string; name: string; price: number; change: number
 type SMAData = { sma50: number; sma50Plus15: number; sma50Minus15: number };
 
 export default function XStrategyBuilderPage() {
+  const searchParams = useSearchParams();
+  const symbolFromUrl = searchParams?.get('symbol')?.trim() ?? undefined;
   const [selectedQuote, setSelectedQuote] = useState<TickerQuote | null>(null);
   const [smaData, setSmaData] = useState<SMAData | null>(null);
   const [smaLoading, setSmaLoading] = useState(false);
@@ -98,10 +101,11 @@ export default function XStrategyBuilderPage() {
 
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sm:p-8">
           <StrategyWizard
-          onSymbolSelected={setSelectedQuote}
-          onOutlookChange={setSelectedOutlook}
-          onStrategyChange={setSelectedStrategyId}
-        />
+            initialSymbol={symbolFromUrl}
+            onSymbolSelected={setSelectedQuote}
+            onOutlookChange={setSelectedOutlook}
+            onStrategyChange={setSelectedStrategyId}
+          />
         </div>
       </main>
     </div>

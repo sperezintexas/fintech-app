@@ -53,15 +53,32 @@ async function getSymbolDetails(symbols: string[]): Promise<Map<string, SymbolDe
   return map;
 }
 
-async function getCompanyOverviews(symbols: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
+type CompanyProfile = { overview?: string; logoUrl?: string };
+
+async function getCompanyProfiles(symbols: string[]): Promise<Map<string, CompanyProfile>> {
+  const map = new Map<string, CompanyProfile>();
   const unique = [...new Set(symbols.map((s) => s.toUpperCase()).filter(Boolean))];
+  const TICKER_LOGOS_CDN = "https://cdn.tickerlogos.com";
   await Promise.all(
     unique.map(async (symbol) => {
       try {
         const summary = await yahooFinance.quoteSummary(symbol, { modules: ["summaryProfile"] });
-        const overview = summary?.summaryProfile?.longBusinessSummary;
-        if (overview && typeof overview === "string") map.set(symbol, overview);
+        const profile = summary?.summaryProfile as { longBusinessSummary?: string; website?: string } | undefined;
+        const overview = profile?.longBusinessSummary;
+        const website = profile?.website;
+        let logoUrl: string | undefined;
+        if (website && typeof website === "string") {
+          try {
+            const hostname = new URL(website.startsWith("http") ? website : `https://${website}`).hostname.replace(
+              /^www\./,
+              ""
+            );
+            if (hostname) logoUrl = `${TICKER_LOGOS_CDN}/${hostname}`;
+          } catch {
+            // invalid URL
+          }
+        }
+        map.set(symbol, { overview, logoUrl });
       } catch {
         // ignore per-symbol failures
       }
@@ -103,24 +120,25 @@ export async function GET(request: NextRequest) {
         : String(doc.symbol ?? "")
       ).toUpperCase();
     });
-    const [symbolDetailsMap, companyOverviewsMap] = await Promise.all([
+    const [symbolDetailsMap, companyProfilesMap] = await Promise.all([
       getSymbolDetails(symbolsToResolve),
-      getCompanyOverviews(symbolsToResolve),
+      getCompanyProfiles(symbolsToResolve),
     ]);
 
-    // Transform MongoDB _id to string and attach companyDescription, companyOverview, symbolDetails
+    // Transform MongoDB _id to string and attach companyDescription, companyOverview, symbolDetails, companyLogoUrl
     const watchlistItems = items.map((item: Record<string, unknown>) => {
       const symbolKey =
         item.type !== "stock" && item.underlyingSymbol
           ? String(item.underlyingSymbol).toUpperCase()
           : String(item.symbol ?? "").toUpperCase();
       const details = symbolDetailsMap.get(symbolKey);
-      const companyOverview = companyOverviewsMap.get(symbolKey);
+      const profile = companyProfilesMap.get(symbolKey);
       return {
         ...item,
         _id: (item._id as ObjectId).toString(),
         companyDescription: details?.name,
-        companyOverview: companyOverview ?? undefined,
+        companyOverview: profile?.overview ?? undefined,
+        companyLogoUrl: profile?.logoUrl ?? undefined,
         symbolDetails: details ?? undefined,
       };
     });

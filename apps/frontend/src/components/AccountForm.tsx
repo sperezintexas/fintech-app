@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { Account, BrokerType, RiskLevel, Strategy } from "@/types/portfolio";
+import type { Account, Broker, BrokerType, RiskLevel, Strategy } from "@/types/portfolio";
 
 type AccountFormData = {
   name: string;
   accountRef: string;
   brokerType: BrokerType | "";
+  brokerId: string;
   balance: number;
   riskLevel: RiskLevel;
   strategy: Strategy;
@@ -14,6 +15,7 @@ type AccountFormData = {
 
 type AccountFormProps = {
   account?: Account;
+  brokers?: Broker[];
   onSubmit: (data: AccountFormData) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
@@ -32,11 +34,12 @@ const STRATEGIES: { value: Strategy; label: string; description: string }[] = [
   { value: "aggressive", label: "Aggressive", description: "High risk, high reward" },
 ];
 
-export function AccountForm({ account, onSubmit, onCancel, isLoading }: AccountFormProps) {
+export function AccountForm({ account, brokers = [], onSubmit, onCancel, isLoading }: AccountFormProps) {
   const [formData, setFormData] = useState<AccountFormData>({
     name: account?.name || "",
     accountRef: account?.accountRef ?? "",
     brokerType: account?.brokerType ?? "",
+    brokerId: account?.brokerId ?? "",
     balance: account?.balance || 0,
     riskLevel: account?.riskLevel || "medium",
     strategy: account?.strategy || "balanced",
@@ -80,6 +83,29 @@ export function AccountForm({ account, onSubmit, onCancel, isLoading }: AccountF
         />
         <p className="mt-1 text-xs text-gray-500">Match broker account ID for CSV/API imports.</p>
       </div>
+
+      {/* Broker (for logo on Manage Accounts) */}
+      {brokers.length > 0 && (
+        <div>
+          <label htmlFor="brokerId" className="block text-sm font-medium text-gray-700 mb-2">
+            Broker (logo)
+          </label>
+          <select
+            id="brokerId"
+            value={formData.brokerId}
+            onChange={(e) => setFormData({ ...formData, brokerId: e.target.value || "" })}
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white"
+          >
+            <option value="">— No broker</option>
+            {brokers.map((b) => (
+              <option key={b._id} value={b._id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-gray-500">Shows broker logo on Manage Accounts. Add brokers in Setup → Brokers.</p>
+        </div>
+      )}
 
       {/* Broker type (for import/export format) */}
       <div>

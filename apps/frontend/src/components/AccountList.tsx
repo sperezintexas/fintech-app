@@ -1,16 +1,65 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import type { Account, BrokerType, Position } from "@/types/portfolio";
+import type { Account, Broker, BrokerType, Position } from "@/types/portfolio";
 import { useRouter } from "next/navigation";
 import { downloadCsv } from "@/lib/csv-export";
 
 type AccountListProps = {
   accounts: Account[];
+  brokers?: Broker[];
   onEdit: (account: Account) => void;
   onDelete: (id: string) => void;
   isDeleting?: string;
 };
+
+function BrokerLogo({ broker, size = "sm" }: { broker: Broker; size?: "sm" | "md" }) {
+  const [failed, setFailed] = useState(false);
+  const sizeClass = size === "sm" ? "w-6 h-6" : "w-8 h-8";
+  const initial = (broker.name ?? "?").charAt(0).toUpperCase();
+  const logoSrc = `/api/brokers/${broker._id}/logo`;
+  if (!failed) {
+    return (
+      <img
+        src={logoSrc}
+        alt=""
+        className={`${sizeClass} rounded object-contain bg-gray-50 shrink-0`}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${sizeClass} rounded-full bg-gray-200 flex items-center justify-center shrink-0 text-xs font-medium text-gray-600`}
+      title={broker.name}
+    >
+      {initial}
+    </div>
+  );
+}
+
+function BuiltinBrokerLogo({ brokerType, size = "sm" }: { brokerType: "Merrill" | "Fidelity"; size?: "sm" | "md" }) {
+  const [failed, setFailed] = useState(false);
+  const sizeClass = size === "sm" ? "w-6 h-6" : "w-8 h-8";
+  if (failed) {
+    return (
+      <div
+        className={`${sizeClass} rounded-full bg-gray-200 flex items-center justify-center shrink-0 text-xs font-medium text-gray-600`}
+        title={brokerType}
+      >
+        {brokerType.charAt(0)}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={`/api/brokers/logo/${brokerType.toLowerCase()}`}
+      alt=""
+      className={`${sizeClass} rounded object-contain bg-gray-50 shrink-0`}
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -165,10 +214,11 @@ function SortableTh({
   );
 }
 
-export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountListProps) {
+export function AccountList({ accounts, brokers = [], onEdit, onDelete, isDeleting }: AccountListProps) {
   const router = useRouter();
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const brokerMap = useMemo(() => new Map(brokers.map((b) => [b._id, b])), [brokers]);
 
   const handleSort = (key: SortKey) => {
     if (sortBy === key) {
@@ -336,6 +386,7 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
             {sortedAccounts.map((account) => {
               const strategyStyle = getStrategyBadge(account.strategy);
               const brokerStyle = getBrokerStyle(account.brokerType);
+              const broker = account.brokerId ? brokerMap.get(account.brokerId) : undefined;
               const metrics = computeAccountMetrics(account);
 
               return (
@@ -359,6 +410,11 @@ export function AccountList({ accounts, onEdit, onDelete, isDeleting }: AccountL
                         title={`${account.riskLevel} risk`}
                         aria-hidden
                       />
+                      {broker ? (
+                        <BrokerLogo broker={broker} size="sm" />
+                      ) : account.brokerType === "Merrill" || account.brokerType === "Fidelity" ? (
+                        <BuiltinBrokerLogo brokerType={account.brokerType} size="sm" />
+                      ) : null}
                       <span className="font-medium text-gray-900 truncate">{account.name}</span>
                       <span className="text-xs text-gray-500 capitalize">{account.riskLevel}</span>
                       <span
