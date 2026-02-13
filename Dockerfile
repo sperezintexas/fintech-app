@@ -13,6 +13,7 @@ COPY apps/smart-scheduler/package.json ./apps/smart-scheduler/
 RUN pnpm install --frozen-lockfile
 
 COPY apps ./apps
+COPY config ./config
 ARG MONGODB_URI=placeholder
 ARG MONGODB_DB=myinvestments
 ENV MONGODB_URI=$MONGODB_URI MONGODB_DB=$MONGODB_DB
