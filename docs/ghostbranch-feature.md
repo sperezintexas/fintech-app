@@ -107,8 +107,8 @@ Broker exports contain multiple accounts (e.g. IRA-Edge `51X-98940`, Roth IRA-Ed
 ### UI flow (Setup → Broker import)
 
 1. **Select account** — Choose the app account to import into (or create accounts with matching `accountRef` first).
-2. **Holdings (optional)** — Upload Holdings CSV (Merrill only), Parse & preview, Import holdings. Positions are set from the CSV.
-3. **Activities & sync** — Upload Activities CSV, Parse & preview, optionally **Recompute positions** (off when Holdings were imported so positions stay from Holdings). Import activities into the selected account.
+2. **Holdings** — For Merrill, required first. Upload Holdings CSV, Parse & preview, Import. Positions are set from the CSV.
+3. **Activities** — Upload Activities CSV, Parse & preview, optionally **Recompute positions** (off when Holdings were imported). Import activities. For Merrill, both Holdings and Activity exports are required; see [merrill-export.md](./merrill-export.md).
 
 ### CLI flow (config-driven)
 
