@@ -5,9 +5,9 @@ import { getDb } from "@/lib/mongodb";
 import type { Account } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
 import { callGrokWithTools, WEB_SEARCH_TOOL, COVERED_CALL_ALTERNATIVES_TOOL, LIST_TASKS_TOOL, TRIGGER_PORTFOLIO_SCAN_TOOL } from "@/lib/xai-grok";
-import { getGrokChatConfig } from "@/lib/grok-chat-config";
+import { getGrokChatConfig, getEffectivePersonaPrompt } from "@/lib/grok-chat-config";
 import { getPersonaPrompt } from "@/lib/chat-personas";
-import { appendChatHistory } from "@/lib/chat-history";
+import { appendChatHistory, DEFAULT_PERSONA } from "@/lib/chat-history";
 import { getRecentCoveredCallRecommendations } from "@/lib/covered-call-analyzer";
 
 export const dynamic = "force-dynamic";
@@ -251,6 +251,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as {
       message?: string;
       history?: { role?: string; content?: string }[];
+      persona?: string;
       orderContext?: {
         symbol?: string;
         strike?: number;
@@ -262,6 +263,7 @@ export async function POST(request: NextRequest) {
     };
     const message = typeof body?.message === "string" ? body.message.trim() : "";
     const orderContext = body?.orderContext;
+    const requestPersona = typeof body?.persona === "string" ? body.persona.trim() || DEFAULT_PERSONA : undefined;
     const history = Array.isArray(body?.history)
       ? (body.history as { role?: string; content?: string }[]).filter(
           (m) => m?.role && m?.content && ["user", "assistant"].includes(m.role)
@@ -449,9 +451,15 @@ export async function POST(request: NextRequest) {
     let model: string | undefined;
 
     try {
-    const personaPrompt = ctxConfig.persona ? getPersonaPrompt(ctxConfig.persona) ?? '' : '';
-    const overridePrompt = ctxConfig.systemPromptOverride?.trim() ?? '';
-    const defaultPrompt = getPersonaPrompt('finance-expert') ?? 'You are Grok, a helpful assistant.';
+    const personaKey = requestPersona ?? ctxConfig.persona ?? DEFAULT_PERSONA;
+    const personaPrompt = personaKey
+      ? getEffectivePersonaPrompt(personaKey, grokConfig.personaPrompts) ?? ""
+      : "";
+    const overridePrompt = ctxConfig.systemPromptOverride?.trim() ?? "";
+    const defaultPrompt =
+      getEffectivePersonaPrompt(DEFAULT_PERSONA, grokConfig.personaPrompts) ??
+      getPersonaPrompt("finance-expert") ??
+      "You are Grok, a helpful assistant.";
     const basePrompt = personaPrompt || overridePrompt || defaultPrompt;
 
       const riskLine = ctxConfig.riskProfile
@@ -513,7 +521,8 @@ Always include a brief disclaimer that this is not financial advice.`;
     const userId = session?.user?.id ?? (session?.user as { username?: string })?.username;
     if (userId) {
       try {
-        await appendChatHistory(userId, [
+        const personaForHistory = requestPersona ?? ctxConfig.persona ?? DEFAULT_PERSONA;
+        await appendChatHistory(userId, personaForHistory, [
           { role: "user", content: message, timestamp: new Date().toISOString() },
           { role: "assistant", content: response, timestamp: new Date().toISOString() },
         ]);

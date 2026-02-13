@@ -2,20 +2,31 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getGrokChatConfig,
   setGrokChatConfig,
+  getEffectivePersonaPrompts,
   type GrokChatConfigUpdate,
   type GrokChatToolsConfig,
   type GrokChatContextConfig,
+  type PersonaPromptsUpdate,
 } from "@/lib/grok-chat-config";
 import { PERSONAS } from "@/lib/chat-personas";
 import { XAI_MODEL } from "@/lib/xai-grok";
 
+const PERSONA_KEY_REGEX = /^[a-zA-Z0-9_-]+$/;
+const PERSONA_KEY_MAX = 50;
+const PERSONA_PROMPT_MAX = 8000;
+
 export const dynamic = "force-dynamic";
 
-/** GET - Return Grok chat config (tools, context, model in use) */
+/** GET - Return Grok chat config (tools, context, model, effective persona prompts for UI) */
 export async function GET() {
   try {
     const config = await getGrokChatConfig();
-    return NextResponse.json({ ...config, model: XAI_MODEL });
+    const personaPromptTexts = getEffectivePersonaPrompts(config.personaPrompts);
+    return NextResponse.json({
+      ...config,
+      model: XAI_MODEL,
+      personaPromptTexts,
+    });
   } catch (error) {
     console.error("Failed to fetch Grok chat config:", error);
     return NextResponse.json(
@@ -33,8 +44,22 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const tools = body?.tools as Partial<GrokChatToolsConfig> | undefined;
     const context = body?.context as Partial<GrokChatContextConfig> | undefined;
+    const personaPrompts = body?.personaPrompts as PersonaPromptsUpdate | undefined;
 
     const config: GrokChatConfigUpdate = {};
+    if (personaPrompts && typeof personaPrompts === "object") {
+      const sanitized: PersonaPromptsUpdate = {};
+      for (const key of Object.keys(personaPrompts)) {
+        if (key.length > PERSONA_KEY_MAX || !PERSONA_KEY_REGEX.test(key)) continue;
+        const v = personaPrompts[key];
+        if (v === null) {
+          sanitized[key] = null;
+        } else if (typeof v === "string") {
+          sanitized[key] = v.slice(0, PERSONA_PROMPT_MAX);
+        }
+      }
+      if (Object.keys(sanitized).length > 0) config.personaPrompts = sanitized;
+    }
     if (tools && typeof tools === "object") {
       const t: Partial<GrokChatToolsConfig> = {};
       if (typeof tools.webSearch === "boolean") t.webSearch = tools.webSearch;
@@ -58,9 +83,9 @@ export async function PUT(request: NextRequest) {
         ctx.systemPromptOverride = context.systemPromptOverride.slice(0, 4000);
       }
       if (typeof context.persona === "string") {
-        const allowedPersonas = Object.keys(PERSONAS);
-        if (allowedPersonas.includes(context.persona)) {
-          ctx.persona = context.persona.slice(0, 50);
+        const p = context.persona.slice(0, PERSONA_KEY_MAX).trim();
+        if (p && (PERSONAS[p as keyof typeof PERSONAS] !== undefined || PERSONA_KEY_REGEX.test(p))) {
+          ctx.persona = p;
         }
       }
       if (Object.keys(ctx).length > 0) config.context = ctx;

@@ -19,6 +19,7 @@ import {
 import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 import { TIMEZONE_OPTIONS } from "@/lib/date-format";
 import { BrokerImportPanel } from "@/components/BrokerImportPanel";
+import { getPersonaKeys, PERSONAS } from "@/lib/chat-personas";
 
 type TestChannel = "slack" | "twitter" | "push";
 
@@ -32,7 +33,7 @@ function AutomationContent() {
 
   // Alert preferences state
   const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState<"separation" | "auth-users" | "settings" | "strategy">("auth-users");
+  const [activeTab, setActiveTab] = useState<"separation" | "auth-users" | "settings" | "strategy" | "chat">("auth-users");
 
   // Default Setup to Scheduled Tasks when visiting /automation with no tab
   useEffect(() => {
@@ -47,7 +48,7 @@ function AutomationContent() {
   }, [pathname, tabParam, router]);
 
   useEffect(() => {
-    if (tabParam === "separation" || tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users") {
+    if (tabParam === "separation" || tabParam === "settings" || tabParam === "strategy" || tabParam === "auth-users" || tabParam === "chat") {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
@@ -106,6 +107,20 @@ function AutomationContent() {
   } | null>(null);
   const [appConfigSaving, setAppConfigSaving] = useState(false);
   const [appConfigError, setAppConfigError] = useState<string | null>(null);
+
+  // Grok / AI Chat config (persona + system prompt override + effective prompts from collection)
+  const [chatConfig, setChatConfig] = useState<{
+    context: { persona?: string; systemPromptOverride?: string; riskProfile?: string; strategyGoals?: string };
+    personaPromptTexts?: Record<string, string>;
+  } | null>(null);
+  const [chatConfigLoading, setChatConfigLoading] = useState(false);
+  const [chatConfigSaving, setChatConfigSaving] = useState(false);
+  const [chatConfigMessage, setChatConfigMessage] = useState("");
+  /** When editing "default for this persona", this is the text to save to the collection. */
+  const [personaPromptEdit, setPersonaPromptEdit] = useState("");
+  /** Add new persona form */
+  const [newPersonaKey, setNewPersonaKey] = useState("");
+  const [newPersonaPrompt, setNewPersonaPrompt] = useState("");
 
   // Alert preview state
   const [_pushEnabled, setPushEnabled] = useState(false);
@@ -365,6 +380,166 @@ function AutomationContent() {
       fetchStrategySettings();
     }
   }, [activeTab, fetchStrategySettings]);
+
+  const fetchChatConfig = useCallback(async () => {
+    setChatConfigLoading(true);
+    setChatConfigMessage("");
+    try {
+      const res = await fetch("/api/chat/config", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok && data?.context) {
+        setChatConfig({
+          context: data.context,
+          personaPromptTexts: data.personaPromptTexts ?? {},
+        });
+        const persona = data.context?.persona ?? "finance-expert";
+        const texts = data.personaPromptTexts ?? {};
+        setPersonaPromptEdit(texts[persona] ?? "");
+      } else {
+        setChatConfig({ context: { persona: "finance-expert", systemPromptOverride: "" }, personaPromptTexts: {} });
+        setPersonaPromptEdit("");
+      }
+    } catch {
+      setChatConfigMessage("Failed to load chat config");
+      setChatConfig({ context: { persona: "finance-expert", systemPromptOverride: "" }, personaPromptTexts: {} });
+      setPersonaPromptEdit("");
+    } finally {
+      setChatConfigLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "chat") fetchChatConfig();
+  }, [activeTab, fetchChatConfig]);
+
+  const saveChatConfig = async () => {
+    if (!chatConfig?.context) return;
+    setChatConfigSaving(true);
+    setChatConfigMessage("");
+    try {
+      const body: { context?: Record<string, unknown>; personaPrompts?: Record<string, string> } = {
+        context: {
+          persona: chatConfig.context.persona || undefined,
+          systemPromptOverride: chatConfig.context.systemPromptOverride?.trim() || undefined,
+        },
+      };
+      const persona = chatConfig.context.persona;
+      if (persona && personaPromptEdit.trim() !== "") {
+        body.personaPrompts = { [persona]: personaPromptEdit.trim() };
+      }
+      const res = await fetch("/api/chat/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setChatConfigMessage("Chat config saved.");
+        setTimeout(() => setChatConfigMessage(""), 3000);
+        await fetchChatConfig();
+      } else {
+        const data = await res.json();
+        setChatConfigMessage(data?.error ?? "Failed to save");
+      }
+    } catch {
+      setChatConfigMessage("Failed to save chat config");
+    } finally {
+      setChatConfigSaving(false);
+    }
+  };
+
+  const savePersonaPromptOnly = async () => {
+    const persona = chatConfig?.context?.persona;
+    if (!persona) return;
+    setChatConfigSaving(true);
+    setChatConfigMessage("");
+    try {
+      const res = await fetch("/api/chat/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personaPrompts: { [persona]: personaPromptEdit.trim() },
+        }),
+      });
+      if (res.ok) {
+        setChatConfigMessage("Default prompt for this persona saved to collection.");
+        setTimeout(() => setChatConfigMessage(""), 3000);
+        await fetchChatConfig();
+      } else {
+        const data = await res.json();
+        setChatConfigMessage(data?.error ?? "Failed to save");
+      }
+    } catch {
+      setChatConfigMessage("Failed to save");
+    } finally {
+      setChatConfigSaving(false);
+    }
+  };
+
+  const addNewPersona = async () => {
+    const key = newPersonaKey.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
+    if (!key || !newPersonaPrompt.trim()) {
+      setChatConfigMessage("Enter a key (e.g. growth-investor) and prompt.");
+      return;
+    }
+    if (key in PERSONAS) {
+      setChatConfigMessage("This key is already a built-in persona. Use a different key.");
+      return;
+    }
+    setChatConfigSaving(true);
+    setChatConfigMessage("");
+    try {
+      const res = await fetch("/api/chat/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personaPrompts: { [key]: newPersonaPrompt.trim() } }),
+      });
+      if (res.ok) {
+        setChatConfigMessage("Persona added.");
+        setNewPersonaKey("");
+        setNewPersonaPrompt("");
+        setTimeout(() => setChatConfigMessage(""), 3000);
+        await fetchChatConfig();
+      } else {
+        const data = await res.json();
+        setChatConfigMessage(data?.error ?? "Failed to add");
+      }
+    } catch {
+      setChatConfigMessage("Failed to add persona");
+    } finally {
+      setChatConfigSaving(false);
+    }
+  };
+
+  const removePersona = async (personaKey: string) => {
+    if (personaKey in PERSONAS) {
+      setChatConfigMessage("Cannot remove built-in personas.");
+      return;
+    }
+    setChatConfigSaving(true);
+    setChatConfigMessage("");
+    try {
+      const res = await fetch("/api/chat/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personaPrompts: { [personaKey]: null } }),
+      });
+      if (res.ok) {
+        setChatConfigMessage("Persona removed.");
+        if (chatConfig?.context?.persona === personaKey) {
+          setChatConfig((c) => (c ? { ...c, context: { ...c.context, persona: "finance-expert" } } : c));
+        }
+        setTimeout(() => setChatConfigMessage(""), 3000);
+        await fetchChatConfig();
+      } else {
+        const data = await res.json();
+        setChatConfigMessage(data?.error ?? "Failed to remove");
+      }
+    } catch {
+      setChatConfigMessage("Failed to remove");
+    } finally {
+      setChatConfigSaving(false);
+    }
+  };
 
   const saveStrategySettings = useCallback(async () => {
     if (!selectedAccountId || selectedAccountId === "__portfolio__") return;
@@ -652,6 +827,147 @@ function AutomationContent() {
                   ))}
                 </ul>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* AI Chat config tab — persona & system prompt (same config as chat page) */}
+        {activeTab === "chat" && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">AI Chat (Grok) config</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Default persona and system prompt for the Grok chat. Default prompts are stored in the collection (or fall back to app defaults). Choose a persona and optionally edit or save its default prompt below.
+              </p>
+              {chatConfigLoading ? (
+                <div className="flex items-center gap-3 text-gray-600 py-4">
+                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  Loading…
+                </div>
+              ) : chatConfig?.context ? (
+                <div className="space-y-4 max-w-3xl">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Persona</label>
+                    <select
+                      value={chatConfig.context.persona ?? "finance-expert"}
+                      onChange={(e) => {
+                        const persona = e.target.value || undefined;
+                        setChatConfig((c) =>
+                          c ? { ...c, context: { ...c.context, persona } } : c
+                        );
+                        const texts = chatConfig.personaPromptTexts ?? {};
+                        setPersonaPromptEdit(persona ? (texts[persona] ?? "") : "");
+                      }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    >
+                      {getPersonaKeys().map((k) => (
+                        <option key={k} value={k}>
+                          {k === "finance-expert" ? "Finance Expert (default)" : k.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
+                        </option>
+                      ))}
+                      {(Object.keys(chatConfig.personaPromptTexts ?? {}).filter((k) => !(k in PERSONAS)) as string[]).map((k) => (
+                        <option key={k} value={k}>
+                          {k.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} (custom)
+                        </option>
+                      ))}
+                      <option value="">Custom only (use override below)</option>
+                    </select>
+                  </div>
+                  {chatConfig.context.persona && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Default system prompt for this persona (kept in collection)
+                      </label>
+                      <p className="text-xs text-gray-500 mb-1">
+                        Shown when this persona is selected. Stored in appUtil; edit and save to change the default for this persona.
+                      </p>
+                      <textarea
+                        value={personaPromptEdit}
+                        onChange={(e) => setPersonaPromptEdit(e.target.value)}
+                        placeholder="Default prompt for this persona…"
+                        rows={6}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono"
+                      />
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={savePersonaPromptOnly}
+                          disabled={chatConfigSaving}
+                          className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 text-sm"
+                        >
+                          {chatConfigSaving ? "Saving…" : "Save as default for this persona"}
+                        </button>
+                        {chatConfig.context.persona && !(chatConfig.context.persona in PERSONAS) && (
+                          <button
+                            type="button"
+                            onClick={() => removePersona(chatConfig.context.persona!)}
+                            disabled={chatConfigSaving}
+                            className="px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-50 text-sm"
+                          >
+                            Remove this persona
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <div className="border-t border-gray-200 pt-4">
+                    <h4 className="text-sm font-semibold text-gray-900 mb-2">Add new persona</h4>
+                    <p className="text-xs text-gray-500 mb-2">Create a custom persona with its own system prompt. Use a short key (e.g. growth-investor).</p>
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="text"
+                        value={newPersonaKey}
+                        onChange={(e) => setNewPersonaKey(e.target.value)}
+                        placeholder="Key (e.g. growth-investor)"
+                        className="w-full max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono"
+                      />
+                      <textarea
+                        value={newPersonaPrompt}
+                        onChange={(e) => setNewPersonaPrompt(e.target.value)}
+                        placeholder="System prompt for this persona…"
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={addNewPersona}
+                        disabled={chatConfigSaving || !newPersonaKey.trim() || !newPersonaPrompt.trim()}
+                        className="w-fit px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm"
+                      >
+                        {chatConfigSaving ? "Saving…" : "Add persona"}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">System prompt override (optional)</label>
+                    <p className="text-xs text-gray-500 mb-1">Used instead of the persona default when set. Leave empty to use the default above.</p>
+                    <textarea
+                      value={chatConfig.context.systemPromptOverride ?? ""}
+                      onChange={(e) =>
+                        setChatConfig((c) =>
+                          c ? { ...c, context: { ...c.context, systemPromptOverride: e.target.value } } : c
+                        )
+                      }
+                      placeholder="Override to use fully custom instructions for this session."
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono"
+                    />
+                  </div>
+                  {chatConfigMessage && (
+                    <p className={`text-sm ${chatConfigMessage.startsWith("Failed") ? "text-red-600" : "text-green-600"}`}>
+                      {chatConfigMessage}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={saveChatConfig}
+                    disabled={chatConfigSaving}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+                  >
+                    {chatConfigSaving ? "Saving…" : "Save chat config"}
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         )}

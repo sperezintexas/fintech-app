@@ -892,98 +892,177 @@ export default function WatchlistPage() {
                         <p className="text-gray-500 text-xs">Add positions to track and receive alerts</p>
                       </div>
                     ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs sm:text-sm">
-                          <thead>
-                            <tr className="border-b border-gray-200">
-                              <th
-                                className="text-left py-2 px-1.5 font-medium text-gray-600 w-[1%] cursor-pointer select-none hover:bg-gray-100 rounded-tl"
-                                onClick={() => handleSort("symbol")}
-                                title="Sort by symbol"
+                      <>
+                        {/* Mobile: sort bar + card list */}
+                        <div className="md:hidden">
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-xs text-gray-500 shrink-0">Sort:</span>
+                            <select
+                              value={sortKey ?? "symbol"}
+                              onChange={(e) => setSortKey((e.target.value || null) as SortKey | null)}
+                              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
+                            >
+                              <option value="symbol">Symbol</option>
+                              <option value="typeStrategy">Type · Strategy</option>
+                              <option value="entry">Entry</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                              className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-600"
+                              title={sortDir === "asc" ? "Ascending" : "Descending"}
+                            >
+                              {sortDir === "asc" ? "↑" : "↓"}
+                            </button>
+                          </div>
+                          <div className="space-y-3">
+                          {sortedItems.map((item) => {
+                            const themeSymbol = item.type !== "stock" ? item.underlyingSymbol : item.symbol;
+                            const theme = getThemeDescription(themeSymbol);
+                            const rationaleNotes = [item.rationale, item.notes].filter(Boolean).join(" · ") || "—";
+                            const entryVal = item.type === "stock" ? item.quantity * item.entryPrice : item.quantity * 100 * item.entryPrice;
+                            return (
+                              <div
+                                key={item._id}
+                                className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm"
                               >
-                                Symbol {sortKey === "symbol" && (sortDir === "asc" ? "↑" : "↓")}
-                              </th>
-                              <th
-                                className="text-left py-2 px-1.5 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
-                                onClick={() => handleSort("typeStrategy")}
-                                title="Sort by type · strategy"
-                              >
-                                Type · Strategy {sortKey === "typeStrategy" && (sortDir === "asc" ? "↑" : "↓")}
-                              </th>
-                              <th
-                                className="text-right py-2 px-1.5 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
-                                onClick={() => handleSort("entry")}
-                                title="Sort by entry target"
-                              >
-                                Entry target {sortKey === "entry" && (sortDir === "asc" ? "↑" : "↓")}
-                              </th>
-                              <th className="text-left py-2 px-1.5 font-medium text-gray-600">
-                                Rationale / Notes
-                              </th>
-                              <th className="text-center py-2 px-1.5 font-medium text-gray-600 w-10"></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sortedItems.map((item) => {
-                              const themeSymbol = item.type !== "stock" ? item.underlyingSymbol : item.symbol;
-                              const theme = getThemeDescription(themeSymbol);
-                              const rationaleNotes = [item.rationale, item.notes].filter(Boolean).join(" · ") || "—";
-                              return (
-                                <tr
-                                  key={item._id}
-                                  className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <span className="font-semibold text-gray-900" title={item.symbol}>
+                                      {item.symbol}
+                                    </span>
+                                    {item.companyDescription && (
+                                      <p className="text-xs text-gray-500 truncate mt-0.5" title={item.companyDescription}>
+                                        {item.companyDescription}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleItemDelete(item._id)}
+                                    disabled={isDeleting === item._id}
+                                    className="shrink-0 p-1.5 text-red-500 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                                    title="Remove"
+                                  >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                  </button>
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+                                  <span>{getTypeLabel(item.type)} · {getStrategyLabel(item.strategy)}</span>
+                                  <span className="font-medium text-gray-800">{formatCurrency(entryVal)}</span>
+                                </div>
+                                {item.symbolDetails && (
+                                  <div className="mt-1">
+                                    <SymbolDetailsLine d={item.symbolDetails} />
+                                  </div>
+                                )}
+                                {theme && (
+                                  <p className="text-xs text-blue-600 truncate mt-0.5" title={theme}>{theme}</p>
+                                )}
+                                <p className="text-xs text-gray-500 line-clamp-2 mt-1.5" title={rationaleNotes}>
+                                  {rationaleNotes}
+                                </p>
+                              </div>
+                            );
+                          })}
+                          </div>
+                        </div>
+                        {/* Desktop: table */}
+                        <div className="hidden md:block overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-gray-200">
+                                <th
+                                  className="text-left py-2.5 px-2 font-medium text-gray-600 w-[1%] cursor-pointer select-none hover:bg-gray-100 rounded-tl"
+                                  onClick={() => handleSort("symbol")}
+                                  title="Sort by symbol"
                                 >
-                                  <td className="py-2 px-1.5 align-top w-[1%]">
-                                    <div className="flex flex-col gap-0.5 min-w-0 max-w-[100px] sm:max-w-[280px]">
-                                      <span className="font-medium truncate" title={item.symbol}>{item.symbol}</span>
-                                      {item.companyDescription && (
-                                        <span className="text-xs text-gray-500 leading-tight truncate" title={item.companyDescription}>
-                                          {item.companyDescription}
-                                        </span>
-                                      )}
-                                      {item.companyOverview && (
-                                        <p className="text-xs text-gray-600 leading-snug line-clamp-2 mt-0.5" title={item.companyOverview}>
-                                          {item.companyOverview}
-                                        </p>
-                                      )}
-                                      {item.symbolDetails && (
-                                        <SymbolDetailsLine d={item.symbolDetails} />
-                                      )}
-                                      {theme && (
-                                        <span className="text-xs text-blue-600 leading-tight truncate" title={theme}>
-                                          {theme}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className="py-2 px-1.5 text-gray-600">
-                                    {getTypeLabel(item.type)} · {getStrategyLabel(item.strategy)}
-                                  </td>
-                                  <td className="py-2 px-1.5 text-right">
-                                    {formatCurrency(item.type === "stock" ? item.quantity * item.entryPrice : item.quantity * 100 * item.entryPrice)}
-                                  </td>
-                                  <td className="py-2 px-1.5 text-gray-600 max-w-[200px] sm:max-w-[280px]" title={rationaleNotes}>
-                                    <span className="line-clamp-2 text-sm">{rationaleNotes}</span>
-                                  </td>
-                                  <td className="py-2 px-1.5 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleItemDelete(item._id)}
-                                      disabled={isDeleting === item._id}
-                                      className="text-red-500 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                      title="Remove"
-                                    >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                      </svg>
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                                  Symbol {sortKey === "symbol" && (sortDir === "asc" ? "↑" : "↓")}
+                                </th>
+                                <th
+                                  className="text-left py-2.5 px-2 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
+                                  onClick={() => handleSort("typeStrategy")}
+                                  title="Sort by type · strategy"
+                                >
+                                  Type · Strategy {sortKey === "typeStrategy" && (sortDir === "asc" ? "↑" : "↓")}
+                                </th>
+                                <th
+                                  className="text-right py-2.5 px-2 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
+                                  onClick={() => handleSort("entry")}
+                                  title="Sort by entry target"
+                                >
+                                  Entry {sortKey === "entry" && (sortDir === "asc" ? "↑" : "↓")}
+                                </th>
+                                <th className="text-left py-2.5 px-2 font-medium text-gray-600">
+                                  Rationale / Notes
+                                </th>
+                                <th className="text-center py-2.5 px-2 font-medium text-gray-600 w-10"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sortedItems.map((item) => {
+                                const themeSymbol = item.type !== "stock" ? item.underlyingSymbol : item.symbol;
+                                const theme = getThemeDescription(themeSymbol);
+                                const rationaleNotes = [item.rationale, item.notes].filter(Boolean).join(" · ") || "—";
+                                return (
+                                  <tr
+                                    key={item._id}
+                                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                                  >
+                                    <td className="py-2 px-2 align-top w-[1%]">
+                                      <div className="flex flex-col gap-0.5 min-w-0 max-w-[200px] lg:max-w-[280px]">
+                                        <span className="font-medium truncate" title={item.symbol}>{item.symbol}</span>
+                                        {item.companyDescription && (
+                                          <span className="text-xs text-gray-500 leading-tight truncate" title={item.companyDescription}>
+                                            {item.companyDescription}
+                                          </span>
+                                        )}
+                                        {item.companyOverview && (
+                                          <p className="text-xs text-gray-600 leading-snug line-clamp-2 mt-0.5" title={item.companyOverview}>
+                                            {item.companyOverview}
+                                          </p>
+                                        )}
+                                        {item.symbolDetails && (
+                                          <SymbolDetailsLine d={item.symbolDetails} />
+                                        )}
+                                        {theme && (
+                                          <span className="text-xs text-blue-600 leading-tight truncate" title={theme}>
+                                            {theme}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="py-2 px-2 text-gray-600 whitespace-nowrap">
+                                      {getTypeLabel(item.type)} · {getStrategyLabel(item.strategy)}
+                                    </td>
+                                    <td className="py-2 px-2 text-right whitespace-nowrap">
+                                      {formatCurrency(item.type === "stock" ? item.quantity * item.entryPrice : item.quantity * 100 * item.entryPrice)}
+                                    </td>
+                                    <td className="py-2 px-2 text-gray-600 max-w-[200px] lg:max-w-[280px]" title={rationaleNotes}>
+                                      <span className="line-clamp-2 text-sm">{rationaleNotes}</span>
+                                    </td>
+                                    <td className="py-2 px-2 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleItemDelete(item._id)}
+                                        disabled={isDeleting === item._id}
+                                        className="text-red-500 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Remove"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
                     )}
                   </>
                 )}

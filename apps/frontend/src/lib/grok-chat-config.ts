@@ -1,9 +1,10 @@
 /**
- * Grok Chat config: tools and context configurable from the chat page.
- * Stored in appUtil collection.
+ * Grok Chat config: tools, context, and per-persona prompt text.
+ * Stored in appUtil collection. Persona prompts in DB override code defaults (chat-personas.ts).
  */
 
 import { getDb } from "./mongodb";
+import { PERSONAS, type PersonaKey } from "./chat-personas";
 
 const COLLECTION = "appUtil";
 const KEY = "grokChatConfig";
@@ -24,9 +25,17 @@ export type GrokChatContextConfig = {
   persona?: string;
 };
 
+/** Per-persona prompt text stored in collection. Keys can be built-in (PersonaKey) or custom (e.g. "growth-investor"). */
+export type PersonaPrompts = Record<string, string>;
+
+/** Update: use null as value to remove a persona key. */
+export type PersonaPromptsUpdate = Record<string, string | null>;
+
 export type GrokChatConfig = {
   tools: GrokChatToolsConfig;
   context: GrokChatContextConfig;
+  /** Stored prompts per persona; merged with code defaults for effective text. */
+  personaPrompts?: PersonaPrompts;
   updatedAt?: string;
 };
 
@@ -34,6 +43,7 @@ export type GrokChatConfig = {
 export type GrokChatConfigUpdate = {
   tools?: Partial<GrokChatToolsConfig>;
   context?: Partial<GrokChatContextConfig>;
+  personaPrompts?: PersonaPromptsUpdate;
 };
 
 const DEFAULT_TOOLS: GrokChatToolsConfig = {
@@ -58,13 +68,14 @@ export async function getGrokChatConfig(): Promise<GrokChatConfig> {
     const v = doc.value as Record<string, unknown>;
     const tools = v.tools as Partial<GrokChatToolsConfig> | undefined;
     const context = v.context as Partial<GrokChatContextConfig> | undefined;
+    const personaPrompts = v.personaPrompts as PersonaPrompts | undefined;
     return {
       tools: {
         webSearch: tools?.webSearch ?? DEFAULT_TOOLS.webSearch,
         marketData: tools?.marketData ?? DEFAULT_TOOLS.marketData,
         portfolio: tools?.portfolio ?? DEFAULT_TOOLS.portfolio,
         coveredCallRecs: tools?.coveredCallRecs ?? DEFAULT_TOOLS.coveredCallRecs,
-  jobs: tools?.jobs ?? DEFAULT_TOOLS.jobs,
+        jobs: tools?.jobs ?? DEFAULT_TOOLS.jobs,
       },
       context: {
         riskProfile: context?.riskProfile ?? DEFAULT_CONTEXT.riskProfile,
@@ -72,6 +83,10 @@ export async function getGrokChatConfig(): Promise<GrokChatConfig> {
         systemPromptOverride: context?.systemPromptOverride ?? DEFAULT_CONTEXT.systemPromptOverride,
         persona: context?.persona ?? DEFAULT_CONTEXT.persona,
       },
+      personaPrompts:
+      personaPrompts && typeof personaPrompts === "object"
+        ? (personaPrompts as PersonaPrompts)
+        : undefined,
       updatedAt: doc.updatedAt as string | undefined,
     };
   }
@@ -81,8 +96,36 @@ export async function getGrokChatConfig(): Promise<GrokChatConfig> {
   };
 }
 
+/** Effective prompt for a persona: stored in collection overrides code default. Custom keys use stored only. */
+export function getEffectivePersonaPrompt(personaKey: string, storedPrompts?: PersonaPrompts): string | undefined {
+  const fromStored = storedPrompts?.[personaKey];
+  if (fromStored != null && fromStored.trim() !== "") return fromStored;
+  return PERSONAS[personaKey as PersonaKey];
+}
+
+/** All effective prompts (for UI): built-in + custom personas. Stored overrides code for built-in keys. */
+export function getEffectivePersonaPrompts(storedPrompts?: PersonaPrompts): Record<string, string> {
+  const out: Record<string, string> = {};
+  const builtInKeys = Object.keys(PERSONAS) as PersonaKey[];
+  for (const k of builtInKeys) {
+    out[k] = getEffectivePersonaPrompt(k, storedPrompts) ?? "";
+  }
+  if (storedPrompts && typeof storedPrompts === "object") {
+    for (const k of Object.keys(storedPrompts)) {
+      if (!(k in PERSONAS) && storedPrompts[k]?.trim() !== "") out[k] = storedPrompts[k];
+    }
+  }
+  return out;
+}
+
 export async function setGrokChatConfig(config: GrokChatConfigUpdate): Promise<GrokChatConfig> {
   const existing = await getGrokChatConfig();
+  const mergedPersonaPrompts: PersonaPrompts = { ...(existing.personaPrompts ?? {}) };
+  const updates = config.personaPrompts ?? {};
+  for (const [k, v] of Object.entries(updates)) {
+    if (v == null) delete mergedPersonaPrompts[k];
+    else mergedPersonaPrompts[k] = v;
+  }
   const merged: GrokChatConfig = {
     tools: {
       ...existing.tools,
@@ -92,19 +135,23 @@ export async function setGrokChatConfig(config: GrokChatConfigUpdate): Promise<G
       ...existing.context,
       ...(config.context ?? {}),
     },
+    personaPrompts: Object.keys(mergedPersonaPrompts).length > 0 ? mergedPersonaPrompts : undefined,
     updatedAt: new Date().toISOString(),
   };
 
   const db = await getDb();
+  const value: Record<string, unknown> = {
+    tools: merged.tools,
+    context: merged.context,
+  };
+  if (merged.personaPrompts) value.personaPrompts = merged.personaPrompts;
+
   await db.collection(COLLECTION).updateOne(
     { key: KEY },
     {
       $set: {
         key: KEY,
-        value: {
-          tools: merged.tools,
-          context: merged.context,
-        },
+        value,
         updatedAt: merged.updatedAt,
       },
     },

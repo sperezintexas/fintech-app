@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
+import { getPersonaKeys, getPersonaExamplePrompts, PERSONAS } from "@/lib/chat-personas";
 
 type Message = {
   id: string;
@@ -42,6 +43,7 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
   const [error, setError] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [config, setConfig] = useState<GrokChatConfig>(DEFAULT_CONFIG);
+  const [personaPromptTexts, setPersonaPromptTexts] = useState<Record<string, string>>({});
   const [configSaving, setConfigSaving] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [lastStats, setLastStats] = useState<{
@@ -70,13 +72,19 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
             context: { ...DEFAULT_CONFIG.context, ...data.context },
           });
         }
+        if (data?.personaPromptTexts && typeof data.personaPromptTexts === "object") {
+          setPersonaPromptTexts(data.personaPromptTexts);
+        }
         if (typeof data?.model === "string") setModelInUse(data.model);
       })
       .catch(() => {});
   }, []);
 
+  const currentPersona = config.context.persona ?? "finance-expert";
+
   useEffect(() => {
-    fetch("/api/chat/history")
+    const persona = config.context.persona ?? "finance-expert";
+    fetch(`/api/chat/history?persona=${encodeURIComponent(persona)}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data: { role: string; content: string; timestamp?: string }[]) => {
         if (Array.isArray(data) && data.length > 0) {
@@ -88,10 +96,12 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
               timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
             }))
           );
+        } else {
+          setMessages([]);
         }
       })
       .catch(() => {});
-  }, []);
+  }, [currentPersona]);
 
   const saveConfig = async () => {
     setConfigSaving(true);
@@ -125,9 +135,15 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
 
     try {
       const historyForApi = messages.map((m) => ({ role: m.role, content: m.content }));
-      const body: { message: string; history: { role: string; content: string }[]; orderContext?: OrderContext } = {
+      const body: {
+        message: string;
+        history: { role: string; content: string }[];
+        persona?: string;
+        orderContext?: OrderContext;
+      } = {
         message: trimmed,
         history: historyForApi,
+        persona: config.context.persona ?? "finance-expert",
       };
       if (orderContext) body.orderContext = orderContext;
       const res = await fetch("/api/chat", {
@@ -286,26 +302,6 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
                 />
               </div>
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Persona</label>
-              <select
-                value={config.context.persona ?? "finance-expert"}
-                onChange={(e) =>
-                  setConfig((c) => ({
-                    ...c,
-                    context: { ...c.context, persona: e.target.value || undefined },
-                  }))
-                }
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200"
-              >
-                <option value="finance-expert">Finance Expert (default)</option>
-                <option value="medical-expert">Medical Expert</option>
-                <option value="legal-expert">Legal Expert</option>
-                <option value="tax-expert">Tax Expert</option>
-                <option value="trusted-advisor">Trusted Advisor</option>
-                <option value="">Custom only (override below)</option>
-              </select>
-            </div>
             <details className="mt-2">
               <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Advanced: System prompt override</summary>
               <textarea
@@ -435,6 +431,34 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
         <div ref={scrollRef} />
       </div>
 
+      <div className="px-4 pt-3 pb-1 border-t border-gray-100">
+        <label className="block text-xs font-medium text-gray-500 mb-1.5">Persona</label>
+        <select
+          value={config.context.persona ?? "finance-expert"}
+          onChange={(e) =>
+            setConfig((c) => ({
+              ...c,
+              context: { ...c.context, persona: e.target.value || undefined },
+            }))
+          }
+          className="w-full max-w-xs px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white"
+        >
+          {getPersonaKeys().map((k) => (
+            <option key={k} value={k}>
+              {k === "finance-expert" ? "Finance Expert (default)" : k.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
+            </option>
+          ))}
+          {Object.keys(personaPromptTexts)
+            .filter((k) => !(k in PERSONAS))
+            .map((k) => (
+              <option key={k} value={k}>
+                {k.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} (custom)
+              </option>
+            ))}
+          <option value="">Custom only (override in config)</option>
+        </select>
+      </div>
+
       <form onSubmit={handleSubmit} className="p-4 border-t border-gray-100">
         <div className="flex gap-2">
           <input
@@ -468,14 +492,7 @@ export function ChatInterface({ initialMessage, initialOrderContext }: ChatInter
             Example prompts
           </summary>
           <div className="mt-2 p-3 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-700 space-y-3 max-h-[50vh] overflow-y-auto">
-            {[
-              { tool: "Web search", prompts: ["TSLA news today", "NVDA earnings date", "Weather Austin", "Fed rate decision", "Defense sector outlook"] },
-              { tool: "Quotes & market", prompts: ["TSLA price", "AAPL quote", "Market outlook", "VIX level", "SPY and QQQ today"] },
-              { tool: "Portfolio", prompts: ["Show my portfolio", "My holdings", "Account balance", "Top movers today"] },
-              { tool: "Watchlist", prompts: ["My watchlist", "What am I watching?", "Watchlist performance"] },
-              { tool: "Covered calls", prompts: ["Covered call ideas", "Should I BTC my call?", "Roll my TSLA call", "CC recommendations"] },
-              { tool: "Tasks & scan", prompts: ["Scheduled tasks", "Run scanner now", "When does scanner run?", "Options positions check"] },
-            ].map(({ tool, prompts }) => (
+            {getPersonaExamplePrompts(currentPersona).map(({ tool, prompts }) => (
               <div key={tool}>
                 <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">{tool}</p>
                 <div className="flex flex-wrap gap-1">
