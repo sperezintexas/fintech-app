@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { BUILTIN_BROKER_LOGO_FILES, readBrokerLogoFromDisk } from "@/lib/broker-logo-disk";
+import { getBuiltinLogoFile, readBrokerLogoFromDisk } from "@/lib/broker-logo-disk";
 
 export const dynamic = "force-dynamic";
 
@@ -9,8 +9,7 @@ type RouteParams = { params: Promise<{ name: string }> };
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { name } = await params;
-    const key = (name ?? "").trim().toLowerCase();
-    const file = BUILTIN_BROKER_LOGO_FILES[key];
+    const file = getBuiltinLogoFile(name ?? undefined);
     if (!file) {
       return NextResponse.json({ error: "Unknown broker name" }, { status: 404 });
     }

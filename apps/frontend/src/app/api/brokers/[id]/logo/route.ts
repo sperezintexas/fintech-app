@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
-import { BUILTIN_BROKER_LOGO_FILES, readBrokerLogoFromDisk } from "@/lib/broker-logo-disk";
+import { getBuiltinLogoFile, readBrokerLogoFromDisk } from "@/lib/broker-logo-disk";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +23,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (!broker) {
       return NextResponse.json({ error: "Broker not found" }, { status: 404 });
     }
-    const name = (broker as { name?: string }).name?.trim().toLowerCase();
-    const builtinFile = name ? BUILTIN_BROKER_LOGO_FILES[name] : undefined;
+    const name = (broker as { name?: string }).name;
+    const builtinFile = getBuiltinLogoFile(name);
     if (builtinFile) {
       const buffer = await readBrokerLogoFromDisk(builtinFile);
       if (buffer) {
