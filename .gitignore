@@ -63,5 +63,8 @@ playwright/.cache/
 # Local-only broker CSV / account data (do not commit)
 data/
 
+# Gradle (build cache)
+.gradle/
+
 # Misc
 *.log
