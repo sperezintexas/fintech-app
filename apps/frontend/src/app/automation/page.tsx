@@ -21,6 +21,7 @@ import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 import { TIMEZONE_OPTIONS } from "@/lib/date-format";
 import { BrokerImportPanel } from "@/components/BrokerImportPanel";
 import { getPersonaKeys, PERSONAS } from "@/lib/chat-personas";
+import { getBrokerLogoUrlFromName } from "@/lib/broker-logo-url";
 
 type TestChannel = "slack" | "twitter" | "push";
 
@@ -939,14 +940,16 @@ function AutomationContent() {
                 <p className="text-gray-500">No brokers yet. Add one above, then assign to accounts in Manage Accounts.</p>
               ) : (
                 <ul className="space-y-2">
-                  {brokers.map((b) => (
+                  {brokers.map((b) => {
+                    const logoSrc = getBrokerLogoUrlFromName(b.name) ?? `/api/brokers/${b._id}/logo`;
+                    return (
                     <li
                       key={b._id}
                       className="flex items-center gap-4 p-3 rounded-lg border border-gray-200 bg-gray-50/50"
                     >
                       <div className="w-8 h-8 rounded object-contain bg-white shrink-0 flex items-center justify-center overflow-hidden relative">
                         <img
-                          src={`/api/brokers/${b._id}/logo`}
+                          src={logoSrc}
                           alt=""
                           className="w-full h-full object-contain"
                           onError={(e) => {
@@ -986,7 +989,7 @@ function AutomationContent() {
                         Remove
                       </button>
                     </li>
-                  ))}
+                  );})}
                 </ul>
               )}
             </div>

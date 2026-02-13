@@ -23,7 +23,7 @@ export async function readBrokerLogoFromDisk(file: string): Promise<Buffer | nul
     path.join(process.cwd(), "apps", "frontend", "public", "logos", file),
   ];
   if (typeof __dirname !== "undefined") {
-    candidates.push(path.join(__dirname, "..", "..", "..", "public", "logos", file));
+    candidates.push(path.join(__dirname, "..", "..", "public", "logos", file));
   }
   for (const logoPath of candidates) {
     try {

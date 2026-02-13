@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type { Broker, Portfolio } from "@/types/portfolio";
+import { getBrokerLogoUrl, BROKER_LOGO_URLS } from "@/lib/broker-logo-url";
 
 const BROKER_ICONS: Record<string, string> = {
   Merrill: "/merrill-icon.svg",
@@ -14,12 +15,12 @@ const BUILTIN_BROKER_NAMES = ["merrill", "fidelity"] as const;
 
 function BuiltinBrokerLogo({ brokerType }: { brokerType: "Merrill" | "Fidelity" }) {
   const [pngFailed, setPngFailed] = useState(false);
-  const name = brokerType.toLowerCase();
   const svgSrc = BROKER_ICONS[brokerType];
+  const logoSrc = brokerType === "Merrill" ? BROKER_LOGO_URLS.merrill : BROKER_LOGO_URLS.fidelity;
   if (!pngFailed) {
     return (
       <img
-        src={`/api/brokers/logo/${name}`}
+        src={logoSrc}
         alt=""
         className="w-8 h-8 rounded object-contain shrink-0 bg-gray-100 ring-1 ring-gray-200/80"
         onError={() => setPngFailed(true)}
@@ -55,6 +56,7 @@ function AccountBrokerLogo({
   const [imgFailed, setImgFailed] = useState(false);
   const broker = account.brokerId ? brokers.find((b) => b._id === account.brokerId) : undefined;
   if (!broker) return null;
+  const logoSrc = getBrokerLogoUrl(broker, account.brokerType) ?? `/api/brokers/${broker._id}/logo`;
   if (imgFailed) {
     return (
       <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden bg-gray-100 ring-1 ring-gray-200/80 text-xs font-medium text-gray-600">
@@ -64,7 +66,7 @@ function AccountBrokerLogo({
   }
   return (
     <img
-      src={`/api/brokers/${broker._id}/logo`}
+      src={logoSrc}
       alt=""
       className="w-8 h-8 rounded object-contain shrink-0 bg-gray-100 ring-1 ring-gray-200/80"
       onError={() => setImgFailed(true)}

@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import type { Account, Broker, BrokerType, Position } from "@/types/portfolio";
 import { useRouter } from "next/navigation";
 import { downloadCsv } from "@/lib/csv-export";
+import { getBrokerLogoUrl, BROKER_LOGO_URLS } from "@/lib/broker-logo-url";
 
 type AccountListProps = {
   accounts: Account[];
@@ -17,7 +18,7 @@ function BrokerLogo({ broker, size = "sm" }: { broker: Broker; size?: "sm" | "md
   const [failed, setFailed] = useState(false);
   const sizeClass = size === "sm" ? "w-6 h-6" : "w-8 h-8";
   const initial = (broker.name ?? "?").charAt(0).toUpperCase();
-  const logoSrc = `/api/brokers/${broker._id}/logo`;
+  const logoSrc = getBrokerLogoUrl(broker, null) ?? `/api/brokers/${broker._id}/logo`;
   if (!failed) {
     return (
       <img
@@ -41,6 +42,7 @@ function BrokerLogo({ broker, size = "sm" }: { broker: Broker; size?: "sm" | "md
 function BuiltinBrokerLogo({ brokerType, size = "sm" }: { brokerType: "Merrill" | "Fidelity"; size?: "sm" | "md" }) {
   const [failed, setFailed] = useState(false);
   const sizeClass = size === "sm" ? "w-6 h-6" : "w-8 h-8";
+  const logoSrc = brokerType === "Merrill" ? BROKER_LOGO_URLS.merrill : BROKER_LOGO_URLS.fidelity;
   if (failed) {
     return (
       <div
@@ -53,7 +55,7 @@ function BuiltinBrokerLogo({ brokerType, size = "sm" }: { brokerType: "Merrill" 
   }
   return (
     <img
-      src={`/api/brokers/logo/${brokerType.toLowerCase()}`}
+      src={logoSrc}
       alt=""
       className={`${sizeClass} rounded object-contain bg-gray-50 shrink-0`}
       onError={() => setFailed(true)}
@@ -437,7 +439,7 @@ export function AccountList({ accounts, brokers = [], onEdit, onDelete, isDeleti
                       )}
                       {account.accountRef ? (
                         <span className="font-mono truncate" title={account.accountRef}>
-                          {account.accountRef}
+                          ···{account.accountRef.slice(-4)}
                         </span>
                       ) : (
                         <span className="text-gray-400">—</span>

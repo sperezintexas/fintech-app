@@ -20,6 +20,13 @@ ENV MONGODB_URI=$MONGODB_URI MONGODB_DB=$MONGODB_DB
 ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN pnpm run build
 
+# Next.js standalone does not copy public/ by default; ensure broker logos (public/logos/) and other static assets are in standalone output
+RUN if [ -d apps/frontend/.next/standalone ]; then \
+  cp -r apps/frontend/public apps/frontend/.next/standalone/apps/frontend/ 2>/dev/null || true; \
+  mkdir -p apps/frontend/.next/standalone/apps/frontend/.next && \
+  cp -r apps/frontend/.next/static apps/frontend/.next/standalone/apps/frontend/.next/ 2>/dev/null || true; \
+fi
+
 RUN pnpm prune --prod
 
 # ── Runner ────────────────────────────────────────
@@ -29,7 +36,7 @@ WORKDIR /app
 # Security: non-root user (mandatory)
 RUN addgroup -S nodejs -g 1001 && adduser -S nextjs -u 1001 -G nodejs
 
-# Copy workspace and built frontend (no root src/public; they live in apps/frontend)
+# Copy workspace and built frontend. apps/frontend/public (broker logos, icons) is included for static serving.
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/pnpm-workspace.yaml ./

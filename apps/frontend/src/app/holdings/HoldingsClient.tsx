@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { Account, Activity, Broker, Position, WatchlistAlert } from "@/types/portfolio";
 import { AppHeader } from "@/components/AppHeader";
+import { getBrokerLogoUrl } from "@/lib/broker-logo-url";
 
 import { BuyToCloseModal } from "@/components/BuyToCloseModal";
 import { PositionForm } from "@/components/PositionForm";
@@ -527,25 +528,25 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 mb-4">
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                {(selectedAccount?.brokerId && brokers.find((b) => b._id === selectedAccount.brokerId) ? (
-                  <img
-                    src={`/api/brokers/${selectedAccount.brokerId}/logo`}
-                    alt=""
-                    className="w-8 h-8 rounded object-contain bg-gray-50 shrink-0"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                ) : (selectedAccount?.brokerType === "Merrill" || selectedAccount?.brokerType === "Fidelity") ? (
-                  <img
-                    src={`/api/brokers/logo/${selectedAccount.brokerType.toLowerCase()}`}
-                    alt=""
-                    className="w-8 h-8 rounded object-contain bg-gray-50 shrink-0"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                ) : null)}
+                {(() => {
+                  const broker = selectedAccount?.brokerId
+                    ? brokers.find((b) => b._id === selectedAccount.brokerId)
+                    : undefined;
+                  const logoSrc =
+                    getBrokerLogoUrl(broker ?? null, selectedAccount?.brokerType ?? null) ??
+                    (broker ? `/api/brokers/${broker._id}/logo` : null);
+                  if (!logoSrc) return null;
+                  return (
+                    <img
+                      src={logoSrc}
+                      alt=""
+                      className="w-8 h-8 rounded object-contain bg-gray-50 shrink-0"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  );
+                })()}
                 <label htmlFor="account-select" className="text-sm font-medium text-gray-700 shrink-0">
                   Account:
                 </label>
