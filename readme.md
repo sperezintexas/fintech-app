@@ -1,6 +1,6 @@
 # myInvestments
 
-Portfolio and options management: accounts, holdings, real-time market data, and scanner-driven alerts. Built with Next.js, React, TypeScript, and MongoDB.
+an Portfolio and options management: accounts, holdings, real-time market data, and scanner-driven alerts using xAI to maximize profits to solve the money problem.
 
 ## Tech Stack
 
