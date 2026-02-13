@@ -1,0 +1,115 @@
+---
+description: Options Scanner & Analyzer Guidelines
+globs:
+  - "**/*-scanner.ts"
+  - "**/*-analyzer.ts"
+  - "**/unified-options-scanner.ts"
+  - "**/xai-grok.ts"
+  - "**/portfolio.ts"
+alwaysApply: true
+priority: high
+---
+
+# Options Scanner & Analyzer Guidelines
+
+Use this when implementing or modifying **options analyzers**, **scanners**, **recommendation actions**, or **Grok-integrated decision logic** in myInvestments.
+
+---
+
+## 1. Domain Concepts
+
+- **DTE**: Days to expiration. Short-dated (≤7–14) → faster theta decay → drives HOLD vs close/roll.
+- **IV / IV rank**: High IV → rich premiums; IV crush hurts longs. Used in candidate filters & roll/close.
+- **Moneyness**: ITM / ATM / OTM → impacts assignment risk, hedge value, thresholds.
+- **Assignment risk**: Short calls → compute probability (spot vs strike + DTE) → surface in alerts/recs.
+- **Extrinsic / time value**: Drives HOLD vs close (e.g. hold if >20% of premium).
+- **Premium / cost basis**: Premium × 100 per contract → used for P/L, breakeven.
+- **100-share blocks**: Options in 100-share units → covered calls / protective puts evaluated per block; check cash availability.
+
+---
+
+## 2. Architecture
+
+- **Unified Options Scanner** (`unified-options-scanner.ts`): single entry point for scheduled runs
+  - Resolves symbols (holdings + optional watchlist)
+  - Builds shared **option chain cache** (Yahoo)
+  - Runs four scanners **in parallel** (Promise.all) unless dependency
+  - Aggregates → calls store + createAlerts per scanner
+- **Do not** add isolated fifth scanner — integrate into unified + use shared cache
+- **Scheduler**: job type `unifiedOptionsScanner` → `runUnifiedOptionsScanner(accountId?, config)`
+  - Config parsed via Zod (`job-config-schemas.ts`): per-scanner flags (e.g. `grokEnabled`, `includeWatchlist`)
+- **Store/alert logic**: Each analyzer implements `store*Recommendations(recs, { createAlerts })`; alert creation is inline (same file) and gated by action type + holdings-only where applicable.
+
+---
+
+## 3. Scanners & Actions
+
+| Scanner          | Module                        | Actions                                      | Confidence     | Notes                                      |
+|------------------|-------------------------------|----------------------------------------------|----------------|--------------------------------------------|
+| Option           | `option-scanner.ts`           | HOLD \| BUY_TO_CLOSE                         | —              | Short options; rules + optional Grok       |
+| Covered Call     | `covered-call-analyzer.ts`    | HOLD \| BUY_TO_CLOSE \| SELL_NEW_CALL \| ROLL \| NONE | HIGH/MED/LOW   | Stock + short call; watchlist + holdings   |
+| Protective Put   | `protective-put-analyzer.ts`  | HOLD \| SELL_TO_CLOSE \| ROLL \| BUY_NEW_PUT \| NONE | HIGH/MED/LOW   | Long stock + long put; 100-share + cash    |
+| Straddle/Strangle| `straddle-strangle-analyzer.ts`| HOLD \| SELL_TO_CLOSE \| ROLL \| ADD \| NONE | HIGH/MED/LOW   | Long call + long put same underlying       |
+
+- Types: `src/types/portfolio.ts` (main) + per-analyzer for straddle/strangle specifics
+- Persistence: `store*Recommendations(recs, { createAlerts: true })`
+- Alerts: only for actionable actions; **holdings only** for covered call & protective put (watchlist recs are stored but do not create alerts)
+  - Option: BUY_TO_CLOSE
+  - Covered Call: BUY_TO_CLOSE, SELL_NEW_CALL, ROLL (holdings only)
+  - Protective Put: SELL_TO_CLOSE, ROLL, BUY_NEW_PUT (holdings only)
+  - Straddle/Strangle: SELL_TO_CLOSE, ROLL, ADD
+
+---
+
+## Pattern → Action Cheat Sheet
+
+| Situation                                                    | Preferred pattern / action                                 | File to touch first              | Confidence impact      |
+|--------------------------------------------------------------|------------------------------------------------------------|----------------------------------|------------------------|
+| Need chain / greeks / IV                                     | Use shared cache or `yahoo.ts` helpers                     | unified-options-scanner.ts       | —                      |
+| High P/L (>12–15%) + DTE <14 + IV >50                        | Mark Grok candidate → `callOptionDecision` / `callCoveredCallDecision` | xai-grok.ts + analyzer           | HIGH if Grok agrees    |
+| Short call ITM + stock > strike + buffer                     | BUY_TO_CLOSE or ROLL (prefer ROLL if extrinsic >15–20%)    | covered-call-analyzer.ts         | HIGH                   |
+| Long put OTM + stock > strike + 10–15%                       | SELL_TO_CLOSE (protection too expensive)                   | protective-put-analyzer.ts       | MEDIUM–HIGH            |
+| Suggest new call/put (no position)                           | SELL_NEW_CALL / BUY_NEW_PUT — validate cash & 100 blocks   | respective analyzer              | MEDIUM                 |
+| Conflicting analyzer advice on same symbol                   | Do **not** merge silently; today unified scanner does not reconcile — document or add reconciliation if needed | unified-options-scanner.ts       | —                      |
+
+---
+
+## Hard Constraints — Do NOT violate
+
+- **Do NOT** recommend specific $ amounts or share counts — only action + reason + optional strike/exp
+- **Do NOT** bypass rule-based stage — Grok refines candidates only; fallback = rules
+- **Do NOT** add new action enum without updating types, store, alert formatter & UI
+- **Do NOT** duplicate option chain fetches — enforce shared cache
+- **Do NOT** hard-code Grok prompts that ignore `grokEnabled` / config
+- **Do NOT** add env/config keys without updating `job-config-schemas.ts` + `.env.example`
+
+---
+
+## Alert Creation Rules
+
+- Alert **only** on actionable actions (see table in §3); **holdings only** for covered call & protective put (no alerts for watchlist-only recs).
+- Do **not** alert HOLD / NONE unless product explicitly adds a special case (e.g. imminent assignment).
+- **Severity**: BUY_TO_CLOSE uses `"critical"` when short call is ITM or assignment probability ≥70%; otherwise `"warning"`. Other actions use `"warning"`.
+- Payload: symbol, recommendation (action), reason, metrics (DTE, extrinsic%, IV rank, breakeven, etc.); include accountId/accountName for multi-account.
+
+---
+
+## Best Practices
+
+- **Configurable thresholds**: New DTE/IV/P/L thresholds should be added to `job-config-schemas.ts` (and optionally `.env.example`) so they can be tuned per job or env without code changes.
+- **Grok confidence**: Map numeric confidence (0–1) from Grok to HIGH (≥0.8), MEDIUM (≥0.6), LOW (&lt;0.6) for consistency with existing analyzers.
+- **Tests**: Each scanner/analyzer has tests in `src/lib/__tests__/` (e.g. `option-scanner.test.ts`, `covered-call-analyzer.test.ts`). Update or add tests when changing recommendation logic or alert conditions; unified scanner tests mock the four scanners and assert store/alert calls.
+- **Cache usage**: Analyzers that accept an optional `optionChainMap` (covered call, protective put) must receive the shared cache from `runUnifiedOptionsScanner` to avoid duplicate Yahoo fetches.
+
+---
+
+## Quick Rules of Thumb (read first)
+
+- Four scanners only — always integrate into `unifiedOptionsScanner`
+- Rules first → Grok refines candidates only (fallback = rules)
+- Never recommend $ amounts or share counts — only actions + reason + optional strike/exp
+- Use shared option chain cache — no duplicate Yahoo calls
+- Persist structured recs → alerts only for actionable changes
+- Keep action enums stable — breaking change = major refactor
+- Update tests when touching thresholds / logic
+- Preserve auditability: always include clear reason + optional Grok reasoning field
