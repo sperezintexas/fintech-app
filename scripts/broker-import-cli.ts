@@ -26,13 +26,13 @@
 import * as fs from "fs";
 import * as path from "path";
 import { ObjectId } from "mongodb";
-import { parseMerrillHoldingsCsv } from "../src/lib/merrill-holdings-csv";
-import { parseMerrillCsv } from "../src/lib/merrill-csv";
-import { parseFidelityHoldingsCsv } from "../src/lib/fidelity-holdings-csv";
-import { parseFidelityActivitiesCsv } from "../src/lib/fidelity-csv";
-import { setAccountPositions, importActivitiesForAccount, deleteActivitiesForAccount } from "../src/lib/activities";
-import { getDb } from "../src/lib/mongodb";
-import type { Position, ActivityImportItem } from "../src/types/portfolio";
+import { parseMerrillHoldingsCsv } from "../apps/frontend/src/lib/merrill-holdings-csv";
+import { parseMerrillCsv } from "../apps/frontend/src/lib/merrill-csv";
+import { parseFidelityHoldingsCsv } from "../apps/frontend/src/lib/fidelity-holdings-csv";
+import { parseFidelityActivitiesCsv } from "../apps/frontend/src/lib/fidelity-csv";
+import { setAccountPositions, importActivitiesForAccount, deleteActivitiesForAccount } from "../apps/frontend/src/lib/activities";
+import { getDb } from "../apps/frontend/src/lib/mongodb";
+import type { Position, ActivityImportItem } from "../apps/frontend/src/types/portfolio";
 
 type Broker = "merrill" | "fidelity";
 

@@ -1,0 +1,511 @@
+openapi: 3.0.3
+info:
+  title: myinvestments API
+  description: Backend API for myinvestments (Kotlin). Phase 0 = health + accounts.
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local backend
+
+tags:
+  - name: health
+    description: Health and liveness
+  - name: accounts
+    description: Account CRUD
+  - name: market
+    description: Market conditions
+  - name: dashboard
+    description: Dashboard summary and timeline
+  - name: profile
+    description: User profile
+  - name: app-config
+    description: App configuration
+  - name: positions
+    description: Position CRUD and close
+  - name: activities
+    description: Activities list and delete
+  - name: import
+    description: Import activities and broker CSV
+  - name: watchlists
+    description: Watchlists and watchlist items
+  - name: alerts
+    description: Alerts and preferences
+  - name: tasks
+    description: Tasks and scheduler
+  - name: reports
+    description: Reports
+  - name: options
+    description: Options and scanners
+  - name: chat
+    description: Chat and tools
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Readiness (DB + checks)
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /health/live:
+    get:
+      tags: [health]
+      summary: Liveness (no dependencies)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveResponse"
+
+  /accounts:
+    get:
+      tags: [accounts]
+      summary: List all accounts
+      responses:
+        "200":
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Account"
+    post:
+      tags: [accounts]
+      summary: Create account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountCreate"
+      responses:
+        "201":
+          description: Created account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts/{id}:
+    get:
+      tags: [accounts]
+      summary: Get account by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          description: Invalid id
+        "404":
+          description: Not found
+    put:
+      tags: [accounts]
+      summary: Update account
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountUpdate"
+      responses:
+        "200":
+          description: Updated account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          description: Invalid id or validation
+        "404":
+          description: Not found
+    delete:
+      tags: [accounts]
+      summary: Delete account
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "400":
+          description: Invalid id
+        "404":
+          description: Not found
+
+  /market:
+    get:
+      tags: [market]
+      summary: Market conditions
+      responses:
+        "200":
+          description: Market status and indices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketConditions"
+  /dashboard:
+    get:
+      tags: [dashboard]
+      summary: Dashboard summary
+      responses:
+        "200":
+          description: Portfolio and stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardResponse"
+  /dashboard/timeline:
+    get:
+      tags: [dashboard]
+      summary: Portfolio value timeline
+      parameters:
+        - name: range
+          in: query
+          schema:
+            type: string
+            enum: [1w, 1mo, 1yr]
+            default: 1mo
+      responses:
+        "200":
+          description: Timeline points
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineResponse"
+  /profile:
+    get:
+      tags: [profile]
+      summary: Get profile
+      responses:
+        "200":
+          description: Profile config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+  /app-config:
+    get:
+      tags: [app-config]
+      summary: Get app config
+      responses:
+        "200":
+          description: Cleanup and storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppConfigResponse"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        version:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        checks:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/HealthCheck"
+    HealthCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        message:
+          type: string
+        latencyMs:
+          type: integer
+        connectionDisplay:
+          type: string
+        database:
+          type: string
+    LiveResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        timestamp:
+          type: string
+          format: date-time
+
+    Account:
+      type: object
+      required: [_id, name, balance, riskLevel, strategy, positions, recommendations]
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        accountRef:
+          type: string
+        brokerType:
+          type: string
+          enum: [Merrill, Fidelity]
+        balance:
+          type: number
+        riskLevel:
+          type: string
+          enum: [low, medium, high]
+        strategy:
+          type: string
+          enum: [growth, income, balanced, aggressive]
+        positions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Position"
+        recommendations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Recommendation"
+    Position:
+      type: object
+      properties:
+        _id:
+          type: string
+        type:
+          type: string
+          enum: [stock, option, cash]
+        ticker:
+          type: string
+        shares:
+          type: number
+        purchasePrice:
+          type: number
+        currentPrice:
+          type: number
+        strike:
+          type: number
+        expiration:
+          type: string
+        optionType:
+          type: string
+          enum: [call, put]
+        contracts:
+          type: number
+        premium:
+          type: number
+        amount:
+          type: number
+        currency:
+          type: string
+    Recommendation:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [buy, sell, hold]
+        ticker:
+          type: string
+        reason:
+          type: string
+        confidence:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+
+    AccountCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        accountRef:
+          type: string
+        brokerType:
+          type: string
+          enum: [Merrill, Fidelity]
+        balance:
+          type: number
+          default: 0
+        riskLevel:
+          type: string
+          enum: [low, medium, high]
+          default: medium
+        strategy:
+          type: string
+          enum: [growth, income, balanced, aggressive]
+          default: balanced
+    AccountUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        accountRef:
+          type: string
+        brokerType:
+          type: string
+          enum: [Merrill, Fidelity]
+        balance:
+          type: number
+        riskLevel:
+          type: string
+          enum: [low, medium, high]
+        strategy:
+          type: string
+          enum: [growth, income, balanced, aggressive]
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+    MarketIndex:
+      type: object
+      properties:
+        symbol:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        change:
+          type: number
+        changePercent:
+          type: number
+    MarketConditions:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [open, closed, pre-market, after-hours]
+        indices:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketIndex"
+        lastUpdated:
+          type: string
+          format: date-time
+    DashboardResponse:
+      type: object
+      properties:
+        portfolio:
+          $ref: "#/components/schemas/PortfolioSummary"
+        stats:
+          $ref: "#/components/schemas/DashboardStats"
+    PortfolioSummary:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Account"
+        totalValue:
+          type: number
+        dailyChange:
+          type: number
+        dailyChangePercent:
+          type: number
+    DashboardStats:
+      type: object
+      properties:
+        totalValue:
+          type: number
+        dailyChange:
+          type: number
+        dailyChangePercent:
+          type: number
+        totalCostBasis:
+          type: number
+        unrealizedPnL:
+          type: number
+        roiPercent:
+          type: number
+        accountCount:
+          type: integer
+        positionCount:
+          type: integer
+        recommendationCount:
+          type: integer
+    TimelineResponse:
+      type: object
+      properties:
+        points:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              value:
+                type: number
+    Profile:
+      type: object
+      properties:
+        displayTimezone:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    AppConfigResponse:
+      type: object
+      properties:
+        cleanup:
+          type: object
+          properties:
+            storageLimitMB:
+              type: number
+            purgeThreshold:
+              type: number
+            purgeIntervalDays:
+              type: number
+        storage:
+          type: object
+          properties:
+            dataSizeMB:
+              type: number
+            percentOfLimit:
+              type: number

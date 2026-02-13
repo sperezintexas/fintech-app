@@ -7,12 +7,12 @@ const runScheduler = process.env.JOB_RUNNER !== "false";
 
 module.exports = {
   apps: [
-    { name: "web", script: "npm", args: "start", env: { NODE_ENV: "production" } },
+    { name: "web", script: "pnpm", args: ["-C", "apps/frontend", "run", "start"], env: { NODE_ENV: "production" }, cwd: "/app" },
     ...(runScheduler
       ? [
           {
             name: "scheduler",
-            script: "npm",
+            script: "pnpm",
             args: ["run", "start:scheduler"],
             autorestart: true,
             max_restarts: 10,

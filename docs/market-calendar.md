@@ -2,6 +2,10 @@
 
 US equity market calendar (NYSE/NASDAQ style), used for market open/closed state across the app (e.g. Yahoo market conditions, price cache TTL, scheduler).
 
+The **tracker** (dashboard) shows market status on the **home page**: a **market open/closed status pill** in the Market Conditions block (see [Goal Progress](goal-progress.md) for how the rest of the tracker uses goals and portfolio summary).
+
+Goal configuration (e.g. $1M by 2030) is under **Setup → Goals**.
+
 ## Source
 
 - **Module:** `src/lib/market-calendar.ts`
@@ -36,4 +40,4 @@ All times use `America/New_York` (EST/EDT).
 
 - **Yahoo market conditions** (`src/lib/yahoo.ts`) — `getMarketStatus()` delegates to `getMarketState()`.
 - **Holdings price cache** (`src/lib/holdings-price-cache.ts`) — `isMarketHours()` uses the calendar for cache TTL and is re-exported for the scheduler.
-- **Home page** — Market Conditions block shows a status pill (Market Open / Closed / Pre-Market / After Hours) from the API when loaded; `MarketStatusPill` uses the calendar client-side so status is visible while market data is loading.
+- **Home page (Dashboard)** — Market snapshot includes a **market open/closed status pill** (Market Open / Closed / Pre-Market / After Hours). The Market Conditions block uses the calendar; `MarketStatusPill` uses it client-side so status is visible while market data is loading. The same page shows portfolio summary and goal probability (see [Goal Progress](goal-progress.md)).

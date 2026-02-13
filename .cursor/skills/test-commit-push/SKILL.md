@@ -1,6 +1,6 @@
 ---
 name: test-commit-push
-version: "1.0.6"
+version: "1.0.7"
 description: Safe local dev → git workflow. Run tests, typecheck, lint, gitleaks; fix failures; bump app version when asked; generate conventional commit; suggest git add/commit/push. Use when preparing to commit, pushing changes, or when the user asks to test-commit-push.
 ---
 
@@ -10,11 +10,10 @@ Safe, fast local development → git workflow. Follow this exact sequence — do
 
 ## 1. Validate (Simulate / Run)
 
-Run these in order and reason about results:
+Run these in order and reason about results (from repo root):
 
-- `npm test` (or `vitest run`, `jest` — whichever the project uses)
-- `npm run typecheck` or `npx tsc --noEmit`
-- `npm run lint` (or `eslint src`)
+- **pnpm projects:** `pnpm test`, `pnpm run typecheck`, `pnpm run lint`
+- **npm-only:** `npm test` (or `vitest run`, `jest`), `npm run typecheck` or `npx tsc --noEmit`, `npm run lint` (or `eslint src`)
 - **Secrets check:** `pre-commit run gitleaks --all-files` or `gitleaks protect --no-git --config .gitleaks.toml --staging` (if pre-commit not installed). Must pass before commit so the commit hook does not block.
 
 **Never assume tests pass without reasoning.** Inspect output and mentally verify.
@@ -35,9 +34,11 @@ Pre-commit hooks (including gitleaks) will run on `git commit`. Running the gitl
 
 If the user asks to **bump app version** (or "bump version", "update version"):
 
-1. **Before** `git add`, run: `npm version patch --no-git-tag-version`
-2. This updates `package.json` (and `package-lock.json` if present). Include those files in the commit.
-3. Optionally mention the new version in the commit message, e.g. `feat(scheduler): improve Manage Jobs UI; bump v1.1.9`
+1. **Before** `git add`, bump the version:
+   - **Single package:** `npm version patch --no-git-tag-version` (updates `package.json` and optionally `package-lock.json`).
+   - **pnpm workspace with frontend app:** Bump both root `package.json` and `apps/frontend/package.json` to the same new version (e.g. `2.0.0` → `2.0.1`). Root holds the workspace; frontend version is used for `NEXT_PUBLIC_APP_VERSION`. Run from root: `npm version patch --no-git-tag-version`, then set the same `"version"` in `apps/frontend/package.json`.
+2. Include updated `package.json` (and lockfile if changed) in the commit.
+3. Optionally mention the new version in the commit message, e.g. `chore(release): bump v2.0.1`
 
 ### Conventional Commit Message (One Line)
 
@@ -68,4 +69,4 @@ For a new branch: `git push --set-upstream origin <branch>` instead of `git push
 
 - **Never run destructive commands**: no `rebase -i`, `reset --hard`, `push --force`, etc.
 - **Current branch**: Assume user is on a feature/bugfix branch unless told otherwise
-- **Project context**: Next.js, TypeScript, npm; typically vitest or jest
+- **Project context**: Next.js, TypeScript; pnpm workspace (root + apps/frontend) or npm; typically vitest or jest

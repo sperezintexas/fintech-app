@@ -98,7 +98,7 @@ Format can align with [Ghostfolio’s Import API](https://github.com/ghostfolio/
 
 ## Brokers supported
 
-**Merrill** and **Fidelity** only. **Builder workflow** (no intermediate JSON).
+**Merrill** and **Fidelity** only. **Builder workflow** (no intermediate JSON). For step-by-step export from Merrill (Activity/Holdings, settings, date range), see [How to export from Merrill Lynch](./merrill-export.md).
 
 ### Mapping: accountRef
 

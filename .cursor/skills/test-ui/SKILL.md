@@ -28,7 +28,7 @@ pnpm test:e2e:ui
 
 ## What’s Covered (Smoke)
 
-- Home, Dashboard, Watchlist, Holdings, xStrategyBuilder, Automation, Job Types, Smart Grok (Chat)
+- Home, Dashboard, Watchlist, Holdings, xStrategyBuilder, Automation, Task Types, Smart Grok (Chat)
 - Navigation links and top-nav page content
 - Automation tabs: Alert Settings, Strategy, Scheduled Jobs
 - Alerts page: heading, account filter, Clear All
