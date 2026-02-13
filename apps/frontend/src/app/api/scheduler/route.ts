@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
         const firstAccount = await db.collection("accounts").findOne({});
         const accountId = firstAccount?._id.toString() ?? undefined;
         await runBuiltInJob("unifiedOptionsScanner", { accountId });
-        await runBuiltInJob("deliverAlerts", { accountId });
+        await runBuiltInJob("deliverAlerts", {}); // portfolio-level: all accounts (matches recommended job accountId: null)
         await runJobNow("watchlistreport", accountId ? { accountId } : {});
 
         return NextResponse.json({
