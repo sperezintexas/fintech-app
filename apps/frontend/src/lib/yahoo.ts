@@ -302,6 +302,22 @@ export type OptionMetrics = {
   delta?: number;
 };
 
+/** Normalize expiration to YYYY-MM-DD for comparison and API. Handles YYYY-MM-DD, YYYYMMDD, YYMMDD. */
+function normalizeExpiration(expiration: string): string {
+  const s = expiration.trim().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const digits = expiration.replace(/\D/g, "").slice(-8);
+  if (digits.length === 8) {
+    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+  if (digits.length === 6) {
+    const yy = parseInt(digits.slice(0, 2), 10);
+    const year = yy >= 0 && yy <= 50 ? 2000 + yy : 1900 + yy;
+    return `${year}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`;
+  }
+  return s;
+}
+
 export async function getOptionMetrics(
   symbol: string,
   expiration: string,
@@ -313,11 +329,13 @@ export async function getOptionMetrics(
     const stockPrice = stockQuote?.regularMarketPrice ?? 0;
     if (!stockPrice) return null;
 
-    const chain = await yahooFinance.options(symbol.toUpperCase());
+    const expNorm = normalizeExpiration(expiration);
+    const expDate = new Date(expNorm + "T12:00:00Z");
+    const chain = await yahooFinance.options(symbol.toUpperCase(), { date: expDate });
     const opts = (chain as { options?: { expirationDate: Date; calls: unknown[]; puts: unknown[] }[] }).options;
     if (!opts?.length) return null;
 
-    const expTarget = expiration.slice(0, 10);
+    const expTarget = expNorm.slice(0, 10);
     const group = opts.find((g) => {
       const d = g.expirationDate instanceof Date ? g.expirationDate : new Date(g.expirationDate);
       return d.toISOString().slice(0, 10) === expTarget;

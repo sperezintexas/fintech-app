@@ -233,6 +233,31 @@ When deployments fail with **Invalid Access Role in AuthenticationConfiguration*
 
 ---
 
+## Health check failed / Container exit code 1
+
+When you see **"Your application stopped or failed to start"** and **"Container exit code: 1"** or **"Health check failed"**:
+
+1. **Get application logs** (exact error is in the logs)
+   - **Console:** App Runner → your service → **Logs** tab → Application logs (and Deployment logs).
+   - **CLI:** Use the **Log group** from the service (e.g. `/aws/apprunner/…`) in CloudWatch Logs, or run a new deployment and watch the deployment log stream.
+
+2. **Run only the web app** (rule out scheduler crash)
+   - In App Runner → Configure → Environment variables, add **`JOB_RUNNER`** = **`false`**. Save and trigger a new deployment.
+   - The container runs only the Next.js web process; the scheduler (which needs MongoDB and can exit 1 if env is wrong) is not started. If the deployment turns **Running**, the crash was likely the scheduler (e.g. missing or unreachable `MONGODB_URI`). You can run the scheduler elsewhere or fix MongoDB/`AGENDA_MASTER` and set `JOB_RUNNER` back later.
+
+3. **Required env vars**
+   - Ensure **`MONGODB_URI`**, **`NEXTAUTH_URL`** (your App Runner URL, e.g. `https://xxxxx.us-east-1.awsapprunner.com`), and **`NEXTAUTH_SECRET`** (or **`AUTH_SECRET`**) are set in App Runner. Missing or wrong `NEXTAUTH_URL` can cause auth to misbehave; the app may still start, but other routes can fail.
+
+4. **Use TCP health check temporarily**
+   - If the app starts but the HTTP health check times out or fails, switch to TCP so App Runner only checks that port 3000 is open:
+     ```bash
+     aws apprunner update-service --service-arn YOUR_ARN --region us-east-1 \
+       --health-check-configuration "Protocol=TCP,Interval=10,Timeout=5,HealthyThreshold=1,UnhealthyThreshold=5"
+     ```
+     Then start a new deployment. Once the service is **Running**, you can switch back to HTTP path `/api/health/live` in the console if you prefer.
+
+---
+
 ## Quick checklist
 
 | Step | What | Done? |

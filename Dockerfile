@@ -38,7 +38,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps ./apps
 COPY --from=builder --chown=nextjs:nodejs /app/config ./config
 
 # pm2-runtime for multi-process (web + scheduler)
-RUN corepack enable && corepack prepare pnpm@9 --activate
+RUN corepack enable && corepack prepare pnpm@9 --activate && npm install -g pm2@5
 COPY --chown=nextjs:nodejs ecosystem.config.js ./
 
 USER nextjs

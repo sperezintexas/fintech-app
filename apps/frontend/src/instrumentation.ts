@@ -8,6 +8,11 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const { ensureEnv } = await import("@/lib/env");
-  ensureEnv();
+  try {
+    const { ensureEnv } = await import("@/lib/env");
+    ensureEnv();
+  } catch (err) {
+    console.error("[instrumentation] ensureEnv failed:", err);
+    throw err;
+  }
 }

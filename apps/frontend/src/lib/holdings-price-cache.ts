@@ -14,6 +14,12 @@ function getUnderlyingFromTicker(ticker: string): string {
   return ticker?.replace(/\d.*$/, "").toUpperCase() ?? ticker?.toUpperCase() ?? "";
 }
 
+/** Merrill-style cash/money market tickers (e.g. IIAXX) are not on Yahoo; skip fetch and use placeholder. */
+function isYahooUnsupportedTicker(symbol: string): boolean {
+  const u = symbol?.toUpperCase() ?? "";
+  return u === "IIAXX" || /^[A-Z]+XX$/i.test(u);
+}
+
 function getHeldSymbolsFromAccounts(accounts: Array<{ positions?: Position[] }>): Set<string> {
   const set = new Set<string>();
   for (const acc of accounts) {
@@ -79,13 +85,16 @@ export async function refreshHoldingsPricesStock(): Promise<{
 
   const symbols = getHeldSymbolsFromAccounts(accounts);
   const symbolList = Array.from(symbols).filter(Boolean);
+  const yahooSymbols = symbolList.filter((s) => !isYahooUnsupportedTicker(s));
+  const skippedSymbols = symbolList.filter((s) => isYahooUnsupportedTicker(s));
+
   if (symbolList.length === 0) {
     return { symbolsRequested: 0, symbolsUpdated: 0 };
   }
 
   let priceMap: Map<string, { price: number; change: number; changePercent: number }>;
   try {
-    priceMap = await getMultipleTickerPrices(symbolList);
+    priceMap = await getMultipleTickerPrices(yahooSymbols);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[holdings-price-cache] getMultipleTickerPrices failed:", msg);
@@ -104,6 +113,23 @@ export async function refreshHoldingsPricesStock(): Promise<{
           price: data.price,
           change: data.change,
           changePercent: data.changePercent,
+          updatedAt: now,
+        },
+      },
+      { upsert: true }
+    );
+    updated++;
+  }
+  // Placeholder for Merrill-style cash tickers (IIAXX, *XX) not on Yahoo
+  for (const symbol of skippedSymbols) {
+    await coll.updateOne(
+      { symbol: symbol.toUpperCase() },
+      {
+        $set: {
+          symbol: symbol.toUpperCase(),
+          price: 1,
+          change: 0,
+          changePercent: 0,
           updatedAt: now,
         },
       },
