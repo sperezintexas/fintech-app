@@ -467,6 +467,53 @@ describe("Straddle/Strangle Analyzer", () => {
       expect(alertsCreated).toBe(1);
     });
 
+    it("stores recommendations and creates alerts for ADD", async () => {
+      const mockInsertOne = vi.fn().mockResolvedValue({ insertedId: "id1" });
+      vi.mocked(getDb).mockResolvedValue({
+        collection: vi.fn().mockReturnValue({
+          insertOne: mockInsertOne,
+        }),
+      } as never);
+
+      const recommendations = [
+        {
+          accountId: "acc1",
+          symbol: "TSLA",
+          callPositionId: "call1",
+          putPositionId: "put1",
+          isStraddle: true,
+          recommendation: "ADD" as const,
+          confidence: "MEDIUM" as const,
+          reason: "High IV rank, add to position",
+          metrics: {
+            stockPrice: 255,
+            callBid: 4,
+            callAsk: 4.2,
+            putBid: 3.5,
+            putAsk: 3.7,
+            dte: 35,
+            netCurrentValue: 770,
+            combinedTheta: -0.3,
+            netVega: 0.6,
+            upperBreakeven: 265,
+            lowerBreakeven: 235,
+            requiredMovePercent: 4,
+            ivRankCurrent: 75,
+            ivVsHvDiff: 5,
+            unrealizedPl: 270,
+          },
+          createdAt: new Date().toISOString(),
+        },
+      ];
+
+      const { stored, alertsCreated } = await storeStraddleStrangleRecommendations(recommendations, {
+        createAlerts: true,
+      });
+
+      expect(stored).toBe(1);
+      expect(alertsCreated).toBe(1);
+    });
+
     it("does not create alerts for HOLD", async () => {
       const mockInsertOne = vi.fn().mockResolvedValue({ insertedId: "id1" });
       vi.mocked(getDb).mockResolvedValue({

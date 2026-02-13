@@ -55,7 +55,7 @@ describe("Unified Options Scanner", () => {
       undefined,
       expect.any(Map)
     );
-    expect(straddleStrangleAnalyzer.analyzeStraddlesAndStrangles).toHaveBeenCalledWith("acc1");
+    expect(straddleStrangleAnalyzer.analyzeStraddlesAndStrangles).toHaveBeenCalledWith("acc1", undefined);
 
     expect(result.optionScanner.scanned).toBe(1);
     expect(result.optionScanner.stored).toBe(1);
@@ -70,6 +70,7 @@ describe("Unified Options Scanner", () => {
       optionScanner: { holdDteMin: 21 },
       coveredCall: { minPremium: 1.5 },
       protectivePut: { minYield: 25 },
+      straddleStrangle: { riskLevel: "low" as const },
     };
 
     await runUnifiedOptionsScanner("acc2", config);
@@ -85,6 +86,9 @@ describe("Unified Options Scanner", () => {
       { minYield: 25 },
       expect.any(Map)
     );
+    expect(straddleStrangleAnalyzer.analyzeStraddlesAndStrangles).toHaveBeenCalledWith("acc2", {
+      riskLevel: "low",
+    });
   });
 
   it("returns zeros when no positions", async () => {

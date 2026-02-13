@@ -74,6 +74,12 @@ function getDeliveryStatusLabel(deliveryStatus?: AlertRecordServer["deliveryStat
   return "Pending";
 }
 
+/** Broker login/home URLs — open in new tab. */
+const BROKER_URLS: Record<string, string> = {
+  Merrill: "https://www.merrilledge.com",
+  Fidelity: "https://www.fidelity.com",
+};
+
 const JOB_TYPE_OPTIONS = [
   { value: "", label: "All types" },
   { value: "daily-analysis", label: "Daily Analysis" },
@@ -408,7 +414,9 @@ function AlertCard({
   const severity = alert.severity ?? "info";
   const hasDetails = alert.details && typeof alert.details === "object";
   const hasMetrics = alert.metrics && typeof alert.metrics === "object";
-  const accountLabel = alert.accountName ?? (alert.accountId ? accounts.find((a) => a._id === alert.accountId)?.name : undefined) ?? alert.accountId;
+  const account = alert.accountId ? accounts.find((a) => a._id === alert.accountId) : undefined;
+  const accountLabel = alert.accountName ?? account?.name ?? alert.accountId;
+  const brokerUrl = account?.brokerType ? BROKER_URLS[account.brokerType] : undefined;
 
   return (
     <div
@@ -419,9 +427,20 @@ function AlertCard({
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className="font-bold text-lg">{alert.symbol}</span>
             {accountLabel && (
-              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800">
-                {accountLabel}
-              </span>
+              brokerUrl ? (
+                <a
+                  href={brokerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800 hover:bg-sky-200 transition-colors"
+                >
+                  {accountLabel}
+                </a>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800">
+                  {accountLabel}
+                </span>
+              )
             )}
             <span
               className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRecommendationBadge(alert.recommendation)}`}

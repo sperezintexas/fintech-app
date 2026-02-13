@@ -1024,6 +1024,10 @@ export async function storeCoveredCallRecommendations(
         ...rec.metrics,
         ...(rec.entryPremium != null && { unitCost: rec.entryPremium }),
       };
+      const isBtcItmOrHighAssignment =
+        rec.recommendation === "BUY_TO_CLOSE" &&
+        ((rec.metrics.assignmentProbability ?? 0) >= 70 || rec.metrics.moneyness === "ITM");
+      const severity = isBtcItmOrHighAssignment ? "critical" : "warning";
       const alert: Record<string, unknown> = {
         type: "covered-call",
         accountId: rec.accountId,
@@ -1032,7 +1036,7 @@ export async function storeCoveredCallRecommendations(
         recommendation: rec.recommendation,
         reason: rec.reason,
         metrics,
-        severity: "warning",
+        severity,
         createdAt: new Date().toISOString(),
         acknowledged: false,
       };

@@ -228,9 +228,13 @@ export async function getStraddleStranglePositions(
   return pairs;
 }
 
+/** Config for straddle/strangle scanner (e.g. from unified job config). */
+export type StraddleStrangleRunConfig = { riskLevel?: "low" | "medium" | "high" };
+
 /** Main analysis: evaluate pairs, return recommendations. */
 export async function analyzeStraddlesAndStrangles(
-  accountId?: string
+  accountId?: string,
+  config?: StraddleStrangleRunConfig
 ): Promise<StraddleStrangleRecommendation[]> {
   const pairs = await getStraddleStranglePositions(accountId);
   const recommendations: StraddleStrangleRecommendation[] = [];
@@ -279,7 +283,7 @@ export async function analyzeStraddlesAndStrangles(
 
       const db = await getDb();
       const account = await db.collection<AccountDoc>("accounts").findOne({ _id: new ObjectId(pair.accountId) });
-      const riskLevel = account?.riskLevel ?? "medium";
+      const riskLevel = config?.riskLevel ?? account?.riskLevel ?? "medium";
 
       const { recommendation, confidence, reason } = applyStraddleStrangleRules({
         dte,
@@ -366,7 +370,10 @@ export async function storeStraddleStrangleRecommendations(
     });
     stored++;
 
-    if (options?.createAlerts && (rec.recommendation === "SELL_TO_CLOSE" || rec.recommendation === "ROLL")) {
+    if (
+      options?.createAlerts &&
+      (rec.recommendation === "SELL_TO_CLOSE" || rec.recommendation === "ROLL" || rec.recommendation === "ADD")
+    ) {
       const accountName = await getAccountDisplayName(db, rec.accountId);
       const alert = {
         type: "straddle-strangle",

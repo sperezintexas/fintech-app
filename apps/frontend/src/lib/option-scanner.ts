@@ -468,6 +468,13 @@ export async function storeOptionRecommendations(
     if (options?.createAlerts && rec.recommendation === "BUY_TO_CLOSE") {
       const accountName = await getAccountDisplayName(db, rec.accountId);
       const reason = buildOptionScannerAlertSummary(rec);
+      const isItmShortCall =
+        rec.optionType === "call" &&
+        rec.strike != null &&
+        rec.metrics.underlyingPrice >= rec.strike;
+      const highAssignment =
+        (rec.metrics.assignmentProbability ?? 0) >= 70;
+      const severity = isItmShortCall || highAssignment ? "critical" : "warning";
       const alert = {
         type: "option-scanner",
         positionId: rec.positionId,
@@ -477,7 +484,7 @@ export async function storeOptionRecommendations(
         recommendation: rec.recommendation,
         reason,
         metrics: { ...rec.metrics, ...(rec.unitCost != null && { unitCost: rec.unitCost }) },
-        severity: "warning",
+        severity,
         createdAt: new Date().toISOString(),
         acknowledged: false,
       };

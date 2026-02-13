@@ -68,12 +68,24 @@ export const cspAnalysisConfigSchema = z
 
 export type CspAnalysisConfig = z.infer<typeof cspAnalysisConfigSchema>;
 
+/** Straddle/Strangle Scanner config (straddleStrangle nested in unifiedOptionsScanner) */
+export const straddleStrangleScannerConfigSchema = z
+  .object({
+    /** Override risk level for rule thresholds (e.g. low → more conservative SELL_TO_CLOSE). */
+    riskLevel: z.enum(["low", "medium", "high"]).optional(),
+  })
+  .strict()
+  .optional();
+
+export type StraddleStrangleScannerConfig = z.infer<typeof straddleStrangleScannerConfigSchema>;
+
 /** Unified Options Scanner config (runs all 4 scanners with optional per-scanner overrides) */
 export const unifiedOptionsScannerConfigSchema = z
   .object({
     optionScanner: optionScannerConfigSchema.optional(),
     coveredCall: coveredCallScannerConfigSchema.optional(),
     protectivePut: cspAnalysisConfigSchema.optional(),
+    straddleStrangle: straddleStrangleScannerConfigSchema.optional(),
   })
   .strict()
   .optional();

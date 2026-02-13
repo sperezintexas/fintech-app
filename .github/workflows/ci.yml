@@ -199,17 +199,17 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
+          APP_RUNNER_SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
         run: |
           if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
             echo "::error::AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY secrets must be set."
             exit 1
           fi
-          if [ -z "$SERVICE_ARN" ]; then
+          if [ -z "$APP_RUNNER_SERVICE_ARN" ]; then
             echo "::error::APP_RUNNER_SERVICE_ARN variable not set. Add it in Settings → Actions → Variables."
             exit 1
           fi
-          case "$SERVICE_ARN" in
+          case "$APP_RUNNER_SERVICE_ARN" in
             arn:aws:apprunner:*)
               ;;
             *)
@@ -278,27 +278,27 @@ jobs:
       - name: Deploy to App Runner
         id: deploy
         env:
-          SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
+          APP_RUNNER_SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
         run: |
-          SVC_STATUS=$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'Service.Status' --output text 2>/dev/null || echo "UNKNOWN")
+          SVC_STATUS=$(aws apprunner describe-service --service-arn "$APP_RUNNER_SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'Service.Status' --output text 2>/dev/null || echo "UNKNOWN")
           if [ "$SVC_STATUS" != "RUNNING" ]; then
             echo "::error::App Runner service is not RUNNING (current: $SVC_STATUS). Start deployment only works when the service is RUNNING."
             echo "In AWS Console → App Runner → your service: fix any errors (e.g. CREATE_FAILED, bad image), resume if paused, then re-run this workflow."
             exit 1
           fi
-          OP_ID=$(aws apprunner start-deployment --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'OperationId' --output text)
+          OP_ID=$(aws apprunner start-deployment --service-arn "$APP_RUNNER_SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'OperationId' --output text)
           echo "operation_id=$OP_ID" >> $GITHUB_OUTPUT
           echo "Deployment started (operation $OP_ID); waiting for completion..."
 
       - name: Wait for App Runner deployment
         env:
-          SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
+          APP_RUNNER_SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
           OPERATION_ID: ${{ steps.deploy.outputs.operation_id }}
         run: |
           MAX_ATTEMPTS=45
           SLEEP_SEC=10
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            STATUS=$(aws apprunner list-operations --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query "OperationSummaryList[?Id=='$OPERATION_ID'].Status | [0]" --output text 2>/dev/null || echo "UNKNOWN")
+            STATUS=$(aws apprunner list-operations --service-arn "$APP_RUNNER_SERVICE_ARN" --region ${{ env.AWS_REGION }} --query "OperationSummaryList[?Id=='$OPERATION_ID'].Status | [0]" --output text 2>/dev/null || echo "UNKNOWN")
             [ -z "$STATUS" ] || [ "$STATUS" = "None" ] && STATUS="PENDING"
             case "$STATUS" in
               SUCCEEDED)
@@ -322,12 +322,12 @@ jobs:
         id: url
         env:
           APP_URL_VAR: ${{ vars.APP_URL }}
-          SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
+          APP_RUNNER_SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
         run: |
           if [ -n "$APP_URL_VAR" ]; then
             echo "url=$APP_URL_VAR" >> $GITHUB_OUTPUT
           else
-            SVC_URL=$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'Service.ServiceUrl' --output text)
+            SVC_URL=$(aws apprunner describe-service --service-arn "$APP_RUNNER_SERVICE_ARN" --region ${{ env.AWS_REGION }} --query 'Service.ServiceUrl' --output text)
             echo "url=https://$SVC_URL" >> $GITHUB_OUTPUT
           fi
 

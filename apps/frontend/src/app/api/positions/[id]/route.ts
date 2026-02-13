@@ -74,23 +74,25 @@ export async function PUT(
     const db = await getDb();
     type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
 
-    // Update the position within the account's positions array
+    // Update the position within the account's positions array (include amount for cash)
+    const setPayload: Record<string, unknown> = {
+      "positions.$.type": positionData.type,
+      "positions.$.ticker": positionData.ticker,
+      "positions.$.shares": positionData.shares,
+      "positions.$.purchasePrice": positionData.purchasePrice,
+      "positions.$.currentPrice": positionData.currentPrice,
+      "positions.$.strike": positionData.strike,
+      "positions.$.expiration": positionData.expiration,
+      "positions.$.optionType": positionData.optionType,
+      "positions.$.contracts": positionData.contracts,
+      "positions.$.premium": positionData.premium,
+    };
+    if (positionData.amount !== undefined) {
+      setPayload["positions.$.amount"] = positionData.amount;
+    }
     const result = await db.collection<AccountDoc>("accounts").updateOne(
       { _id: new ObjectId(accountId), "positions._id": id },
-      {
-        $set: {
-          "positions.$.type": positionData.type,
-          "positions.$.ticker": positionData.ticker,
-          "positions.$.shares": positionData.shares,
-          "positions.$.purchasePrice": positionData.purchasePrice,
-          "positions.$.currentPrice": positionData.currentPrice,
-          "positions.$.strike": positionData.strike,
-          "positions.$.expiration": positionData.expiration,
-          "positions.$.optionType": positionData.optionType,
-          "positions.$.contracts": positionData.contracts,
-          "positions.$.premium": positionData.premium,
-        },
-      } as Record<string, unknown>
+      { $set: setPayload }
     );
 
     if (result.matchedCount === 0) {

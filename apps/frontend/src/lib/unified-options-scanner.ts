@@ -19,13 +19,17 @@ import {
   storeStraddleStrangleRecommendations,
 } from "./straddle-strangle-analyzer";
 import type { OptionScannerConfig } from "@/types/portfolio";
-import type { CoveredCallScannerConfig } from "@/lib/job-config-schemas";
-import type { CspAnalysisConfig } from "@/lib/job-config-schemas";
+import type {
+  CoveredCallScannerConfig,
+  CspAnalysisConfig,
+  StraddleStrangleScannerConfig,
+} from "@/lib/job-config-schemas";
 
 export type UnifiedOptionsScannerConfig = {
   optionScanner?: OptionScannerConfig;
   coveredCall?: CoveredCallScannerConfig;
   protectivePut?: CspAnalysisConfig;
+  straddleStrangle?: StraddleStrangleScannerConfig;
 };
 
 export type ScannerError = { scanner: string; message: string };
@@ -212,6 +216,7 @@ export async function runUnifiedOptionsScanner(
   const optConfig = merged.optionScanner;
   const ccConfig = merged.coveredCall;
   const ppConfig = merged.protectivePut;
+  const ssConfig = merged.straddleStrangle;
 
   const symbols = await getSymbolsForOptionChainCache(accountId, merged);
   const optionChainMap = await fetchOptionChainCache(symbols);
@@ -269,7 +274,7 @@ export async function runUnifiedOptionsScanner(
     const name = "straddleStrangleScanner";
     console.time(name);
     try {
-      const recs = await analyzeStraddlesAndStrangles(accountId);
+      const recs = await analyzeStraddlesAndStrangles(accountId, ssConfig);
       console.timeEnd(name);
       return { scanner: name, recs };
     } catch (e) {
