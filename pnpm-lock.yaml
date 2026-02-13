@@ -7,6 +7,24 @@ settings:
 importers:
 
   .:
+    devDependencies:
+      '@types/node':
+        specifier: ^25.0.10
+        version: 25.2.2
+      mongodb:
+        specifier: ^7.0.0
+        version: 7.1.0(@aws-sdk/credential-providers@3.985.0)(socks@2.8.7)
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@types/node@25.2.2)(typescript@5.9.3)
+      tsconfig-paths:
+        specifier: ^4.2.0
+        version: 4.2.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  apps/frontend:
     dependencies:
       '@tailwindcss/postcss':
         specifier: ^4.1.18
@@ -59,12 +77,6 @@ importers:
       tailwindcss:
         specifier: ^4.1.18
         version: 4.1.18
-      ts-node:
-        specifier: ^10.9.2
-        version: 10.9.2(@types/node@25.2.2)(typescript@5.9.3)
-      tsconfig-paths:
-        specifier: ^4.2.0
-        version: 4.2.0
       twitter-api-v2:
         specifier: ^1.29.0
         version: 1.29.0
@@ -120,6 +132,8 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@25.2.2)(jiti@2.6.1)(jsdom@28.0.0)(lightningcss@1.30.2)
+
+  apps/smart-scheduler: {}
 
 packages:
 

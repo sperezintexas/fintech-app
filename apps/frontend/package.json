@@ -1,0 +1,60 @@
+{
+  "name": "myinvestments-web",
+  "version": "2.0.4",
+  "private": true,
+  "scripts": {
+    "dev": "NODE_OPTIONS='--no-deprecation' next dev",
+    "build": "NODE_OPTIONS='--no-deprecation' next build",
+    "start": "NODE_OPTIONS='--no-deprecation' next start",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:scanner": "vitest run src/lib/__tests__/option-scanner.test.ts src/lib/__tests__/covered-call-analyzer.test.ts src/lib/__tests__/protective-put-analyzer.test.ts src/lib/__tests__/straddle-strangle-analyzer.test.ts src/lib/__tests__/unified-options-scanner.test.ts",
+    "test:x-hello": "RUN_X_HELLO=1 vitest run src/lib/__tests__/x-hello-world.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^25.0.10",
+    "@types/react": "^19.2.9",
+    "agenda": "^5.0.0",
+    "autoprefixer": "^10.4.23",
+    "cron-parser": "^5.5.0",
+    "cronstrue": "^3.11.0",
+    "mongodb": "^7.0.0",
+    "next": "^16.1.4",
+    "next-auth": "^5.0.0-beta.30",
+    "openai": "^6.17.0",
+    "postcss": "^8.5.6",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "recharts": "^3.7.0",
+    "serpapi": "^2.2.1",
+    "tailwindcss": "^4.1.18",
+    "twitter-api-v2": "^1.29.0",
+    "typescript": "^5.9.3",
+    "web-push": "^3.6.7",
+    "yahoo-finance2": "^3.13.0",
+    "zod": "^3.25.4"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.3",
+    "@eslint/js": "^9.39.2",
+    "@playwright/test": "^1.58.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/web-push": "^3.6.4",
+    "@vitejs/plugin-react": "^5.1.2",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "^16.1.4",
+    "jsdom": "^28.0.0",
+    "typescript-eslint": "^8.53.1",
+    "vitest": "^3.2.4"
+  }
+}

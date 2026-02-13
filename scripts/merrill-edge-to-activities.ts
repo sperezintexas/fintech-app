@@ -14,7 +14,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { parseMerrillCsv } from "../src/lib/merrill-csv";
+import { parseMerrillCsv } from "../apps/frontend/src/lib/merrill-csv";
 
 function main() {
   const args = process.argv.slice(2);

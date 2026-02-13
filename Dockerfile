@@ -1,4 +1,4 @@
-# Multi-stage build: pnpm, non-root user, pm2 (web + smart-scheduler).
+# Multi-stage build: pnpm workspace (apps/frontend = Next.js), non-root user, pm2 (web + smart-scheduler).
 # See .cursor/rules/docker-optimization.mdc and docs/docker-optimization-plan.md.
 # For local (ARM Mac): builds native arm64. For App Runner: build with --platform linux/amd64.
 # ── Builder ───────────────────────────────────────
@@ -7,10 +7,13 @@ WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/frontend/package.json ./apps/frontend/
+COPY apps/smart-scheduler/package.json ./apps/smart-scheduler/
 RUN pnpm install --frozen-lockfile
 
-COPY . .
+COPY apps ./apps
+COPY config ./config
 ARG MONGODB_URI=placeholder
 ARG MONGODB_DB=myinvestments
 ENV MONGODB_URI=$MONGODB_URI MONGODB_DB=$MONGODB_DB
@@ -26,17 +29,16 @@ WORKDIR /app
 # Security: non-root user (mandatory)
 RUN addgroup -S nodejs -g 1001 && adduser -S nextjs -u 1001 -G nodejs
 
-# Copy only needed files (no devDependencies, no .git / tests)
-COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+# Copy workspace and built frontend (no root src/public; they live in apps/frontend)
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/src ./src
+COPY --from=builder --chown=nextjs:nodejs /app/pnpm-workspace.yaml ./
+COPY --from=builder --chown=nextjs:nodejs /app/pnpm-lock.yaml ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps ./apps
 COPY --from=builder --chown=nextjs:nodejs /app/config ./config
 
 # pm2-runtime for multi-process (web + scheduler)
-RUN npm install -g pm2@5
+RUN corepack enable && corepack prepare pnpm@9 --activate
 COPY --chown=nextjs:nodejs ecosystem.config.js ./
 
 USER nextjs

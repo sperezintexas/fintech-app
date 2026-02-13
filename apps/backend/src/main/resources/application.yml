@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: myinvestments-backend
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017}
+      database: ${MONGODB_DB:myinvestments}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+app:
+  version: ${APP_VERSION:}
+  scheduler:
+    enabled: ${SCHEDULER_ENABLED:true}
+    nextjs:
+      url: ${NEXTJS_URL:}
+      cron-secret: ${CRON_SECRET:}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html

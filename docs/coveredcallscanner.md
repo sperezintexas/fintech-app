@@ -135,7 +135,7 @@ Pure function, unit-testable. Inputs: `stockPrice`, `strike`, `dte`, `callBid`, 
 ### UI
 
 - **Automation page:** Job config for `coveredCallScanner` (minPremium, maxDelta, symbols, etc.)
-- **Job Types page:** Covered Call Scanner as report type
+- **Task Types page:** Covered Call Scanner as report type
 - **xStrategyBuilder:** Uses Covered Call Scanner for Review Order flow
 
 ---

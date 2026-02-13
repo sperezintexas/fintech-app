@@ -1,12 +1,6 @@
 # myInvestments
 
-Portfolio and options management: accounts, holdings, real-time market data, and scanner-driven alerts. Built with Next.js, React, TypeScript, and MongoDB.
-
-## Tech Stack
-
-- **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4
-- **Database:** MongoDB
-- **Market data:** Yahoo Finance API
+An Portfolio and options management: accounts, holdings, real-time market data, and scanner-driven alerts using xAI to maximize profits to solve the money problem.
 
 ## Features
 
@@ -19,5 +13,3 @@ Portfolio and options management: accounts, holdings, real-time market data, and
 - **Reports** — Portfolio summary, SmartX AI.
 - **Alerts** — Daily analysis and Unified Options Scanner (HOLD/CLOSE/BTC, roll, etc.); delivery to Slack, X, or push.
 - **Health** — Service status at `/api/health` and `/health`.
-
-For setup, build, CI, and architecture, see **[DEVELOPMENT.md](DEVELOPMENT.md)**. For job types, scanners, and Cursor rules, see **docs/** and **.cursor/rules/**.

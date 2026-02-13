@@ -1,6 +1,8 @@
-# Smart Scheduler (master job runner)
+# Smart Scheduler (master job runner) — **Deprecated**
 
-Standalone Agenda.js worker. **Local/Next.js node is a slave** (schedules only via UI/API); **this process is the master** and is the only one that runs job handlers. The web app uses `src/lib/agenda-client.ts` to enqueue/schedule; it never starts Agenda.
+**Preferred:** Use the Kotlin backend scheduler. Set `NEXTJS_URL` and `CRON_SECRET` on the backend; it reads `reportJobs` from MongoDB and triggers Next.js `/api/internal/run-task`. See root `DEVELOPMENT.md` and `apps/backend/README.md`.
+
+This app is a standalone Agenda.js worker. **Local/Next.js node is a slave** (schedules only via UI/API); **this process is the master** and is the only one that runs job handlers. The web app uses `src/lib/agenda-client.ts` to enqueue/schedule; it never starts Agenda.
 
 - **Slave (local):** Next.js or any node without `AGENDA_MASTER=true` — no job execution.
 - **Master (remote):** Run this app with `AGENDA_MASTER=true` so it starts Agenda and runs jobs.
