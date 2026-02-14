@@ -1,7 +1,7 @@
 # Wheel Strategy App User Guide: Maximizing TSLA-Centric Profits
 
 ## App Purpose
-Leverage wheel strategy on TSLA (current bid/ask ~$400-442) to compound premiums into shares, targeting Merrill's 525 TSLA to 1M by 2030 via 5-15% annualized yields atop EV/AI growth. For Fidelity's $25K, aggressive puts/calls aim 50%+ returns by 2026, focusing xAI/Grok integration, SpaceX defense contracts (via TSLA proxy), amid 2026's robotaxi/defense surge.
+Leverage wheel strategy on TSLA (current bid/ask ~$400-442) to compound premiums into shares, targeting Merrill's 525 TSLA to $10M by 2030 via 5-15% annualized yields atop EV/AI growth. For Fidelity's $25K, aggressive puts/calls aim 50%+ returns by 2026, focusing xAI/Grok integration, SpaceX defense contracts (via TSLA proxy), amid 2026's robotaxi/defense surge.
 
 ## Wheel Strategy Overview
 Cycle sells OTM cash-secured puts (CSPs) for premiums; if assigned, acquire discounted TSLA shares; then sell OTM covered calls (CCs) on holdings. Expires worthless? Repeat. Assigned? Reset with puts. Generates income in neutral/bullish markets, reduces cost basis.
@@ -39,7 +39,7 @@ Capture 80% of premium profit early (e.g., sold $1/contract, buy back at $0.20).
 Allocate 30% of holdings: Sell bi-weekly CCs on 20-30% shares (5-10% OTM, e.g., $450-470 strikes). Reinvest premiums into TSLA shares/LEAPs. Use RSI<30 for CSP entries. Compounds to ~750K shares by 2030 with TSLA's AI/defense earnings (projected $50B+ revenue).
 
 ## Aggressive Merrill Approach (30-50% Returns)
-50%+ allocation: Weekly tighter strikes (2-5% OTM). Roll if delta>0.7. Target 15% premium yields; reinvest all into TSLA for 1M+ shares by 2030, leveraging xAI/Grok synergies.
+50%+ allocation: Weekly tighter strikes (2-5% OTM). Roll if delta>0.7. Target 15% premium yields; reinvest all into TSLA toward $10M by 2030, leveraging xAI/Grok synergies.
 
 ## Aggressive Fidelity High-Risk ($25K to 50%+ by 2026)
 Full allocation to weekly CSPs (-10% strikes) for premiums/assignments; post-assignment, tight CCs (2-5% OTM). Margin borrow 7-9% for LEAPs (2027-2028 OTM). High volatility suits TSLA's 2026 surges; cap margin to avoid liquidation. Potential 100%+ if defense/xAI catalysts hit.

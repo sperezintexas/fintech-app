@@ -58,7 +58,7 @@ export function GoalProbabilityCard() {
         <p className="text-base font-medium sm:text-lg">
           <span className="font-semibold">{percent}%</span>
           {" "}
-          probability of reaching {data.goalLabel ?? "$1M by 2030"}
+          probability of reaching {data.goalLabel ?? "$10M by 2030"}
         </p>
         {updatedAt && (
           <p className="text-xs opacity-80 sm:text-sm">

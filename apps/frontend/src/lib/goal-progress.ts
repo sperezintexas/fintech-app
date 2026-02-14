@@ -1,5 +1,5 @@
 /**
- * Goal progress: probability of reaching configured goal (e.g. $1M by 2030).
+ * Goal progress: probability of reaching configured goal (e.g. $10M by 2030).
  * Computed when risk scanner runs; stored for dashboard display.
  * Target value/year come from Setup > Goals config (see getEffectiveGoalConfig).
  */

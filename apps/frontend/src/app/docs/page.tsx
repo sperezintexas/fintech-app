@@ -21,7 +21,7 @@ const SECTIONS = [
       },
       {
         title: "First steps",
-        body: "After signing in, add at least one account with positions. Use the Dashboard for a portfolio summary and the $1M by 2030 goal probability (updated when the risk scanner runs).",
+        body: "After signing in, add at least one account with positions. Use the Dashboard for a portfolio summary and the goal probability (e.g. $10M by 2030) (updated when the risk scanner runs).",
         links: [{ label: "Dashboard", href: "/" }],
       },
       {
@@ -59,7 +59,7 @@ ENV_FILE=.env.prod pnpm run export-accounts-csv`,
     cards: [
       {
         title: "Dashboard",
-        body: "Market snapshot, portfolio summary, and goal progress. The probability of reaching $1M by 2030 is shown after the greeting when the risk scanner has run.",
+        body: "Market snapshot, portfolio summary, and goal progress. The probability of reaching your goal (e.g. $10M by 2030) is shown after the greeting when the risk scanner has run.",
         links: [{ label: "Open Dashboard", href: "/" }],
       },
       {
@@ -110,8 +110,8 @@ ENV_FILE=.env.prod pnpm run export-accounts-csv`,
         links: [],
       },
       {
-        title: "Goal progress ($1M by 2030)",
-        body: "The dashboard shows a 0–100% probability of reaching $1M by 2030. Updated when the risk scanner runs (daily analysis or manually). Uses Grok when configured, otherwise a simple heuristic.",
+        title: "Goal progress (e.g. $10M by 2030)",
+        body: "The dashboard shows a 0–100% probability of reaching your configured goal (e.g. $10M by 2030). Updated when the risk scanner runs (daily analysis or manually). Uses Grok when configured, otherwise a simple heuristic.",
         links: [],
       },
     ],

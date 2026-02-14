@@ -42,6 +42,8 @@ pnpm install
 
 No need to sync to `~/.gradle/gradle.properties` unless you want backend vars available for other Gradle runs (e.g. from a different working directory). Then run **`pnpm run sync-env-gradle`** to copy backend-related vars from `.env.local` into `~/.gradle/gradle.properties` (optional; see script `scripts/sync-env-gradle.ts`).
 
+See **readme.md** for a user-facing overview and **docs/one-time-setup.md** for full details.
+
 Create `.env.local` from `.env.example`. Minimum for local dev:
 
 ```
@@ -61,6 +63,15 @@ AUTH_SECRET=<generate with: npx auth secret>
 **Production (Sign in with X):** Set `NEXTAUTH_URL` to your production URL; in X Developer Portal set callback URL to `{NEXTAUTH_URL}/api/auth/callback/twitter`. Also set `AUTH_SECRET`, `X_CLIENT_ID`, `X_CLIENT_SECRET`.
 
 **Health:** `/api/health/live` is public for liveness. Full `/api/health` returns detailed checks only when authenticated. See `docs/security-and-auth.md`.
+
+## One-time setup (fresh DB)
+
+To wipe users, accounts, and portfolios and create a single default user and portfolio from config:
+
+1. Set `MONGODB_URI` (or `MONGODB_URI_B64`) and `MONGODB_DB` in `.env.local`.
+2. Edit **config/seed-defaults.json** if needed: `defaultUser`, `defaultPortfolioName`, `defaultAccountName`, `defaultBrokerType`.
+3. From repo root: `pnpm run one-time-setup`.
+4. When the default user signs in (e.g. with X), they see the single portfolio. See **docs/one-time-setup.md** for details.
 
 ## Development
 

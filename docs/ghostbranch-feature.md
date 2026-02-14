@@ -16,7 +16,7 @@ Compare **myInvestments** with [Ghostfolio](https://github.com/ghostfolio/ghostf
 | **Multi-account** | Yes (accounts with positions array). | Yes. |
 | **Options** | **Strong**: Option Scanner, Covered Call, Protective Put, Straddle/Strangle; xStrategyBuilder; recommendations & alerts. | Limited (focused on stocks/ETFs/crypto). |
 | **Watchlist & alerts** | Watchlist, strategies (CC, CSP, wheel), daily analysis, Unified Options Scanner, Slack/X delivery. | N/A (different product focus). |
-| **Charts / performance** | Dashboard, goal progress ($1M by 2030). | ROAI (Today, WTD, MTD, YTD, 1Y, 5Y, Max), various charts. |
+| **Charts / performance** | Dashboard, goal progress (e.g. $10M by 2030). | ROAI (Today, WTD, MTD, YTD, 1Y, 5Y, Max), various charts. |
 | **Import/export** | Watchlist CSV export. No position/trade import. | Import activities (API + likely UI); export. |
 | **Data source** | Yahoo Finance (prices, options). | Yahoo, CoinGecko, manual, Ghostfolio Premium. |
 

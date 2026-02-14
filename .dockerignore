@@ -2,12 +2,19 @@
 node_modules
 .pnp
 .pnp.js
+.pnpm-store
+**/.pnpm-store
 
-# Build outputs
+# Build outputs and caches (ensure no host cache is ever sent)
 .next
+**/.next
 out
 build
 dist
+**/.turbo
+**/node_modules/.cache
+*.tsbuildinfo
+**/.eslintcache
 
 # Testing
 coverage

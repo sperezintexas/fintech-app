@@ -1,4 +1,4 @@
-# Goal Progress: Goal Probability (e.g. $1M by 2030)
+# Goal Progress: Goal Probability (e.g. $10M by 2030)
 
 ## Overview
 
@@ -6,13 +6,13 @@ The **tracker** (dashboard) shows:
 
 - **Market snapshot** — with market open/closed status pill on the home page (see [Market Calendar](market-calendar.md) for hours and holidays).
 - **Portfolio summary** — account values and positions.
-- **Goal probability** — probability (0–100%) of reaching the configured goal (e.g. $1M by 2030) after the user greeting.
+- **Goal probability** — probability (0–100%) of reaching the configured goal (e.g. $10M by 2030) after the user greeting.
 
 The goal label, target value, and target year are **configurable** in **Setup → Goals**. The probability is computed when the **risk scanner** runs and stored for display.
 
 ## Goals configuration
 
-- **Setup → Goals** — Configure the primary goal: label (e.g. "$1M by 2030"), target value ($), and target year. The tracker uses this for the goal probability card and for the fallback calculation when Grok does not return a value.
+- **Setup → Goals** — Configure the primary goal: label (e.g. "$10M by 2030"), target value ($), and target year. The tracker uses this for the goal probability card and for the fallback calculation when Grok does not return a value.
 - **Storage:** Goal config is stored in the `goalConfig` collection (`_id: "primary"`). API: `GET/PUT /api/goals/config`.
 
 ## When the probability updates

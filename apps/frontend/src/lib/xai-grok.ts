@@ -615,7 +615,7 @@ Metrics: Total $${m.totalValue.toLocaleString()}, VaR(95%) $${m.vaR95.toLocaleSt
 Top positions:
 ${posSummary || "No positions"}
 
-Also estimate the probability (0-100) of this portfolio reaching $1M by 2030 given current value and risk; output as goalProbabilityPercent.
+Also estimate the probability (0-100) of this portfolio reaching the configured goal (e.g. $10M by 2030) given current value and risk; output as goalProbabilityPercent.
 
 Output JSON only, no markdown: {"riskLevel":"low"|"medium"|"high","recommendations":["...","..."],"confidence":0.0-1.0,"explanation":"...","goalProbabilityPercent":0-100}`;
 

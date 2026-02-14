@@ -2,7 +2,7 @@
 
 ## Core Mission
 Build and maintain a personal investment tracking & automation app focused on maximizing long-term portfolio growth:
-- Merrill account: Grow 525 TSLA shares (Jan 2026) toward a balanced ~$1M portfolio by 2030
+- Merrill account: Grow 525 TSLA shares (Jan 2026) toward a balanced ~$10M portfolio by 2030
 - Fidelity account: Aggressively grow $25k with high-risk options strategies targeting maximum returns by end of 2026
 - Primary focus: Sound options strategies centered on TSLA, SpaceX proxies (BA, defense), xAI/Grok proxies (NVDA, emerging AI), defense (LMT, RTX, NOC)
 
@@ -19,7 +19,7 @@ Build and maintain a personal investment tracking & automation app focused on ma
 1. Portfolio
    - Aggregates multiple Accounts
    - Tracks total value, unrealized/realized P&L, ROI, performance vs benchmarks
-   - Goal tracking: Merrill → $1M balanced by 2030; Fidelity → aggressive max by 2026
+   - Goal tracking: Merrill → $10M balanced by 2030; Fidelity → aggressive max by 2026
 
 2. Account
    - Fields: name, broker (Merrill/Fidelity), risk_level ("moderate" | "aggressive"), strategy ("growth" | "income" | "balanced")

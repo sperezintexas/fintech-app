@@ -15,7 +15,7 @@ export default function GoalsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [form, setForm] = useState({ targetValue: 1_000_000, targetYear: 2030, label: "$1M by 2030" });
+  const [form, setForm] = useState({ targetValue: 10_000_000, targetYear: 2030, label: "$10M by 2030" });
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -24,9 +24,9 @@ export default function GoalsPage() {
         const data = (await res.json()) as GoalConfig;
         setConfig(data);
         setForm({
-          targetValue: data.targetValue ?? 1_000_000,
+          targetValue: data.targetValue ?? 10_000_000,
           targetYear: data.targetYear ?? 2030,
-          label: data.label ?? "$1M by 2030",
+          label: data.label ?? "$10M by 2030",
         });
       }
     } catch {
@@ -99,7 +99,7 @@ export default function GoalsPage() {
               value={form.label}
               onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g. $1M by 2030"
+              placeholder="e.g. $10M by 2030"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">

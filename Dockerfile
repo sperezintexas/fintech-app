@@ -1,6 +1,7 @@
 # Multi-stage build: pnpm workspace (apps/frontend = Next.js), non-root user, pm2 (web + smart-scheduler).
 # See .cursor/rules/docker-optimization.mdc and docs/docker-optimization-plan.md.
 # For local (ARM Mac): builds native arm64. For App Runner: build with --platform linux/amd64.
+# CI passes BUILD_SHA so each deploy does a fresh build; for manual full clean use: docker build --no-cache .
 # ── Builder ───────────────────────────────────────
 FROM node:22-alpine AS builder
 WORKDIR /app
@@ -16,9 +17,14 @@ COPY apps ./apps
 COPY config ./config
 ARG MONGODB_URI=placeholder
 ARG MONGODB_DB=myinvestments
+# Cache-bust: set BUILD_SHA in CI (e.g. github.sha) so this layer is not reused across deploys
+ARG BUILD_SHA
 ENV MONGODB_URI=$MONGODB_URI MONGODB_DB=$MONGODB_DB
 ENV NODE_OPTIONS=--max-old-space-size=4096
-RUN pnpm run build
+# Clean any stale caches before build (ensures fresh build even if Docker reuses an earlier layer)
+RUN rm -rf apps/frontend/.next apps/frontend/node_modules/.cache .turbo 2>/dev/null; true
+# BUILD_SHA from CI forces this layer to rebuild each deploy (no stale image)
+RUN echo "Build SHA: ${BUILD_SHA:-local}" && pnpm run build
 
 # Next.js standalone does not copy public/ by default; ensure broker logos (public/logos/) and other static assets are in standalone output
 RUN if [ -d apps/frontend/.next/standalone ]; then \

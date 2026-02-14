@@ -44,7 +44,7 @@ type PortfolioSummaryReport = {
   };
   goalsProgress: {
     merrill: {
-      target: number; // $1M
+      target: number; // e.g. $10M
       targetDate: string; // "2030"
       currentValue: number;
       progressPercent: number;
@@ -255,7 +255,7 @@ export async function POST(request: NextRequest) {
     const fidelityAccount = accountSummaries.find((a) => a.name.includes("Fidelity") || a.broker === "Fidelity");
 
     const merrillValue = merrillAccount?.totalValue || 0;
-    const merrillTarget = 1_000_000;
+    const merrillTarget = 10_000_000;
     const yearsTo2030 = (new Date("2030-01-01").getTime() - Date.now()) / (365.25 * 24 * 60 * 60 * 1000);
     const cagrNeeded = merrillValue > 0 && yearsTo2030 > 0
       ? ((merrillTarget / merrillValue) ** (1 / yearsTo2030) - 1) * 100

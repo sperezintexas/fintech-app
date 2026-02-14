@@ -42,7 +42,7 @@ export default function StrategyDocPage() {
               Investment Strategy
             </h1>
             <p className="mt-3 text-lg text-blue-100 max-w-2xl">
-              TSLA-centric wheel strategy: compound premiums into shares, target 5–15%+ annualized yields atop EV/AI growth. Merrill path to ~1M by 2030; Fidelity aggressive track to 50%+ by 2026.
+              TSLA-centric wheel strategy: compound premiums into shares, target 5–15%+ annualized yields atop EV/AI growth. Merrill path to ~$10M by 2030; Fidelity aggressive track to 50%+ by 2026.
             </p>
           </div>
           <div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-white/10 to-transparent pointer-events-none" aria-hidden />
@@ -52,7 +52,7 @@ export default function StrategyDocPage() {
         <section className="mt-10">
           <h2 className="text-xl font-semibold text-gray-900 sm:text-2xl">App Purpose</h2>
           <p className="mt-3 text-gray-700 leading-relaxed">
-            Leverage the wheel on TSLA (typical range ~$400–442) to compound premiums into shares—targeting Merrill&apos;s 525 TSLA toward 1M by 2030 via 5–15% annualized yields. For Fidelity&apos;s $25K, aggressive puts/calls aim 50%+ by 2026, with xAI/Grok integration and exposure to SpaceX defense themes (via TSLA) amid 2026 robotaxi and defense catalysts.
+            Leverage the wheel on TSLA (typical range ~$400–442) to compound premiums into shares—targeting Merrill&apos;s 525 TSLA toward $10M by 2030 via 5–15% annualized yields. For Fidelity&apos;s $25K, aggressive puts/calls aim 50%+ by 2026, with xAI/Grok integration and exposure to SpaceX defense themes (via TSLA) amid 2026 robotaxi and defense catalysts.
           </p>
         </section>
 
@@ -175,7 +175,7 @@ export default function StrategyDocPage() {
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="text-sm font-semibold uppercase tracking-wide text-indigo-600">Aggressive Merrill (30–50%)</div>
               <p className="mt-3 text-sm text-gray-700 leading-relaxed">
-                50%+ allocation: weekly tighter strikes (2–5% OTM). Roll if delta &gt;0.7. Target 15% premium yields; reinvest all into TSLA for 1M+ shares by 2030, leveraging xAI/Grok synergies.
+                50%+ allocation: weekly tighter strikes (2–5% OTM). Roll if delta &gt;0.7. Target 15% premium yields; reinvest all into TSLA for growth toward $10M by 2030, leveraging xAI/Grok synergies.
               </p>
             </div>
             <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-5 shadow-sm">

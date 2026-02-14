@@ -48,7 +48,7 @@ export type RiskAnalysis = {
   recommendations: string[];
   confidence: number;
   explanation: string;
-  /** Optional: estimated probability (0–100) of reaching $1M by 2030. */
+  /** Optional: estimated probability (0–100) of reaching the configured goal (e.g. $10M by 2030). */
   goalProbabilityPercent?: number;
 };
 

@@ -7,9 +7,9 @@ import type { Db } from "mongodb";
 
 const CONFIG_ID = "primary";
 
-const DEFAULT_TARGET_VALUE = 1_000_000;
+const DEFAULT_TARGET_VALUE = 10_000_000;
 const DEFAULT_TARGET_YEAR = 2030;
-const DEFAULT_LABEL = "$1M by 2030";
+const DEFAULT_LABEL = "$10M by 2030";
 
 export type GoalConfig = {
   _id: string;

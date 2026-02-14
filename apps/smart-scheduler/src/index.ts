@@ -10,9 +10,11 @@ import { Agenda } from "agenda";
 import { getMongoUri, getMongoDbName, getMongoClientOptions } from "@/lib/mongodb";
 import { defineJobs, scheduleJob } from "@/lib/scheduler";
 
+console.log("[smart-scheduler] module loaded");
 const COLLECTION = "scheduledJobs";
 
 async function main() {
+  console.log("[smart-scheduler] main() entered");
   if (process.env.JOB_RUNNER === "false") {
     console.log("[smart-scheduler] JOB_RUNNER=false, exiting without starting (slave)");
     process.exit(0);
@@ -24,17 +26,25 @@ async function main() {
   const mongoUri = getMongoUri();
   const dbName = getMongoDbName();
   if (!mongoUri) throw new Error("MONGODB_URI required");
+  console.log("[smart-scheduler] MONGODB_URI and DB name resolved");
 
-  // Agenda expects mongodb@4 MongoClientOptions; app uses mongodb@7 — options shape is compatible at runtime
+  // Agenda uses mongodb@4 types; app uses mongodb@7. Use explicit shape so ts-node never compares the two.
+  const opts = getMongoClientOptions();
+  const mongoOptions: { family?: number; serverSelectionTimeoutMS?: number } = {
+    family: opts.family,
+    serverSelectionTimeoutMS: opts.serverSelectionTimeoutMS,
+  };
+  console.log("[smart-scheduler] mongo options built, creating Agenda");
   const agenda = new Agenda({
     db: {
       address: `${mongoUri}/${dbName}`,
       collection: COLLECTION,
-      options: getMongoClientOptions() as never,
+      options: mongoOptions,
     },
     processEvery: "1 minute",
     maxConcurrency: 1,
   });
+  console.log("[smart-scheduler] Agenda instance created, defining jobs");
 
   defineJobs(agenda);
 

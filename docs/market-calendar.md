@@ -4,7 +4,7 @@ US equity market calendar (NYSE/NASDAQ style), used for market open/closed state
 
 The **tracker** (dashboard) shows market status on the **home page**: a **market open/closed status pill** in the Market Conditions block (see [Goal Progress](goal-progress.md) for how the rest of the tracker uses goals and portfolio summary).
 
-Goal configuration (e.g. $1M by 2030) is under **Setup → Goals**.
+Goal configuration (e.g. $10M by 2030) is under **Setup → Goals**.
 
 ## Source
 
