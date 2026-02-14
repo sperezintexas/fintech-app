@@ -5,6 +5,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateAccessKey } from "@/lib/access-keys";
 import { validateAuthUser } from "@/lib/auth-users";
+import { validateCredentialsBodySchema } from "@/lib/api-request-schemas";
+import { getClientIp, isTempBanned, recordLoginFailure, TEMP_BAN_WINDOW_SECONDS } from "@/lib/login-failures";
 
 const AUTH_SECRET = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
 const AUTH_DEBUG = process.env.AUTH_DEBUG === "true" || process.env.AUTH_DEBUG === "1";
@@ -31,11 +33,23 @@ export async function POST(request: NextRequest) {
     if (AUTH_DEBUG) console.error("[auth] validate-credentials: 401 (missing or wrong AUTH_SECRET)");
     return NextResponse.json({ ok: false }, { status: 401 });
   }
+  const ip = getClientIp(request.headers);
+  if (await isTempBanned(ip)) {
+    return NextResponse.json(
+      { ok: false, error: "Too many failed attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(TEMP_BAN_WINDOW_SECONDS) } }
+    );
+  }
   try {
     const body = await request.json();
-    const key = typeof body.key === "string" ? body.key : undefined;
-    const email = typeof body.email === "string" ? body.email : undefined;
-    const password = typeof body.password === "string" ? body.password : undefined;
+    const parsed = validateCredentialsBodySchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { ok: false, error: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const { key, email, password } = parsed.data;
 
     if (key) {
       const ok = await validateAccessKey(key);
@@ -56,6 +70,7 @@ export async function POST(request: NextRequest) {
           user: { id: "key", name: "Key holder", email: null },
         });
       }
+      await recordLoginFailure(ip, request.headers.get("user-agent") ?? undefined);
       return NextResponse.json({ ok: false });
     }
     if (email && password) {
@@ -66,6 +81,7 @@ export async function POST(request: NextRequest) {
           user: { id: email, name: email, email },
         });
       }
+      await recordLoginFailure(ip, request.headers.get("user-agent") ?? undefined);
       return NextResponse.json({ ok: false });
     }
   } catch {

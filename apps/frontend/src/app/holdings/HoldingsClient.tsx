@@ -10,6 +10,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { getBrokerLogoUrl } from "@/lib/broker-logo-url";
 
 import { BuyToCloseModal } from "@/components/BuyToCloseModal";
+import { HoldingsTableSkeleton } from "@/components/Skeleton";
 import { PositionForm } from "@/components/PositionForm";
 import { PositionList } from "@/components/PositionList";
 
@@ -253,6 +254,27 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
     return () => clearInterval(interval);
   }, [selectedAccountId, fetchHoldings]);
 
+  // Revalidate on focus / tab visible (fresh data when user returns)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchAccounts();
+        fetchHoldings();
+        if (holdingsTab === "activity-history") fetchActivities();
+        if (holdingsTab === "active-alerts" && selectedAccountId) fetchAlerts();
+      }
+    };
+    const handleFocus = () => {
+      fetchHoldings();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [fetchAccounts, fetchHoldings, fetchActivities, fetchAlerts, holdingsTab, selectedAccountId]);
+
   const handleAddPosition = async (
     positionData: Partial<Position> & { accountId: string }
   ) => {
@@ -444,8 +466,8 @@ export function HoldingsClient({ initialAccounts, urlAccountId: urlAccountIdProp
   const showLoadingSpinner = initialAccounts.length === 0 && accountsLoading;
   if (showLoadingSpinner) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600" />
+      <div className="min-h-screen bg-gray-50 p-6">
+        <HoldingsTableSkeleton />
       </div>
     );
   }

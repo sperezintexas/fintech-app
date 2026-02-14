@@ -33,3 +33,7 @@ To run with auto-restart on file changes, use `ts-node-dev` from `apps/smart-sch
 - **Docker:** One image runs both web and scheduler via **pm2** (`ecosystem.config.js`). No separate container needed.
 - **Two services:** Alternatively run **web** (Next.js) and **smart-scheduler** as two processes (e.g. EC2 with systemd or two containers). Same MongoDB and collection (`scheduledJobs`); both need `MONGODB_URI` and `MONGODB_DB`.
 - Scheduler does not expose a port; optional health endpoint (e.g. 3001) can be added if needed.
+
+## Troubleshooting
+
+- **MongoServerSelectionError / TLS "internal error" / ReplicaSetNoPrimary:** If the scheduler can’t connect to MongoDB, **check Atlas Network Access first**: add the deployment’s outbound IP (or `0.0.0.0/0` for testing) to the cluster’s IP Access List. A new DB or new environment often needs this before the app can connect.

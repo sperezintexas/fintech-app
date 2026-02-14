@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
+import { requireSessionFromRequest } from "@/lib/require-session";
 import { ObjectId } from "mongodb";
-import { requireSession } from "@/lib/require-session";
 
 export const dynamic = "force-dynamic";
 
 const COLLECTION = "brokers";
 
-// GET /api/brokers - List all brokers (sorted by order, then name). Strips internal logo fields.
+// GET /api/brokers - List all brokers (sorted by order, then name). Strips internal logo fields. No auth.
 export async function GET() {
   try {
     const db = await getDb();
@@ -35,7 +35,7 @@ export async function GET() {
 
 // POST /api/brokers - Create broker (logo from disk by name or color fallback in UI)
 export async function POST(request: NextRequest) {
-  const session = await requireSession();
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();

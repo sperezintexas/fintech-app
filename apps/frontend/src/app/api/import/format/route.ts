@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { getSessionFromRequest } from "@/lib/require-session";
 import { parseBrokerCsv } from "@/lib/csv-import";
 import { parseMerrillHoldingsCsv } from "@/lib/merrill-holdings-csv";
 import { parseMerrillCsv } from "@/lib/merrill-csv";
@@ -24,8 +24,8 @@ function isSourceType(s: unknown): s is SourceType {
  * Returns: { accounts: [{ accountRef, label, activities }] } or { accounts: [{ accountRef, label, positions }] } for holdings.
  */
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -6,7 +6,13 @@
 
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { getOptionMetrics, getOptionMarketConditions, probAssignmentCall } from "@/lib/yahoo";
+import {
+  getOptionMetrics,
+  getOptionMarketConditions,
+  probAssignmentCall,
+  type OptionMetrics,
+  type OptionMarketConditions,
+} from "@/lib/yahoo";
 import { callOptionDecision } from "@/lib/xai-grok";
 import type {
   Position,
@@ -209,10 +215,16 @@ type PrelimResult = {
   symbol: string;
 };
 
+export type OptionScannerPreload = {
+  metrics: Map<string, OptionMetrics>;
+  marketConditions: Map<string, OptionMarketConditions>;
+};
+
 /** Stage 1: Fast rule-based scan. Returns preliminary recommendations with metrics. */
 async function fastRuleBasedScan(
   positions: OptionPositionInput[],
-  config: OptionScannerConfig
+  config: OptionScannerConfig,
+  preload?: OptionScannerPreload
 ): Promise<PrelimResult[]> {
   const cfg = { ...DEFAULT_CONFIG, ...config };
   const results: PrelimResult[] = [];
@@ -221,9 +233,9 @@ async function fastRuleBasedScan(
     try {
       const underlying = getUnderlyingFromTicker(pos.ticker);
       const cacheKey = `metrics:${underlying}:${pos.expiration}:${pos.strike}:${pos.optionType}`;
-      const metrics = await getCachedOrFetch(cacheKey, () =>
+      const metrics = preload?.metrics.get(cacheKey) ?? (await getCachedOrFetch(cacheKey, () =>
         getOptionMetrics(underlying, pos.expiration, pos.strike, pos.optionType)
-      );
+      ));
       if (!metrics) {
         console.warn(`OptionScanner: no metrics for ${pos.ticker} (${underlying}) ${pos.expiration} ${pos.strike}`);
         continue;
@@ -236,9 +248,9 @@ async function fastRuleBasedScan(
       const pl = marketValue - totalCost;
       const plPercent = totalCost > 0 ? (pl / totalCost) * 100 : 0;
 
-      const marketConditions = await getCachedOrFetch(`market:${underlying}`, () =>
-        getOptionMarketConditions(underlying)
-      );
+      const marketConditions =
+        preload?.marketConditions.get(underlying) ??
+        (await getCachedOrFetch(`market:${underlying}`, () => getOptionMarketConditions(underlying)));
 
       const prelim = applyOptionRules(
         {
@@ -279,16 +291,17 @@ function isGrokCandidate(
   );
 }
 
-/** Main scan: Stage 1 rules, Stage 2 Grok for candidates. */
+/** Main scan: Stage 1 rules, Stage 2 Grok for candidates. Optional preload from unified scanner batch. */
 export async function scanOptions(
   accountId?: string,
-  config?: OptionScannerConfig
+  config?: OptionScannerConfig,
+  preload?: OptionScannerPreload
 ): Promise<OptionRecommendation[]> {
   const positions = await getOptionPositions(accountId);
   if (positions.length === 0) return [];
 
   const cfg = { ...DEFAULT_CONFIG, ...config };
-  const prelimResults = await fastRuleBasedScan(positions, cfg);
+  const prelimResults = await fastRuleBasedScan(positions, cfg, preload);
 
   const candidates = cfg.grokEnabled
     ? prelimResults.filter((r) => isGrokCandidate(r, cfg))

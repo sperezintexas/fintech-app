@@ -25,6 +25,12 @@ describe("env", () => {
       expect(result.MONGODB_URI).toBe("mongodb://user:pass@host/db");
     });
 
+    it("prefers MONGODB_URI_B64 over MONGODB_URI when both set", () => {
+      const b64 = Buffer.from("mongodb://from-b64@host/", "utf8").toString("base64");
+      const result = validateServerEnv(validEnv({ MONGODB_URI: "mongodb://localhost:27017", MONGODB_URI_B64: b64 }));
+      expect(result.MONGODB_URI).toBe("mongodb://from-b64@host/");
+    });
+
     it("accepts AUTH_SECRET instead of NEXTAUTH_SECRET", () => {
       const result = validateServerEnv(
         validEnv({ NEXTAUTH_SECRET: undefined, AUTH_SECRET: "auth-secret" })

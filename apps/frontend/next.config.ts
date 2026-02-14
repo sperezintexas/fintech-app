@@ -30,6 +30,47 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: packageJson.version,
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdn.tickerlogos.com",
+        pathname: "/**",
+      },
+    ],
+  },
+  async headers() {
+    const securityHeaders = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "X-Frame-Options", value: "DENY" },
+      { key: "X-XSS-Protection", value: "1; mode=block" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      {
+        key: "Content-Security-Policy",
+        value:
+          "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https://*.yahoo.com https://api.slack.com https://api.twitter.com https://api.openai.com https://*.x.ai;",
+      },
+      {
+        key: "Permissions-Policy",
+        value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+      },
+    ];
+    const corsOrigin = process.env.CORS_ORIGIN ?? "";
+    const corsHeaders = corsOrigin
+      ? [
+          { key: "Access-Control-Allow-Origin", value: corsOrigin },
+          { key: "Access-Control-Allow-Methods", value: "GET, POST, PUT, PATCH, DELETE, OPTIONS" },
+          { key: "Access-Control-Allow-Headers", value: "Content-Type, Authorization" },
+          { key: "Access-Control-Max-Age", value: "86400" },
+        ]
+      : [];
+    return [
+      {
+        source: "/:path*",
+        headers: [...securityHeaders, ...corsHeaders],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

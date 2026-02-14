@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signIn, useSession } from "next-auth/react";
 import {
   PieChart,
   Pie,
@@ -17,6 +18,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { PortfolioCard } from "./PortfolioCard";
+import { DashboardSkeleton } from "./Skeleton";
 import type { Broker, Portfolio, Position } from "@/types/portfolio";
 
 type DashboardStats = {
@@ -81,23 +83,39 @@ export function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [timelineRange, setTimelineRange] = useState<TimelineRange>("1mo");
   const [timelineData, setTimelineData] = useState<TimelinePoint[]>([]);
   const pathname = usePathname();
-
+  const { status: sessionStatus } = useSession();
 
   // Fetch dashboard data (no cache to always get fresh data)
   const fetchDashboard = useCallback(async () => {
     try {
-      const res = await fetch("/api/dashboard", { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to fetch dashboard");
+      setError(null);
+      setErrorStatus(null);
+      const res = await fetch("/api/dashboard", { cache: "no-store", credentials: "include" });
+      if (!res.ok) {
+        setErrorStatus(res.status);
+        if (res.status === 401) {
+          setError("Sign in to view your dashboard");
+        } else if (res.status === 404) {
+          setError("No portfolio");
+        } else if (res.status === 403) {
+          setError("Set up your portfolio to get started");
+        } else {
+          setError("Failed to load dashboard");
+        }
+        return;
+      }
       const data = await res.json();
       setDashboardData(data);
       setLastUpdated(new Date());
     } catch (err) {
       console.error("Dashboard fetch error:", err);
+      setErrorStatus(null);
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
     }
   }, []);
@@ -117,7 +135,7 @@ export function Dashboard() {
   // Timeline fetch
   const fetchTimeline = useCallback(async (range: TimelineRange) => {
     try {
-      const res = await fetch(`/api/dashboard/timeline?range=${range}`, { cache: "no-store" });
+      const res = await fetch(`/api/dashboard/timeline?range=${range}`, { cache: "no-store", credentials: "include" });
       if (!res.ok) return;
       const { points } = await res.json();
       setTimelineData(Array.isArray(points) ? points : []);
@@ -183,26 +201,101 @@ export function Dashboard() {
 
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p className="mt-4 text-gray-500">Loading dashboard...</p>
-        </div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (error) {
+    const is401 = errorStatus === 401;
+    const is404 = errorStatus === 404;
+    const showSignIn = is401 && sessionStatus === "unauthenticated";
+    const showNoPortfolio = is404;
     return (
-      <div className="p-6 bg-red-50 border border-red-200 rounded-xl text-red-700">
-        {error}
+      <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+        <h2 className="text-xl font-semibold text-gray-800">
+          {showSignIn ? "Sign in required" : showNoPortfolio ? "No portfolio" : "Couldn't load your dashboard"}
+        </h2>
+        <p className="mt-2 text-gray-600">
+          {showSignIn
+            ? "Sign in to view your dashboard and manage your portfolio."
+            : showNoPortfolio
+              ? "Create a portfolio in Setup so your X (or other login) owns it. When you sign in, you'll see that portfolio."
+              : "Your dashboard could not be loaded. Try refreshing, or sign out and sign in again."}
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          {showSignIn ? (
+            <button
+              type="button"
+              onClick={() => signIn(undefined, { callbackUrl: "/" })}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Sign in
+            </button>
+          ) : showNoPortfolio ? (
+            <Link
+              href="/automation/portfolio"
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Create portfolio (Setup → Portfolio)
+            </Link>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => fetchDashboard()}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Refresh
+              </button>
+              <Link
+                href="/automation/portfolio"
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Setup → Portfolio
+              </Link>
+            </>
+          )}
+        </div>
       </div>
     );
   }
 
   const stats = dashboardData?.stats;
   const portfolio = dashboardData?.portfolio;
+
+  // Portfolio exists but has no accounts — prompt to add first account only (do not prompt to create portfolio)
+  const hasNoAccounts = portfolio && (!portfolio.accounts || portfolio.accounts.length === 0);
+  if (hasNoAccounts) {
+    return (
+      <div className="rounded-2xl border-2 border-blue-100 bg-gradient-to-b from-blue-50/80 to-white p-8 sm:p-10 shadow-sm">
+        <h2 className="text-2xl font-semibold text-gray-900">
+          Add your first account
+        </h2>
+        <p className="mt-3 text-gray-600 max-w-xl">
+          You're using your default portfolio. Add an account to track positions, or import broker data from Merrill or Fidelity.
+        </p>
+        <div className="mt-8 flex flex-wrap gap-4">
+          <Link
+            href="/accounts"
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-base font-medium text-white hover:bg-blue-700 shadow-sm"
+          >
+            Add your first account
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </Link>
+          <Link
+            href="/accounts?tab=holdings"
+            className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-300 bg-white px-6 py-3 text-base font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Import broker data
+          </Link>
+        </div>
+        <p className="mt-6 text-sm text-gray-500">
+          You can create more portfolios later from Settings or switch between them from the header.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -377,25 +470,33 @@ export function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Portfolio - Takes 2 columns */}
         <div className="lg:col-span-2">
-          {portfolio ? (
+          {portfolio && portfolio.accounts.length > 0 ? (
             <PortfolioCard portfolio={portfolio} brokers={brokers} />
           ) : (
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
-                Portfolio Overview
+            <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8 border border-gray-100">
+              <h2 className="text-xl font-semibold text-gray-800">
+                Set up your portfolio and account
               </h2>
-              <p className="text-gray-500 mb-4">
-                No accounts yet. Create an account to get started.
+              <p className="mt-2 text-gray-600">
+                Create an account or import broker data to see your portfolio here.
               </p>
-              <Link
-                href="/accounts"
-                className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
-              >
-                Manage accounts
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link
+                  href="/accounts"
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Add account
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+                <Link
+                  href="/accounts?tab=holdings"
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Import broker data
+                </Link>
+              </div>
             </div>
           )}
         </div>

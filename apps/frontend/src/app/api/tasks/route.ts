@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
+import { requireSessionFromRequest } from "@/lib/require-session";
 import { getAgendaClient } from "@/lib/agenda-client";
 import { getNextRunFromCron } from "@/lib/cron-utils";
 import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
 import { validateJobConfig } from "@/lib/job-config-schemas";
 import type { Task, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, TaskConfig } from "@/types/portfolio";
-import { requireSession } from "@/lib/require-session";
 
 export const dynamic = "force-dynamic";
 
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
 
 // POST /api/tasks
 export async function POST(request: NextRequest) {
-  const session = await requireSession();
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const body = (await request.json()) as {

@@ -6,7 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { getSessionFromRequest } from "@/lib/require-session";
+import { checkImportRateLimit } from "@/lib/rate-limit";
 import { parseMerrillHoldingsCsv } from "@/lib/merrill-holdings-csv";
 import { parseMerrillCsv } from "@/lib/merrill-csv";
 import { parseFidelityHoldingsCsv } from "@/lib/fidelity-holdings-csv";
@@ -26,9 +27,16 @@ function isExportType(s: unknown): s is ExportType {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const rateLimit = await checkImportRateLimit(request);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Import rate limit exceeded.", retryAfter: rateLimit.retryAfter },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfter) } }
+    );
   }
 
   try {

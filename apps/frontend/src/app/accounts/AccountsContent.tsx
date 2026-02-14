@@ -30,11 +30,13 @@ export function AccountsContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | undefined>();
   const [showForm, setShowForm] = useState(false);
+  const [addFromQueryApplied, setAddFromQueryApplied] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | undefined>();
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as AccountsTab) || "portfolios";
   const [activeTab, setActiveTab] = useState<AccountsTab>(initialTab);
+  const openAddFromQuery = searchParams.get("add") === "1" || searchParams.get("add") === "true";
   const [activityAccountId, setActivityAccountId] = useState<string>("");
   const [activities, setActivities] = useState<Activity[]>([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
@@ -45,9 +47,17 @@ export function AccountsContent() {
     setActiveTab(initialTab);
   }, [initialTab]);
 
+  useEffect(() => {
+    if (openAddFromQuery && !addFromQueryApplied && !isLoading) {
+      setShowForm(true);
+      setEditingAccount(undefined);
+      setAddFromQueryApplied(true);
+    }
+  }, [openAddFromQuery, addFromQueryApplied, isLoading]);
+
   const fetchAccounts = async () => {
     try {
-      const res = await fetch("/api/accounts");
+      const res = await fetch("/api/accounts", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch accounts");
       const data = await res.json();
       setAccounts(data);
@@ -82,7 +92,7 @@ export function AccountsContent() {
     if (!accountId) return;
     setActivitiesLoading(true);
     try {
-      const res = await fetch(`/api/activities?accountId=${accountId}`, { cache: "no-store" });
+      const res = await fetch(`/api/activities?accountId=${accountId}`, { cache: "no-store", credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setActivities(data);
@@ -118,6 +128,7 @@ export function AccountsContent() {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
+        credentials: "include",
       });
 
       if (!res.ok) throw new Error("Failed to save account");
@@ -139,7 +150,7 @@ export function AccountsContent() {
     setError(null);
 
     try {
-      const res = await fetch(`/api/accounts/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/accounts/${id}`, { method: "DELETE", credentials: "include" });
       if (!res.ok) throw new Error("Failed to delete account");
       await fetchAccounts();
     } catch (err) {

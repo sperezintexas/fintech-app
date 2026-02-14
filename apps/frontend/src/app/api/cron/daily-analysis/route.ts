@@ -8,9 +8,8 @@ import { computeRiskMetricsWithPositions } from "@/lib/risk-management";
 import { analyzeRiskWithGrok } from "@/lib/xai-grok";
 import { computeAndStoreGoalProgress } from "@/lib/goal-progress";
 import { getHeldSymbols } from "@/lib/holdings";
+import { checkCronRateLimit } from "@/lib/rate-limit";
 
-// Removed - using Yahoo Finance
-// Removed - using Yahoo Finance
 const CRON_SECRET = process.env.CRON_SECRET;
 
 export const dynamic = "force-dynamic";
@@ -65,8 +64,14 @@ function estimateOptionPrice(
  * - External cron service: Call with ?secret=YOUR_CRON_SECRET
  */
 export async function GET(request: NextRequest) {
-  // Verify request
   if (!verifyCronRequest(request)) {
+    const rateLimit = await checkCronRateLimit(request);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Cron rate limit exceeded.", retryAfter: rateLimit.retryAfter },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfter) } }
+      );
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

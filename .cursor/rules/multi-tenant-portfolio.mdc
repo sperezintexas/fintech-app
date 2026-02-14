@@ -1,0 +1,166 @@
+---
+description: Multi-Tenant Portfolio Implementation Plan – concise Cursor guide
+globs:
+  - "src/lib/**"
+  - "src/app/api/**"
+  - "src/types/portfolio.ts"
+  - "src/middleware/**"
+alwaysApply: false
+---
+
+# Multi-Tenant Portfolio – Cursor Implementation Plan
+
+Goal: Portfolio = tenant boundary. All data scoped to portfolioId. New users get auto-created default portfolio. Broker import targets selected portfolio.
+
+## 1. Schema Additions (types/portfolio.ts + MongoDB)
+
+Add Portfolio type + portfolioId to tenant collections.
+
+```ts
+// src/types/portfolio.ts
+export interface Portfolio {
+  _id: string;                    // hex string
+  name: string;
+  ownerId: string;                // session.user.id
+  authorizedUserIds: string[];    // includes ownerId
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Add to every tenant-scoped type (Account, Holding, Alert, Recommendation, WatchlistItem, etc.)
+export interface HasPortfolio {
+  portfolioId: string;            // required
+}
+
+2. New Helpers (src/lib/tenant.ts)
+TypeScript// src/lib/tenant.ts
+import { getServerSession } from "next-auth";
+import db from "@/lib/mongodb"; // or prisma
+import { ObjectId } from "mongodb";
+
+export async function getActivePortfolio(reqOrSession: any) {
+  const session = await getServerSession(); // or extract from req
+  if (!session?.user?.id) throw new Error("Unauthorized");
+
+  const userId = session.user.id;
+
+  let portfolioId =
+    reqOrSession?.headers?.["x-portfolio-id"]?.toString() ||
+    reqOrSession?.cookies?.portfolioId ||
+    session.portfolioId;
+
+  const portfolios = await db.collection("portfolios")
+    .find({ authorizedUserIds: userId })
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .toArray();
+
+  if (!portfolios.length) {
+    // Auto-create default
+    const result = await db.collection("portfolios").insertOne({
+      name: "Default Portfolio",
+      ownerId: userId,
+      authorizedUserIds: [userId],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    portfolioId = result.insertedId.toString();
+  } else if (portfolioId) {
+    const found = portfolios.find(p => p._id.toString() === portfolioId);
+    if (found) return { ...found, _id: found._id.toString() };
+    // fallback to most recent
+    portfolioId = portfolios[0]._id.toString();
+  } else {
+    portfolioId = portfolios[0]._id.toString();
+  }
+
+  // Optional: update session/JWT if needed (via next-auth callbacks)
+  return { ...portfolios.find(p => p._id.toString() === portfolioId), _id: portfolioId };
+}
+
+export function assertPortfolioId(id: string | undefined): asserts id is string {
+  if (!id) throw new Error("portfolioId required in tenant context");
+}
+3. Middleware / Context (src/middleware/withPortfolio.ts)
+TypeScript// src/middleware/withPortfolio.ts
+import { NextRequest, NextResponse } from "next/server";
+import { getActivePortfolio } from "@/lib/tenant";
+
+export async function withPortfolio(handler: (req: NextRequest & { context: { portfolio: any } }) => Promise<NextResponse>) {
+  return async (req: NextRequest) => {
+    try {
+      const portfolio = await getActivePortfolio(req);
+      if (!portfolio) {
+        return NextResponse.json({ error: "No portfolio found – create one first" }, { status: 403 });
+      }
+
+      const enhancedReq = req as any;
+      enhancedReq.context = { ...enhancedReq.context, portfolio };
+
+      return handler(enhancedReq);
+    } catch (err) {
+      console.error(err);
+      return NextResponse.json({ error: "Unauthorized or missing portfolio" }, { status: 401 });
+    }
+  };
+}
+4. API Route Example (scoped read/write)
+TypeScript// app/api/accounts/route.ts
+import { withPortfolio } from "@/middleware/withPortfolio";
+import db from "@/lib/mongodb";
+
+export const GET = withPortfolio(async (req) => {
+  const { portfolio } = req.context;
+  const accounts = await db.collection("accounts")
+    .find({ portfolioId: portfolio._id })
+    .toArray();
+
+  return NextResponse.json(accounts);
+});
+
+export const POST = withPortfolio(async (req) => {
+  const { portfolio } = req.context;
+  const body = await req.json();
+
+  const result = await db.collection("accounts").insertOne({
+    ...body,
+    portfolioId: portfolio._id,
+    createdAt: new Date(),
+  });
+
+  return NextResponse.json({ id: result.insertedId }, { status: 201 });
+});
+5. Onboarding Flow (client or server action)
+
+After login → check GET /api/portfolios → if empty → show Create Portfolio form
+POST /api/portfolios → create → set cookie portfolioId → redirect to dashboard or import
+
+TypeScript// app/api/portfolios/route.ts (simplified)
+export const POST = withSession(async (req) => {  // your session middleware
+  const session = await getServerSession();
+  const { name } = await req.json();
+
+  const result = await db.collection("portfolios").insertOne({
+    name: name || "My Portfolio",
+    ownerId: session.user.id,
+    authorizedUserIds: [session.user.id],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  // Set cookie or session
+  const res = NextResponse.json({ id: result.insertedId.toString() });
+  res.cookies.set("portfolioId", result.insertedId.toString(), { path: "/" });
+  return res;
+});
+6. Migration Checklist
+
+ Add portfolioId field (optional first) to all tenant collections
+ Create backfill script: assign existing data to one default portfolio per user
+ Add indexes: db.accounts.createIndex({ portfolioId: 1 })
+ Update all GET/POST/PATCH/DELETE routes → use withPortfolio + filter by portfolioId
+ Broker import → require portfolioId in body/header
+ Scheduler → either loop over portfolios or pass portfolioId per task
+ Tests: create user → auto portfolio → import → assert isolation
+
+Start here: implement getActivePortfolio + withPortfolio middleware, then apply to one route (e.g. /api/dashboard) and test.

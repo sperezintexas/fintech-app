@@ -14,3 +14,15 @@ An Portfolio and options management: accounts, holdings, real-time market data, 
 - **Reports** — Portfolio summary, SmartX AI.
 - **Alerts** — Daily analysis and Unified Options Scanner (HOLD/CLOSE/BTC, roll, etc.); delivery to Slack, X, or push.
 - **Health** — Service status at `/api/health` and `/health`.
+
+## One-time setup (fresh DB)
+
+To wipe users, accounts, and portfolios and create a single default user and portfolio from config:
+
+1. Set `MONGODB_URI` (or `MONGODB_URI_B64`) and `MONGODB_DB` (e.g. in `.env.local`).
+2. Edit **config/seed-defaults.json** if needed: `defaultUser` (e.g. `atxbogart`), `defaultPortfolioName`, `defaultAccountName`, `defaultBrokerType`.
+3. From repo root run:
+   ```bash
+   pnpm run one-time-setup
+   ```
+4. When the default user (e.g. atxbogart) signs in with X, they will see the single portfolio. See **docs/one-time-setup.md** for details.

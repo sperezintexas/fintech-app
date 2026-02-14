@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { revokeAccessKey } from "@/lib/access-keys";
+import { requireSessionFromRequest } from "@/lib/require-session";
+
+export const dynamic = "force-dynamic";
 
 export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const { id } = await params;
+  const session = await requireSessionFromRequest(request);
+  if (session instanceof NextResponse) return session;
+  const { id } = await ctx.params;
   if (!id) {
     return NextResponse.json({ error: "Missing id" }, { status: 400 });
   }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { auth } from "@/auth";
 import { getDb } from "@/lib/mongodb";
+import { requireSessionFromRequest } from "@/lib/require-session";
 
 const COLLECTION = "security_alerts";
 
@@ -9,11 +9,8 @@ export const dynamic = "force-dynamic";
 
 /** GET /api/security-alerts - List security alerts (auth required). */
 export async function GET(request: NextRequest) {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  const session = await requireSessionFromRequest(request);
+  if (session instanceof NextResponse) return session;
   try {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") ?? "50", 10), 100);

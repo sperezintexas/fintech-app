@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
+import { requireSessionFromRequest } from "@/lib/require-session";
 import { ObjectId } from "mongodb";
-import { requireSession } from "@/lib/require-session";
 
 export const dynamic = "force-dynamic";
 
 const COLLECTION = "brokers";
 
-type RouteParams = { params: Promise<{ id: string }> };
-
-// GET /api/brokers/[id] - omit logo fields from JSON response
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+// GET /api/brokers/[id] - omit logo fields from JSON response. No auth.
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     if (!ObjectId.isValid(id)) {
@@ -36,11 +34,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // PUT /api/brokers/[id] - update name/order (logo from disk by name or color in UI)
-export async function PUT(request: NextRequest, { params }: RouteParams) {
-  const session = await requireSession();
+export async function PUT(
+  request: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
-    const { id } = await params;
+    const { id } = await ctx.params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid broker id" }, { status: 400 });
     }
@@ -83,11 +84,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/brokers/[id]
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
-  const session = await requireSession();
+export async function DELETE(
+  request: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
-    const { id } = await params;
+    const { id } = await ctx.params;
     if (!ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid broker id" }, { status: 400 });
     }

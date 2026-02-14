@@ -1,5 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
+import { getSessionFromRequest } from "@/lib/require-session";
+import { getPortfolioOr401Response } from "@/lib/tenant";
 import { getHistoricalCloses } from "@/lib/yahoo";
 import type { Account } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
@@ -17,7 +19,11 @@ export type TimelinePoint = { date: string; value: number };
 export type TimelineResponse = { points: TimelinePoint[] };
 
 /** GET /api/dashboard/timeline?range=1w|1mo|1yr - Portfolio value over time (stock positions only). */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const session = await getSessionFromRequest(request);
+  const result = await getPortfolioOr401Response(request, session);
+  if (!result.ok) return result.response;
+  const { portfolio } = result;
   try {
     const { searchParams } = new URL(request.url);
     const range = (searchParams.get("range") ?? "1mo").toLowerCase();
@@ -25,7 +31,10 @@ export async function GET(request: Request) {
 
     const db = await getDb();
     type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
-    const accounts = await db.collection<AccountDoc>("accounts").find({}).toArray();
+    const accounts = await db
+      .collection<AccountDoc>("accounts")
+      .find({ portfolioId: portfolio._id })
+      .toArray();
 
     const stockPositions: { ticker: string; shares: number }[] = [];
     for (const account of accounts) {

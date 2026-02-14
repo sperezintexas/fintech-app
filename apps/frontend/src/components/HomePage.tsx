@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import type { Session } from "next-auth";
 import { Dashboard } from "@/components/Dashboard";
@@ -47,13 +48,29 @@ export function HomePage({ session, skipAuth }: Props) {
   }
 
   const displayName = getDisplayName(session);
+  const [portfolioName, setPortfolioName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    fetch("/api/portfolios/current", { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { name?: string } | null) => {
+        if (cancelled || !data?.name) return;
+        setPortfolioName(data.name);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   return (
     <div className="min-h-screen">
       <AppHeader />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        <DashboardGreeting displayName={displayName} />
+        <DashboardGreeting displayName={displayName} portfolioName={portfolioName} />
 
         <GoalProbabilityCard />
 

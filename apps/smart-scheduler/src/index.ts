@@ -7,7 +7,7 @@
  */
 
 import { Agenda } from "agenda";
-import { getMongoUri, getMongoDbName } from "@/lib/mongodb";
+import { getMongoUri, getMongoDbName, getMongoClientOptions } from "@/lib/mongodb";
 import { defineJobs, scheduleJob } from "@/lib/scheduler";
 
 const COLLECTION = "scheduledJobs";
@@ -26,7 +26,11 @@ async function main() {
   if (!mongoUri) throw new Error("MONGODB_URI required");
 
   const agenda = new Agenda({
-    db: { address: `${mongoUri}/${dbName}`, collection: COLLECTION },
+    db: {
+      address: `${mongoUri}/${dbName}`,
+      collection: COLLECTION,
+      options: getMongoClientOptions(),
+    },
     processEvery: "1 minute",
     maxConcurrency: 1,
   });

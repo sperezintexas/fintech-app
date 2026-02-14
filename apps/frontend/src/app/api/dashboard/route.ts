@@ -1,18 +1,26 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
+import { getSessionFromRequest } from "@/lib/require-session";
+import { getPortfolioOr401Response } from "@/lib/tenant";
 import { getMultipleTickerPrices } from "@/lib/yahoo";
 import type { Account, Portfolio } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/dashboard - Get dashboard summary with live prices
-export async function GET() {
+// GET /api/dashboard - Get dashboard summary with live prices. Uses default portfolio (saved default > cookie > first).
+export async function GET(request: NextRequest) {
+  const session = await getSessionFromRequest(request);
+  const result = await getPortfolioOr401Response(request, session);
+  if (!result.ok) return result.response;
+  const { portfolio } = result;
   try {
-    // Get all accounts from MongoDB
     const db = await getDb();
-    type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId };
-    const accounts = await db.collection<AccountDoc>("accounts").find({}).toArray();
+    type AccountDoc = Omit<Account, "_id"> & { _id: ObjectId; portfolioId?: string };
+    const accounts = await db
+      .collection<AccountDoc>("accounts")
+      .find({ portfolioId: portfolio._id })
+      .toArray();
 
     // Collect all unique tickers from positions
     const tickers = new Set<string>();
@@ -119,10 +127,10 @@ export async function GET() {
       0
     );
 
-    // Build portfolio summary
-    const portfolio: Portfolio = {
-      _id: "main",
-      name: "Main Portfolio",
+    // Build portfolio summary (view type)
+    const portfolioView: Portfolio = {
+      _id: portfolio._id,
+      name: portfolio.name,
       accounts: accountsWithLivePrices,
       totalValue,
       dailyChange: totalDailyChange,
@@ -130,7 +138,7 @@ export async function GET() {
     };
 
     return NextResponse.json({
-      portfolio,
+      portfolio: portfolioView,
       stats: {
         totalValue,
         dailyChange: totalDailyChange,

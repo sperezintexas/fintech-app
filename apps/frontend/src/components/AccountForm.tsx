@@ -38,7 +38,7 @@ export function AccountForm({ account, brokers = [], onSubmit, onCancel, isLoadi
   const [formData, setFormData] = useState<AccountFormData>({
     name: account?.name || "",
     accountRef: account?.accountRef ?? "",
-    brokerType: account?.brokerType ?? "",
+    brokerType: account?.brokerType ?? "Merrill",
     brokerId: account?.brokerId ?? "",
     balance: account?.balance || 0,
     riskLevel: account?.riskLevel || "medium",

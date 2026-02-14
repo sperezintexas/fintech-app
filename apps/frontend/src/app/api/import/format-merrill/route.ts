@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { getSessionFromRequest } from "@/lib/require-session";
 import { parseMerrillCsv } from "@/lib/merrill-csv";
 
 /**
@@ -9,8 +9,8 @@ import { parseMerrillCsv } from "@/lib/merrill-csv";
  * Use this to format raw Merrill Edge CSV to JSON without importing (e.g. download JSON for later import).
  */
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

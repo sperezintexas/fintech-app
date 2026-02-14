@@ -21,6 +21,7 @@ const GRADLE_PROPS = path.join(
 
 const BACKEND_KEYS = [
   "MONGODB_URI",
+  "MONGODB_URI_B64",
   "MONGODB_DB",
   "SERVER_PORT",
   "APP_VERSION",

@@ -2,8 +2,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "./route";
 import { getMultipleTickerPrices } from "@/lib/yahoo";
 import { getDb } from "@/lib/mongodb";
+import { getPortfolioOr401Response } from "@/lib/tenant";
 
-// Mock dependencies
+// Mock dependencies so we don't pull in next-auth (next/server resolution in vitest)
+vi.mock("@/lib/require-session", () => ({
+  getSessionFromRequest: vi.fn().mockResolvedValue({ user: { id: "test-user" } }),
+}));
+
+vi.mock("@/lib/tenant", () => ({
+  getPortfolioOr401Response: vi.fn(),
+}));
+
 vi.mock("@/lib/yahoo", () => ({
   getMultipleTickerPrices: vi.fn(),
 }));
@@ -15,6 +24,10 @@ vi.mock("@/lib/mongodb", () => ({
 describe("GET /api/dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getPortfolioOr401Response).mockResolvedValue({
+      ok: true,
+      portfolio: { _id: "portfolio1", name: "Test" },
+    } as Awaited<ReturnType<typeof getPortfolioOr401Response>>);
   });
 
   it("should return dashboard data with live prices", async () => {

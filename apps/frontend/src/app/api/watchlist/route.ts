@@ -4,7 +4,8 @@ import { ObjectId } from "mongodb";
 import YahooFinance from "yahoo-finance2";
 import type { WatchlistItem } from "@/types/portfolio";
 import { getRiskDisclosure } from "@/lib/watchlist-rules";
-import { requireSession } from "@/lib/require-session";
+import { requireSessionFromRequest } from "@/lib/require-session";
+import { getSymbolLogoUrls } from "@/lib/symbol-logo-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -56,31 +57,20 @@ async function getSymbolDetails(symbols: string[]): Promise<Map<string, SymbolDe
 type CompanyProfile = { overview?: string; logoUrl?: string };
 
 async function getCompanyProfiles(symbols: string[]): Promise<Map<string, CompanyProfile>> {
-  const map = new Map<string, CompanyProfile>();
   const unique = [...new Set(symbols.map((s) => s.toUpperCase()).filter(Boolean))];
-  const TICKER_LOGOS_CDN = "https://cdn.tickerlogos.com";
+  const logoUrls = await getSymbolLogoUrls(unique);
+  const map = new Map<string, CompanyProfile>();
   await Promise.all(
     unique.map(async (symbol) => {
       try {
         const summary = await yahooFinance.quoteSummary(symbol, { modules: ["summaryProfile"] });
-        const profile = summary?.summaryProfile as { longBusinessSummary?: string; website?: string } | undefined;
+        const profile = summary?.summaryProfile as { longBusinessSummary?: string } | undefined;
         const overview = profile?.longBusinessSummary;
-        const website = profile?.website;
-        let logoUrl: string | undefined;
-        if (website && typeof website === "string") {
-          try {
-            const hostname = new URL(website.startsWith("http") ? website : `https://${website}`).hostname.replace(
-              /^www\./,
-              ""
-            );
-            if (hostname) logoUrl = `${TICKER_LOGOS_CDN}/${hostname}`;
-          } catch {
-            // invalid URL
-          }
-        }
+        const logoUrl = logoUrls.get(symbol);
         map.set(symbol, { overview, logoUrl });
       } catch {
-        // ignore per-symbol failures
+        const logoUrl = logoUrls.get(symbol);
+        if (logoUrl) map.set(symbol, { logoUrl });
       }
     })
   );
@@ -155,7 +145,7 @@ export async function GET(request: NextRequest) {
 
 // POST /api/watchlist - Add item to watchlist
 export async function POST(request: NextRequest) {
-  const session = await requireSession();
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();

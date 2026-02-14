@@ -37,10 +37,10 @@ function AutomationContent() {
   const tabParam = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<"separation" | "auth-users" | "settings" | "strategy" | "chat" | "brokers">("auth-users");
 
-  // Default Setup to Scheduled Tasks when visiting /automation with no tab
+  // Default Setup to Portfolio when visiting /automation with no tab
   useEffect(() => {
     if (pathname === "/automation" && !tabParam) {
-      router.replace("/automation/scheduler");
+      router.replace("/automation/portfolio");
     }
   }, [pathname, tabParam, router]);
   useEffect(() => {

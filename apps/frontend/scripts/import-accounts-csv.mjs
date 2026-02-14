@@ -71,12 +71,11 @@ async function main() {
     return;
   }
 
-  let uri = process.env.MONGODB_URI?.trim();
-  if (!uri && process.env.MONGODB_URI_B64?.trim()) {
-    uri = Buffer.from(process.env.MONGODB_URI_B64.trim(), "base64").toString("utf8");
-  }
-  uri = uri || "mongodb://localhost:27017";
-  const dbName = process.env.MONGODB_DB || "myinvestments";
+  // Expect MONGODB_URI_B64 (or MONGODB_URI) and MONGODB_DB
+  let uri = process.env.MONGODB_URI_B64?.trim()
+    ? Buffer.from(process.env.MONGODB_URI_B64.trim(), "base64").toString("utf8")
+    : process.env.MONGODB_URI?.trim() || "mongodb://localhost:27017";
+  const dbName = process.env.MONGODB_DB?.trim() || "myinvestments";
 
   const client = await MongoClient.connect(uri);
   try {

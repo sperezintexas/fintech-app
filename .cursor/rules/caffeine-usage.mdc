@@ -1,0 +1,48 @@
+---
+description: Ultra-concise Caffeine rules — Spring Boot + Kotlin
+globs: ["**/*.kt"]
+alwaysApply: false
+---
+
+# Caffeine — Quick Rules
+
+- Enable: `@EnableCaching` on `@SpringBootApplication`
+- Central config — one `CacheConfig` class
+
+```kotlin
+@Bean
+fun cacheManager() = CaffeineCacheManager().apply {
+    setCaffeine(Caffeine.newBuilder()
+        .expireAfterWrite(10, MINUTES)
+        .maximumSize(10_000))
+
+    registerCustomCache("users", Caffeine.newBuilder()
+        .expireAfterAccess(60, MINUTES)
+        .maximumSize(50_000))
+
+    registerCustomCache("rates", Caffeine.newBuilder()
+        .expireAfterWrite(4, HOURS)
+        .maximumSize(1_000))
+}
+
+Always name + keyKotlin@Cacheable("users", key = "#id")
+@Cacheable("rates", key = "#base + '-' + #quote")
+@Cacheable("perms", key = "{#userId, #tenantId}")
+Evict properlyKotlin@CacheEvict("users", key = "#id")
+@CacheEvict("rates", allEntries = true)
+@Caching(evict = [
+    CacheEvict("users", key = "#id"),
+    CacheEvict("perms", key = "#id")
+])
+
+
+Anti-patterns (never)
+No expiry
+No cache name
+Cache huge objects without size limit
+Cache PII long-term
+No eviction on update/delete
+@Cacheable on mutating/void methods
+
+Monitor: Actuator → /actuator/caches, cache.* metrics
+Default choice: Caffeine

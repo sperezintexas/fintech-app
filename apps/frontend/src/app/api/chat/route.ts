@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { getMarketNewsAndOutlook, getStockAndOptionPrices } from "@/lib/yahoo";
+import { getSessionFromRequest } from "@/lib/require-session";
 import { getDb } from "@/lib/mongodb";
 import type { Account } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
@@ -9,32 +9,10 @@ import { getGrokChatConfig, getEffectivePersonaPrompt } from "@/lib/grok-chat-co
 import { getPersonaPrompt } from "@/lib/chat-personas";
 import { appendChatHistory, DEFAULT_PERSONA } from "@/lib/chat-history";
 import { getRecentCoveredCallRecommendations } from "@/lib/covered-call-analyzer";
+import { checkChatRateLimit } from "@/lib/rate-limit";
+import { chatPostBodySchema } from "@/lib/api-request-schemas";
 
 export const dynamic = "force-dynamic";
-
-const MAX_MESSAGE_LENGTH = 2000;
-const RATE_LIMIT_WINDOW_MS = 60_000; // 1 min
-const RATE_LIMIT_MAX = 20;
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-
-function getClientId(req: NextRequest): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-}
-
-function checkRateLimit(clientId: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(clientId);
-  if (!entry) {
-    rateLimitMap.set(clientId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
-  }
-  if (now > entry.resetAt) {
-    rateLimitMap.set(clientId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
-  }
-  entry.count++;
-  return entry.count <= RATE_LIMIT_MAX;
-}
 
 const SYMBOL_REGEX = /\b([A-Z]{1,5})\b/g;
 
@@ -239,45 +217,35 @@ function buildFallbackResponse(toolResults: {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id && !(session?.user as { username?: string })?.username) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
-    const clientId = getClientId(request);
-    if (!checkRateLimit(clientId)) {
+    const rateLimit = await checkChatRateLimit(request);
+    if (!rateLimit.allowed) {
       return NextResponse.json(
-        { error: "Rate limit exceeded. Please wait a minute before sending more messages." },
-        { status: 429 }
+        {
+          error: "Rate limit exceeded. Please wait before sending more messages.",
+          retryAfter: rateLimit.retryAfter,
+        },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfter) } }
       );
     }
 
-    const body = (await request.json()) as {
-      message?: string;
-      history?: { role?: string; content?: string }[];
-      persona?: string;
-      orderContext?: {
-        symbol?: string;
-        strike?: number;
-        expiration?: string;
-        credit?: number;
-        quantity?: number;
-        probOtm?: number;
-      };
-    };
-    const message = typeof body?.message === "string" ? body.message.trim() : "";
-    const orderContext = body?.orderContext;
-    const requestPersona = typeof body?.persona === "string" ? body.persona.trim() || DEFAULT_PERSONA : undefined;
-    const history = Array.isArray(body?.history)
-      ? (body.history as { role?: string; content?: string }[]).filter(
-          (m) => m?.role && m?.content && ["user", "assistant"].includes(m.role)
-        )
-      : [];
-    if (!message) {
-      return NextResponse.json({ error: "Message is required" }, { status: 400 });
-    }
-    if (message.length > MAX_MESSAGE_LENGTH) {
+    const rawBody = await request.json();
+    const parsed = chatPostBodySchema.safeParse(rawBody);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` },
+        { error: "Invalid request", details: parsed.error.flatten().fieldErrors },
         { status: 400 }
       );
     }
+    const { message, history: rawHistory, persona: reqPersona, orderContext } = parsed.data;
+    const requestPersona = reqPersona?.trim() || DEFAULT_PERSONA;
+    const history = (rawHistory ?? []).filter(
+      (m) => m?.role && m?.content && ["user", "assistant"].includes(m.role)
+    );
 
     const grokConfig = await getGrokChatConfig();
     const { tools: toolConfig, context: ctxConfig } = grokConfig;
@@ -517,8 +485,7 @@ Always include a brief disclaimer that this is not financial advice.`;
       response = buildFallbackResponse(toolResults);
     }
 
-    const session = await auth();
-    const userId = session?.user?.id ?? (session?.user as { username?: string })?.username;
+    const userId = session?.user?.id ?? (session?.user as { username?: string } | undefined)?.username;
     if (userId) {
       try {
         const personaForHistory = requestPersona ?? ctxConfig.persona ?? DEFAULT_PERSONA;

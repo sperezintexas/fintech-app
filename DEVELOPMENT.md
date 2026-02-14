@@ -209,7 +209,7 @@ apps/
 └── smart-scheduler/          # (Deprecated) Standalone Agenda worker; use backend scheduler instead
     └── src/index.ts
 
-scripts/                      # CLI scripts (broker-import, seed-local-db, etc.); run from root
+scripts/                      # CLI scripts (broker-import, seed-local-db, one-time-setup, etc.); run from root
 config/                       # alert-templates, report-templates
 ecosystem.config.js           # pm2: web (apps/frontend) + scheduler (Docker app)
 docker-compose.yml            # mongo, backend, app

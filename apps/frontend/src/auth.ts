@@ -5,17 +5,14 @@ import { isAllowedXUsername } from "@/lib/x-allowed-usernames";
 
 const AUTH_DEBUG = process.env.AUTH_DEBUG === "true" || process.env.AUTH_DEBUG === "1";
 
-// Log once when auth module loads so you can confirm AUTH_DEBUG is read (check the terminal where pnpm dev runs, not browser or Kotlin)
-if (process.env.AUTH_DEBUG !== undefined) {
-  console.log("[auth] AUTH_DEBUG env:", JSON.stringify(process.env.AUTH_DEBUG), "-> debug enabled:", AUTH_DEBUG);
-}
-
-// Startup log for X OAuth (no secrets)
-if (AUTH_DEBUG) {
+// Log once per process so auth debug doesn't spam on every request/recompile
+const authDebugLogKey = "__auth_debug_logged";
+if (AUTH_DEBUG && !(globalThis as unknown as { [key: string]: boolean })[authDebugLogKey]) {
+  (globalThis as unknown as { [key: string]: boolean })[authDebugLogKey] = true;
   const hasClientId = !!(process.env.X_CLIENT_ID?.trim());
   const hasClientSecret = !!(process.env.X_CLIENT_SECRET?.trim());
   const authUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? "(not set)";
-  console.log("[auth] debug enabled", {
+  console.log("[auth] debug enabled (once)", {
     X_CLIENT_ID: hasClientId ? "set" : "MISSING",
     X_CLIENT_SECRET: hasClientSecret ? "set" : "MISSING",
     NEXTAUTH_URL: authUrl,
@@ -41,6 +38,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   basePath: "/api/auth",
   trustHost: true,
   debug: AUTH_DEBUG,
+  cookies: {
+    sessionToken: {
+      options: {
+        path: "/",
+        sameSite: "lax",
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+  },
   logger: AUTH_DEBUG
     ? {
         error(code, ...message) {
@@ -143,15 +150,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return true;
     },
-    jwt({ token, user }) {
+    jwt({ token, user, account }) {
       if (user?.username) {
         token.username = user.username;
+      }
+      if (account?.provider) {
+        (token as { provider?: string }).provider = account.provider;
       }
       return token;
     },
     session({ session, token }) {
       if (session.user) {
+        // Required so /api/auth/session and getSessionFromRequest() get user.id (e.g. for tenant/portfolio)
+        (session.user as { id?: string }).id = token.sub ?? (token as { id?: string }).id ?? "";
         (session.user as { username?: string }).username = token.username as string;
+        (session.user as { provider?: string }).provider = (token as { provider?: string }).provider;
       }
       return session;
     },

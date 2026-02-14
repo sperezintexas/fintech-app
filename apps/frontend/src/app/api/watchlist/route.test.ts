@@ -12,7 +12,7 @@ vi.mock("@/lib/watchlist-rules", () => ({
 }));
 
 vi.mock("@/lib/require-session", () => ({
-  requireSession: vi.fn().mockResolvedValue({ user: { id: "test", name: "Test" } }),
+  requireSessionFromRequest: vi.fn().mockResolvedValue({ user: { id: "test", name: "Test" } }),
 }));
 
 vi.mock("yahoo-finance2", () => ({

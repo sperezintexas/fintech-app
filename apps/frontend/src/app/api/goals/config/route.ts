@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
-import { requireSession } from "@/lib/require-session";
+import { requireSessionFromRequest } from "@/lib/require-session";
 import {
   getGoalConfig,
   upsertGoalConfig,
@@ -33,7 +33,7 @@ export async function GET() {
 
 /** PUT /api/goals/config — Update goal config (auth required). */
 export async function PUT(request: NextRequest) {
-  const session = await requireSession();
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const body = (await request.json()) as GoalConfigInput;
