@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AppHeader } from '@/components/AppHeader';
 import { StrategyWizard } from '@/components/strategy-builder/StrategyWizard';
@@ -10,7 +10,7 @@ import type { Outlook } from '@/types/strategy';
 type TickerQuote = { symbol: string; name: string; price: number; change: number; changePercent: number };
 type SMAData = { sma50: number; sma50Plus15: number; sma50Minus15: number };
 
-export default function XStrategyBuilderPage() {
+function XStrategyBuilderContent() {
   const searchParams = useSearchParams();
   const symbolFromUrl = searchParams?.get('symbol')?.trim() ?? undefined;
   const [selectedQuote, setSelectedQuote] = useState<TickerQuote | null>(null);
@@ -109,5 +109,26 @@ export default function XStrategyBuilderPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function XStrategyBuilderPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
+          <AppHeader />
+          <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-gray-900">xStrategyBuilder</h2>
+              <p className="text-gray-600 mt-1">Loading…</p>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sm:p-8 animate-pulse h-64" />
+          </main>
+        </div>
+      }
+    >
+      <XStrategyBuilderContent />
+    </Suspense>
   );
 }
