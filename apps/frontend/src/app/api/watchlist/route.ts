@@ -4,7 +4,7 @@ import { ObjectId } from "mongodb";
 import YahooFinance from "yahoo-finance2";
 import type { WatchlistItem } from "@/types/portfolio";
 import { getRiskDisclosure } from "@/lib/watchlist-rules";
-import { requireSession } from "@/lib/require-session";
+import { requireSessionFromRequest } from "@/lib/require-session";
 
 export const dynamic = "force-dynamic";
 
@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
 
 // POST /api/watchlist - Add item to watchlist
 export async function POST(request: NextRequest) {
-  const session = await requireSession();
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();

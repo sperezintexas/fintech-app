@@ -1,16 +1,26 @@
 /**
  * Verify and create app collections in local MongoDB; seed auth_users with atxbogart.
- * Run from repo root. Loads .env.local for MONGODB_URI and MONGODB_DB.
+ * Run from repo root. Loads .env.local for MONGODB_URI or MONGODB_URI_B64, and MONGODB_DB.
  *
  * Usage: pnpm run seed-local-db
  * Or:    node -r ts-node/register -r tsconfig-paths/register scripts/seed-local-db.ts
  */
+
+/** Expects MONGODB_URI_B64 (or MONGODB_URI) and MONGODB_DB. */
+function getMongoUri(): string {
+  if (process.env.MONGODB_URI_B64?.trim()) {
+    return Buffer.from(process.env.MONGODB_URI_B64.trim(), "base64").toString("utf8");
+  }
+  if (process.env.MONGODB_URI?.trim()) return process.env.MONGODB_URI.trim();
+  return "mongodb://localhost:27017";
+}
 
 import * as fs from "fs";
 import * as path from "path";
 import { MongoClient } from "mongodb";
 
 const REQUIRED_COLLECTIONS = [
+  "portfolios",
   "accounts",
   "activities",
   "alerts",
@@ -39,7 +49,7 @@ const AUTH_SEED_USERNAME = "atxbogart";
 function loadEnvLocal(): void {
   const envPath = path.join(process.cwd(), ".env.local");
   if (!fs.existsSync(envPath)) {
-    console.warn(".env.local not found; using process.env (e.g. MONGODB_URI, MONGODB_DB)");
+    console.warn(".env.local not found; using process.env (e.g. MONGODB_URI, MONGODB_URI_B64, MONGODB_DB)");
     return;
   }
   const content = fs.readFileSync(envPath, "utf-8");
@@ -56,8 +66,8 @@ function loadEnvLocal(): void {
 
 async function main(): Promise<void> {
   loadEnvLocal();
-  const uri = process.env.MONGODB_URI || "mongodb://localhost:27017";
-  const dbName = process.env.MONGODB_DB || "SmartTrader";
+  const uri = getMongoUri();
+  const dbName = process.env.MONGODB_DB?.trim() || "SmartTrader";
 
   console.log("Connecting to", uri.replace(/:[^:@]+@/, ":***@"), "db:", dbName);
   const client = new MongoClient(uri);

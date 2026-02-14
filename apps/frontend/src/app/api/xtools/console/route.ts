@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { getDb } from "@/lib/mongodb";
+import { getSessionFromRequest } from "@/lib/require-session";
 import { ObjectId } from "mongodb";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +25,8 @@ const ALLOWED_COLLECTIONS = new Set([
   "optionRecommendations",
   "straddleStrangleRecommendations",
   "auth_users",
+  "portfolios",
+  "userSettings",
 ]);
 
 const MAX_FIND_LIMIT = 500;
@@ -95,8 +97,8 @@ function normalizeFilter(filter: Record<string, unknown>): Record<string, unknow
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { getSessionFromRequest } from "@/lib/require-session";
 import { importActivitiesForAccount } from "@/lib/activities";
 import { parseBrokerCsv } from "@/lib/csv-import";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

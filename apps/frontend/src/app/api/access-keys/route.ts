@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
-import {
-  listAccessKeys,
-  createAccessKey,
-} from "@/lib/access-keys";
+import { listAccessKeys, createAccessKey } from "@/lib/access-keys";
+import { requireSessionFromRequest } from "@/lib/require-session";
 
-export async function GET() {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export const dynamic = "force-dynamic";
+
+export async function GET(request: NextRequest) {
+  const session = await requireSessionFromRequest(request);
+  if (session instanceof NextResponse) return session;
   try {
     const keys = await listAccessKeys();
     return NextResponse.json(keys);
@@ -23,10 +20,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const session = await requireSessionFromRequest(request);
+  if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();
     const name = typeof body.name === "string" ? body.name.trim() : "Unnamed";

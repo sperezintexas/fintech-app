@@ -4,6 +4,33 @@ import alertTemplatesData from "../../../../config/alert-templates.json";
 
 export type RiskLevel = "low" | "medium" | "high";
 
+/** Stored tenant document: portfolio = tenant boundary. Requires explicit creation; owner is set at create (ownerXId when owner signed in with X). */
+export type PortfolioDoc = {
+  _id: string;
+  name: string;
+  /** Canonical owner (session user id at create time; for X login this is the X/Twitter user id). */
+  ownerId: string;
+  /** Set when portfolio was created by a user signed in with X (Twitter); same as ownerId for X-owned portfolios. */
+  ownerXId?: string;
+  /** X @handle of the owner (e.g. atxbogart). Set when created via X login; used for default-owner resolution. */
+  ownerXHandle?: string;
+  /** Session/oauth user ids that can access this portfolio (legacy + compat). */
+  authorizedUserIds: string[];
+  /** Usernames that can access this portfolio (e.g. atxbogart from auth_users). Primary association for X users. */
+  authorizedUsers?: string[];
+  /** Default name when creating a new account in this portfolio. */
+  defaultAccountName?: string;
+  /** Default broker name (or broker id) when creating accounts. */
+  defaultBrokerName?: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+/** Add to every tenant-scoped document (Account, Alert, WatchlistItem, etc.). */
+export type HasPortfolio = {
+  portfolioId: string;
+};
+
 /** Risk metrics computed locally (VaR, beta, Sharpe, diversification). */
 export type RiskMetrics = {
   totalValue: number;

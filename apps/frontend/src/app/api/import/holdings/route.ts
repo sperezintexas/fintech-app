@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { auth } from "@/auth";
+import { getSessionFromRequest } from "@/lib/require-session";
 import { setAccountPositions } from "@/lib/activities";
 import type { Position } from "@/types/portfolio";
 
@@ -60,8 +60,8 @@ function toPosition(item: PositionImportItem): Position {
  * Replaces account.positions with the imported positions (each gets an _id).
  */
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

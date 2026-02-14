@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { getSessionFromRequest } from "@/lib/require-session";
 import { importActivitiesForAccount, setAccountPositions } from "@/lib/activities";
 import { parseMerrillHoldingsCsv } from "@/lib/merrill-holdings-csv";
 import { parseMerrillCsv } from "@/lib/merrill-csv";
@@ -34,8 +34,8 @@ function isMappings(m: unknown): m is Record<string, string> {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

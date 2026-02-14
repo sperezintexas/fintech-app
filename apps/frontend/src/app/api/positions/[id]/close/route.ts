@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import type { Account, Position } from "@/types/portfolio";
-import { requireSession } from "@/lib/require-session";
+import { requireSessionFromRequest } from "@/lib/require-session";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +23,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await requireSession();
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const { id: positionId } = await params;

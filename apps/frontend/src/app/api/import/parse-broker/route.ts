@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { getSessionFromRequest } from "@/lib/require-session";
 import { parseMerrillHoldingsCsv } from "@/lib/merrill-holdings-csv";
 import { parseMerrillCsv } from "@/lib/merrill-csv";
 import { parseFidelityHoldingsCsv } from "@/lib/fidelity-holdings-csv";
@@ -26,8 +26,8 @@ function isExportType(s: unknown): s is ExportType {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { getMarketState } from "@/lib/market-calendar";
 import type { MarketState } from "@/lib/market-calendar";
 
-type Props = { displayName: string };
+type Props = { displayName: string; portfolioName?: string | null };
 
 const MARKET_LABELS: Record<MarketState, string> = {
   open: "open",
@@ -13,7 +13,7 @@ const MARKET_LABELS: Record<MarketState, string> = {
   "after-hours": "in after-hours",
 };
 
-export function DashboardGreeting({ displayName }: Props) {
+export function DashboardGreeting({ displayName, portfolioName }: Props) {
   const [weather, setWeather] = useState<string | null>(null);
   const [marketState, setMarketState] = useState<MarketState>(() => getMarketState());
 
@@ -45,7 +45,8 @@ export function DashboardGreeting({ displayName }: Props) {
   return (
     <div className="mb-3 sm:mb-4">
       <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl" style={{ wordBreak: "keep-all" }}>
-        Hello, {displayName}. Today the weather is {weatherText}. The market is {marketText}.
+        Hello, {displayName}
+        {portfolioName ? ` (${portfolioName})` : ""}. Today the weather is {weatherText}. The market is {marketText}.
       </h1>
     </div>
   );

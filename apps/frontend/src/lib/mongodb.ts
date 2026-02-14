@@ -1,4 +1,4 @@
-import { MongoClient, Db } from "mongodb";
+import { MongoClient, Db, MongoClientOptions } from "mongodb";
 import { getEnv } from "@/lib/env";
 
 export function getMongoUri(): string {
@@ -7,6 +7,18 @@ export function getMongoUri(): string {
 
 export function getMongoDbName(): string {
   return getEnv().MONGODB_DB;
+}
+
+/**
+ * Options for MongoClient when used by Agenda (smart-scheduler, scheduler).
+ * Force IPv4 to avoid TLS "internal error" (alert 80) and ReplicaSetNoPrimary
+ * when connecting to Atlas or managed MongoDB from containers (Node 17+ may prefer IPv6).
+ */
+export function getMongoClientOptions(): MongoClientOptions {
+  return {
+    family: 4,
+    serverSelectionTimeoutMS: 15_000,
+  };
 }
 
 let cachedClient: MongoClient | null = null;

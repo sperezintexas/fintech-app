@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { deleteActivitiesForAccount, getActivitiesForAccount } from "@/lib/activities";
+import { requireSessionFromRequest } from "@/lib/require-session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  const session = await requireSessionFromRequest(request);
+  if (session instanceof NextResponse) return session;
   const { searchParams } = new URL(request.url);
   const accountId = searchParams.get("accountId")?.trim();
   if (!accountId) {
@@ -18,7 +15,6 @@ export async function GET(request: NextRequest) {
       { status: 400 }
     );
   }
-
   try {
     const activities = await getActivitiesForAccount(accountId);
     return NextResponse.json(activities);
@@ -32,11 +28,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  const session = await requireSessionFromRequest(request);
+  if (session instanceof NextResponse) return session;
   const { searchParams } = new URL(request.url);
   const accountId = searchParams.get("accountId")?.trim();
   if (!accountId) {
@@ -45,7 +38,6 @@ export async function DELETE(request: NextRequest) {
       { status: 400 }
     );
   }
-
   try {
     const deleted = await deleteActivitiesForAccount(accountId);
     return NextResponse.json({ deleted });

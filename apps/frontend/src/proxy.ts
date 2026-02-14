@@ -47,7 +47,7 @@ export async function proxy(req: NextRequest, event: NextFetchEvent) {
 
 export const config = {
   matcher: [
-    // Run on all routes except static assets and public/auth endpoints (proxy runs on /api/chat, /api/accounts, etc.)
-    "/((?!_next/static|_next/image|favicon.ico|api/auth|api/health|health|icon.svg|apple-icon.svg|contact|login-error).*)",
+    // Exclude static assets, auth, contact, all /api/* (handlers use getSessionFromRequest), and app page paths.
+    "/((?!_next/static|_next/image|favicon.ico|api/|health|icon.svg|apple-icon.svg|contact|login-error|accounts|holdings|automation).*)",
   ],
 };

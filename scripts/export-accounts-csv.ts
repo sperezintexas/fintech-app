@@ -3,6 +3,7 @@
  * Use for backup or to replicate accounts on another DB (e.g. after pointing app at .env.prod).
  *
  * Loads .env.local by default (local DB). Use ENV_FILE=.env.prod to export from remote.
+ * Expects MONGODB_URI or MONGODB_URI_B64, and MONGODB_DB.
  * Run from repo root: pnpm run export-accounts-csv [outfile]
  *
  * Output: _id, name, accountRef, brokerType, balance, riskLevel, strategy, positionsCount, recommendationsCount
@@ -12,11 +13,20 @@ import * as fs from "fs";
 import * as path from "path";
 import { MongoClient } from "mongodb";
 
+/** Expects MONGODB_URI_B64 (or MONGODB_URI) and MONGODB_DB. */
+function getMongoUri(): string {
+  if (process.env.MONGODB_URI_B64?.trim()) {
+    return Buffer.from(process.env.MONGODB_URI_B64.trim(), "base64").toString("utf8");
+  }
+  if (process.env.MONGODB_URI?.trim()) return process.env.MONGODB_URI.trim();
+  return "mongodb://localhost:27017";
+}
+
 function loadEnv(): void {
   const envFile = process.env.ENV_FILE || ".env.local";
   const envPath = path.isAbsolute(envFile) ? envFile : path.join(process.cwd(), envFile);
   if (!fs.existsSync(envPath)) {
-    console.warn(envFile + " not found; using process.env (MONGODB_URI, MONGODB_DB)");
+    console.warn(envFile + " not found; using process.env (MONGODB_URI, MONGODB_URI_B64, MONGODB_DB)");
     return;
   }
   const content = fs.readFileSync(envPath, "utf-8");
@@ -43,8 +53,8 @@ function escapeCsvField(val: unknown): string {
 
 async function main(): Promise<void> {
   loadEnv();
-  const uri = process.env.MONGODB_URI || "mongodb://localhost:27017";
-  const dbName = process.env.MONGODB_DB || "myinvestments";
+  const uri = getMongoUri();
+  const dbName = process.env.MONGODB_DB?.trim() || "myinvestments";
   const outFile =
     process.argv[2] || path.join(process.cwd(), "data", "accounts-export.csv");
 

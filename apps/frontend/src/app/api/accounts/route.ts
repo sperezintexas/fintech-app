@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
+import { getSessionFromRequest } from "@/lib/require-session";
+import { getPortfolioOr401Response } from "@/lib/tenant";
 import type { Account } from "@/types/portfolio";
-import { requireSession } from "@/lib/require-session";
 
-// GET /api/accounts - List all accounts (_id normalized to string for client)
-export async function GET() {
+export const dynamic = "force-dynamic";
+
+// GET /api/accounts - List accounts for active portfolio
+export async function GET(request: NextRequest) {
+  const session = await getSessionFromRequest(request);
+  const result = await getPortfolioOr401Response(request, session);
+  if (!result.ok) return result.response;
+  const { portfolio } = result;
   try {
     const db = await getDb();
-    const raw = await db.collection("accounts").find({}).toArray();
+    const raw = await db
+      .collection("accounts")
+      .find({ portfolioId: portfolio._id })
+      .toArray();
     const accounts = raw.map((a: { _id?: unknown; [k: string]: unknown }) => ({
       ...a,
       _id: a._id?.toString?.() ?? String(a._id),
@@ -22,17 +32,19 @@ export async function GET() {
   }
 }
 
-// POST /api/accounts - Create new account
+// POST /api/accounts - Create new account in active portfolio
 export async function POST(request: NextRequest) {
-  const session = await requireSession();
-  if (session instanceof NextResponse) return session;
+  const session = await getSessionFromRequest(request);
+  const result = await getPortfolioOr401Response(request, session);
+  if (!result.ok) return result.response;
+  const { portfolio } = result;
   try {
     const body = await request.json();
 
     const brokerType =
       body.brokerType === "Merrill" || body.brokerType === "Fidelity" ? body.brokerType : undefined;
     const brokerId = typeof body.brokerId === "string" && body.brokerId.trim() ? body.brokerId.trim() : undefined;
-    const newAccount: Omit<Account, "_id"> = {
+    const newAccount: Omit<Account, "_id"> & { portfolioId: string } = {
       name: body.name,
       ...(body.accountRef != null && body.accountRef !== "" && { accountRef: String(body.accountRef).trim() }),
       ...(brokerType && { brokerType }),
@@ -42,13 +54,14 @@ export async function POST(request: NextRequest) {
       strategy: body.strategy || "balanced",
       positions: [],
       recommendations: [],
+      portfolioId: portfolio._id,
     };
 
     const db = await getDb();
-    const result = await db.collection("accounts").insertOne(newAccount);
+    const resultInsert = await db.collection("accounts").insertOne(newAccount);
 
     return NextResponse.json(
-      { _id: result.insertedId, ...newAccount },
+      { _id: resultInsert.insertedId.toString(), ...newAccount },
       { status: 201 }
     );
   } catch (error) {

@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { getAgendaClient } from "@/lib/agenda-client";
-import { requireSession } from "@/lib/require-session";
+import { requireSessionFromRequest } from "@/lib/require-session";
 import {
   scheduleJob,
   runJobNow,
@@ -120,7 +120,7 @@ export async function GET() {
 
 // POST - Manage jobs (schedule, run, cancel)
 export async function POST(request: NextRequest) {
-  const session = await requireSession();
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();

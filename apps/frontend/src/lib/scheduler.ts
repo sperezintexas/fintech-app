@@ -13,7 +13,7 @@
 import Agenda, { Job as AgendaJob } from "agenda";
 import { NextRequest } from "next/server";
 import { ObjectId } from "mongodb";
-import { getDb, getMongoUri, getMongoDbName } from "./mongodb";
+import { getDb, getMongoUri, getMongoDbName, getMongoClientOptions } from "./mongodb";
 import { getAgendaClient } from "./agenda-client";
 import type { WatchlistItem, WatchlistAlert, RiskLevel, AlertDeliveryChannel, Task } from "@/types/portfolio";
 import { getReportTemplate } from "@/types/portfolio";
@@ -104,6 +104,7 @@ export async function getAgenda(): Promise<Agenda> {
     db: {
       address: `${mongoUri}/${dbName}`,
       collection: "scheduledJobs",
+      options: getMongoClientOptions() as Record<string, unknown>,
     },
     processEvery: "1 minute",
     maxConcurrency: 1,

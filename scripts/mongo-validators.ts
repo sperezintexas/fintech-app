@@ -2,25 +2,29 @@
  * One-time setup: add MongoDB schema validators to alerts and recommendation collections.
  * Ensures bad or partial documents are rejected at insert time.
  *
- * Run: MONGODB_URI=... MONGODB_DB=... npx tsx scripts/mongo-validators.ts
- * Or: node --env-file=.env.local --import=tsx scripts/mongo-validators.ts (Node 20+)
+ * Expects MONGODB_URI_B64 (or MONGODB_URI) and MONGODB_DB in env.
+ * Run: node --env-file=.env.local --import=tsx scripts/mongo-validators.ts
  *
  * Uses collMod for existing collections. If a collection does not exist, it is created with the validator.
  */
 
 import { MongoClient, Db } from "mongodb";
 
-const uri = process.env.MONGODB_URI ?? process.env.MONGODB_URI_B64;
-const dbName = process.env.MONGODB_DB ?? "myinvestments";
-
-if (!uri) {
-  console.error("Set MONGODB_URI or MONGODB_URI_B64");
-  process.exit(1);
+function getMongoUri(): string {
+  if (process.env.MONGODB_URI_B64?.trim()) {
+    return Buffer.from(process.env.MONGODB_URI_B64.trim(), "base64").toString("utf8");
+  }
+  if (process.env.MONGODB_URI?.trim()) return process.env.MONGODB_URI.trim();
+  return "";
 }
 
-const resolvedUri = uri.startsWith("base64:")
-  ? Buffer.from(uri.slice(7), "base64").toString("utf8")
-  : uri;
+const resolvedUri = getMongoUri();
+const dbName = process.env.MONGODB_DB?.trim() || "myinvestments";
+
+if (!resolvedUri) {
+  console.error("Set MONGODB_URI_B64 or MONGODB_URI");
+  process.exit(1);
+}
 
 /** Alerts: required symbol, recommendation, reason, createdAt, acknowledged. All other fields optional. */
 const alertsValidator = {

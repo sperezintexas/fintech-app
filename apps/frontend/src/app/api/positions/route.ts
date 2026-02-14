@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { getPositionsWithMarketValues } from "@/lib/holdings";
+import { requireSessionFromRequest } from "@/lib/require-session";
 import type { Account, Position } from "@/types/portfolio";
-import { requireSession } from "@/lib/require-session";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
 
 // POST create a new position
 export async function POST(request: NextRequest) {
-  const session = await requireSession();
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();

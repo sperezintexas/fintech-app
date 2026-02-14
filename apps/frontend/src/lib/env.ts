@@ -1,5 +1,6 @@
 /**
  * Server-side env. Builds ValidatedEnv from process.env with defaults.
+ * App expects MONGODB_URI_B64 (or MONGODB_URI) and MONGODB_DB for MongoDB.
  * No validation/throwing so CI build (e.g. without NEXTAUTH_SECRET) can succeed.
  */
 
@@ -37,17 +38,17 @@ export type ValidatedEnv = {
 };
 
 function getMongoUriFromRaw(input: ServerEnvInput): string {
-  if (input.MONGODB_URI) return input.MONGODB_URI;
-  if (input.MONGODB_URI_B64) {
-    return Buffer.from(input.MONGODB_URI_B64, "base64").toString("utf8");
+  if (input.MONGODB_URI_B64?.trim()) {
+    return Buffer.from(input.MONGODB_URI_B64.trim(), "base64").toString("utf8");
   }
+  if (input.MONGODB_URI?.trim()) return input.MONGODB_URI.trim();
   return "mongodb://localhost:27017";
 }
 
 function buildValidatedEnv(raw: ServerEnvInput, fullEnv: NodeJS.ProcessEnv): ValidatedEnv {
   return {
     MONGODB_URI: getMongoUriFromRaw(raw),
-    MONGODB_DB: raw.MONGODB_DB ?? "myinvestments",
+    MONGODB_DB: (raw.MONGODB_DB?.trim() || "myinvestments"),
     NEXTAUTH_SECRET: raw.NEXTAUTH_SECRET ?? raw.AUTH_SECRET ?? "",
     NEXTAUTH_URL: raw.NEXTAUTH_URL || raw.AUTH_URL || "http://localhost:3000",
     AUTH_URL: raw.AUTH_URL || raw.NEXTAUTH_URL || "http://localhost:3000",

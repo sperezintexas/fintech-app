@@ -11,6 +11,11 @@ type NavItem = {
 
 const SIDE_NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", isActive: (p) => p === "/" },
+  {
+    href: "/automation/portfolio",
+    label: "Setup — Portfolio",
+    isActive: (p) => (p ?? "").startsWith("/automation"),
+  },
   { href: "/watchlist", label: "Watchlist", isActive: (p) => (p ?? "").startsWith("/watchlist") },
   {
     href: "/holdings",

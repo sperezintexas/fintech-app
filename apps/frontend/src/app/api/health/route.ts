@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getDb } from "@/lib/mongodb";
+import { getDb, getMongoUri, getMongoDbName } from "@/lib/mongodb";
 import { getAgendaClient } from "@/lib/agenda-client";
 import { getDbStats } from "@/lib/cleanup-storage";
 
@@ -37,11 +37,9 @@ export async function GET() {
   // App - always ok if we reach this route
   checks.app = { status: "ok" };
 
-  // MongoDB
-  const rawUri = process.env.MONGODB_URI || process.env.MONGODB_URI_B64
-    ? (process.env.MONGODB_URI ?? Buffer.from(process.env.MONGODB_URI_B64!, "base64").toString("utf8"))
-    : "mongodb://localhost:27017";
-  const dbName = process.env.MONGODB_DB || "myinvestments";
+  // MongoDB — same as app: MONGODB_URI_B64 (or MONGODB_URI) and MONGODB_DB
+  const rawUri = getMongoUri();
+  const dbName = getMongoDbName();
   const sanitizeUri = (uri: string): string => {
     try {
       const at = uri.indexOf("@");

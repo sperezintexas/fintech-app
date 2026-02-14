@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { getSessionFromRequest } from "@/lib/require-session";
 import { importActivitiesForAccount } from "@/lib/activities";
 import type { ActivityImportItem, ActivityType } from "@/types/portfolio";
 
@@ -34,8 +34,8 @@ function validateItem(item: unknown): item is ActivityImportItem {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

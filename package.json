@@ -1,6 +1,6 @@
 {
   "name": "myinvestments",
-  "version": "2.0.14",
+  "version": "2.0.16",
   "private": true,
   "packageManager": "pnpm@9.0.0",
   "scripts": {
@@ -22,9 +22,14 @@
     "broker-import": "TS_NODE_PROJECT=tsconfig.scripts.json node -r tsconfig-paths/register -r ts-node/register scripts/broker-import-cli.ts",
     "seed-local-db": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"CommonJS\",\"moduleResolution\":\"node\"}' node -r tsconfig-paths/register -r ts-node/register scripts/seed-local-db.ts",
     "export-accounts-csv": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"CommonJS\",\"moduleResolution\":\"node\"}' node -r tsconfig-paths/register -r ts-node/register scripts/export-accounts-csv.ts",
-    "sync-env-gradle": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"CommonJS\",\"moduleResolution\":\"node\"}' node -r tsconfig-paths/register -r ts-node/register scripts/sync-env-gradle.ts"
+    "sync-env-gradle": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"CommonJS\",\"moduleResolution\":\"node\"}' node -r tsconfig-paths/register -r ts-node/register scripts/sync-env-gradle.ts",
+    "one-time-setup": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"CommonJS\",\"moduleResolution\":\"node\"}' node -r tsconfig-paths/register -r ts-node/register scripts/one-time-setup.ts"
   },
-  "keywords": ["investments", "portfolio", "finance"],
+  "keywords": [
+    "investments",
+    "portfolio",
+    "finance"
+  ],
   "license": "ISC",
   "engines": {
     "node": ">=22"

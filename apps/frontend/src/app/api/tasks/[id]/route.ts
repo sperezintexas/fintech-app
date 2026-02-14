@@ -4,15 +4,15 @@ import { getDb } from "@/lib/mongodb";
 import { executeTask } from "@/lib/scheduler";
 import { validateJobConfig } from "@/lib/job-config-schemas";
 import type { Task, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, TaskConfig } from "@/types/portfolio";
-import { requireSession } from "@/lib/require-session";
+import { requireSessionFromRequest } from "@/lib/require-session";
 
 export const dynamic = "force-dynamic";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
 // POST /api/tasks/[id] - Run task now
-export async function POST(_request: NextRequest, { params }: RouteParams) {
-  const session = await requireSession();
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const { id } = await params;
@@ -60,7 +60,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
 // PUT /api/tasks/[id]
 export async function PUT(request: NextRequest, { params }: RouteParams) {
-  const session = await requireSession();
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const { id } = await params;
@@ -142,8 +142,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/tasks/[id]
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
-  const session = await requireSession();
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  const session = await requireSessionFromRequest(request);
   if (session instanceof NextResponse) return session;
   try {
     const { id } = await params;

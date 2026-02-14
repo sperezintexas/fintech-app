@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { getMarketNewsAndOutlook, getStockAndOptionPrices } from "@/lib/yahoo";
+import { getSessionFromRequest } from "@/lib/require-session";
 import { getDb } from "@/lib/mongodb";
 import type { Account } from "@/types/portfolio";
 import { ObjectId } from "mongodb";
@@ -239,6 +239,10 @@ function buildFallbackResponse(toolResults: {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getSessionFromRequest(request);
+  if (!session?.user?.id && !(session?.user as { username?: string })?.username) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const clientId = getClientId(request);
     if (!checkRateLimit(clientId)) {
@@ -517,8 +521,7 @@ Always include a brief disclaimer that this is not financial advice.`;
       response = buildFallbackResponse(toolResults);
     }
 
-    const session = await auth();
-    const userId = session?.user?.id ?? (session?.user as { username?: string })?.username;
+    const userId = session?.user?.id ?? (session?.user as { username?: string } | undefined)?.username;
     if (userId) {
       try {
         const personaForHistory = requestPersona ?? ctxConfig.persona ?? DEFAULT_PERSONA;

@@ -24,6 +24,7 @@ paths = [
   '''\.env\.prod''',
   '''src/lib/__tests__/env\.test\.ts''',
   '''scripts/seed-local-db\.ts''',
+  '''scripts/one-time-setup\.ts''',
   '''scripts/export-accounts-csv\.ts''',
   '''src/lib/env\.ts''',
 ]
