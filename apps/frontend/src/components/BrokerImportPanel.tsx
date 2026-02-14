@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { Account } from "@/types/portfolio";
+import { useToast } from "@/components/Toast";
 
 type Broker = "merrill" | "fidelity";
 
@@ -19,6 +20,7 @@ type BrokerImportPanelProps = {
 };
 
 export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProps) {
+  const { addToast } = useToast();
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [broker, setBroker] = useState<Broker>("merrill");
 
@@ -139,7 +141,9 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
       const results = (data as { results?: Array<{ label: string; imported: number; error?: string }> }).results ?? [];
       const lines = results.map((r) => (r.error ? `${r.label}: ${r.error}` : `${r.label}: ${r.imported} imported`));
       const hadError = results.some((r) => r.error);
-      setHoldingsResult({ type: hadError ? "error" : "success", message: lines.join(". ") });
+      const msg = lines.join(". ");
+      setHoldingsResult({ type: hadError ? "error" : "success", message: msg });
+      addToast(msg, hadError ? "error" : "success");
       if (!hadError) {
         setHoldingsFile(null);
         setHoldingsCsv(null);
@@ -152,7 +156,7 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
     } finally {
       setHoldingsLoading(false);
     }
-  }, [broker, holdingsCsv, holdingsParsed, selectedAccountId, fidelityHoldingsDefaultAccountRef, buildMappings, onSuccess]);
+  }, [broker, holdingsCsv, holdingsParsed, selectedAccountId, fidelityHoldingsDefaultAccountRef, buildMappings, onSuccess, addToast]);
 
   const handleActivitiesFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
@@ -216,18 +220,22 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setActivitiesResult({ type: "error", message: (data as { error?: string }).error ?? "Import failed" });
+        const errMsg = (data as { error?: string }).error ?? "Import failed";
+        setActivitiesResult({ type: "error", message: errMsg });
+        addToast(errMsg, "error");
         return;
       }
       const results = (data as { results?: Array<{ label: string; imported: number; error?: string }> }).results ?? [];
       const linkAccountId = (data as { linkAccountId?: string }).linkAccountId;
       const lines = results.map((r) => (r.error ? `${r.label}: ${r.error}` : `${r.label}: ${r.imported} imported`));
       const hadError = results.some((r) => r.error);
+      const actMsg = lines.join(". ");
       setActivitiesResult({
         type: hadError ? "error" : "success",
-        message: lines.join(". "),
+        message: actMsg,
         linkAccountId: hadError ? undefined : linkAccountId,
       });
+      addToast(actMsg, hadError ? "error" : "success");
       if (!hadError) {
         setActivitiesFile(null);
         setActivitiesCsv(null);
@@ -237,10 +245,11 @@ export function BrokerImportPanel({ accounts, onSuccess }: BrokerImportPanelProp
       }
     } catch {
       setActivitiesResult({ type: "error", message: "Import request failed" });
+      addToast("Import request failed", "error");
     } finally {
       setActivitiesLoading(false);
     }
-  }, [broker, activitiesCsv, activitiesParsed, selectedAccountId, recomputePositions, buildMappings, onSuccess]);
+  }, [broker, activitiesCsv, activitiesParsed, selectedAccountId, recomputePositions, buildMappings, onSuccess, addToast]);
 
   const count = (a: ParsedAccount) => (a.positions?.length ?? a.activities?.length ?? 0);
 

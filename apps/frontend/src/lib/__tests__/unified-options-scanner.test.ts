@@ -8,6 +8,7 @@ import * as straddleStrangleAnalyzer from "../straddle-strangle-analyzer";
 vi.mock("../option-scanner", () => ({
   scanOptions: vi.fn().mockResolvedValue([]),
   storeOptionRecommendations: vi.fn().mockResolvedValue({ stored: 0, alertsCreated: 0 }),
+  getOptionPositions: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("../covered-call-analyzer", () => ({
   analyzeCoveredCalls: vi.fn().mockResolvedValue([]),
@@ -44,7 +45,7 @@ describe("Unified Options Scanner", () => {
 
     const result = await runUnifiedOptionsScanner("acc1");
 
-    expect(optionScanner.scanOptions).toHaveBeenCalledWith("acc1", undefined);
+    expect(optionScanner.scanOptions).toHaveBeenCalledWith("acc1", undefined, undefined);
     expect(coveredCallAnalyzer.analyzeCoveredCalls).toHaveBeenCalledWith(
       "acc1",
       undefined,
@@ -75,7 +76,7 @@ describe("Unified Options Scanner", () => {
 
     await runUnifiedOptionsScanner("acc2", config);
 
-    expect(optionScanner.scanOptions).toHaveBeenCalledWith("acc2", { holdDteMin: 21 });
+    expect(optionScanner.scanOptions).toHaveBeenCalledWith("acc2", { holdDteMin: 21 }, undefined);
     expect(coveredCallAnalyzer.analyzeCoveredCalls).toHaveBeenCalledWith(
       "acc2",
       { minPremium: 1.5 },

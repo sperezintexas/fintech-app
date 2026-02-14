@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getSessionFromRequest } from "@/lib/require-session";
 import { setAccountPositions } from "@/lib/activities";
+import { checkImportRateLimit } from "@/lib/rate-limit";
 import type { Position } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
@@ -63,6 +64,13 @@ export async function POST(request: NextRequest) {
   const session = await getSessionFromRequest(request);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const rateLimit = await checkImportRateLimit(request);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Import rate limit exceeded.", retryAfter: rateLimit.retryAfter },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfter) } }
+    );
   }
 
   try {

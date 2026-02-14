@@ -2,6 +2,17 @@
 
 MongoDB collections used by the app can enforce a minimal schema so bad or partial documents are rejected at insert time. Validators are applied by the one-time script [scripts/mongo-validators.ts](../scripts/mongo-validators.ts).
 
+## Indexes (performance)
+
+Run [scripts/mongo-indexes.ts](../scripts/mongo-indexes.ts) to create indexes (idempotent):
+
+- **accounts**: `portfolioId`, `portfolioId + positions.ticker`
+- **alerts**: `createdAt` (desc)
+- **priceCache**: `symbol` (unique)
+- **optionRecommendations**, **coveredCallRecommendations**, **protectivePutRecommendations**, **straddleStrangleRecommendations**: `accountId + createdAt` (desc)
+
+Same env as validators: `MONGODB_URI` (or `MONGODB_URI_B64`), `MONGODB_DB`.
+
 ## How to run the validator setup
 
 1. Set environment variables:

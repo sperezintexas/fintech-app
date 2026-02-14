@@ -5,6 +5,7 @@ import { getAgendaClient } from "@/lib/agenda-client";
 import { getNextRunFromCron } from "@/lib/cron-utils";
 import { ensureDefaultReportTypes } from "@/lib/report-types-seed";
 import { validateJobConfig } from "@/lib/job-config-schemas";
+import { jobsPostBodySchema } from "@/lib/api-request-schemas";
 import type { Job, AlertDeliveryChannel, ReportTemplateId, OptionScannerConfig, JobConfig } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
@@ -70,36 +71,24 @@ export async function GET(request: NextRequest) {
 // POST /api/jobs
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as {
-      accountId?: string | null;
-      name?: string;
-      jobType?: string;
-      messageTemplate?: string;
-      config?: JobConfig;
-      templateId?: ReportTemplateId;
-      customSlackTemplate?: string;
-      customXTemplate?: string;
-      scannerConfig?: OptionScannerConfig;
-      scheduleCron?: string;
-      channels?: AlertDeliveryChannel[];
-      deliveryChannels?: AlertDeliveryChannel[];
-      status?: "active" | "paused";
-    };
-
-    const accountIdRaw = body.accountId;
+    const rawBody = await request.json();
+    const parsed = jobsPostBodySchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid request", details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const body = parsed.data;
     const accountId: string | null =
-      accountIdRaw === null || accountIdRaw === undefined || accountIdRaw === ""
+      body.accountId === null || body.accountId === undefined || body.accountId === ""
         ? null
-        : String(accountIdRaw);
-    const name = (body.name ?? "").trim();
-    const jobType = body.jobType?.trim();
-    const scheduleCron = (body.scheduleCron ?? "").trim();
-    const channels = body.deliveryChannels ?? body.channels ?? [];
+        : String(body.accountId);
+    const name = body.name;
+    const jobType = body.jobType;
+    const scheduleCron = body.scheduleCron;
+    const channels = (body.deliveryChannels ?? body.channels ?? []) as AlertDeliveryChannel[];
     const status = body.status ?? "active";
-
-    if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
-    if (!jobType) return NextResponse.json({ error: "jobType is required" }, { status: 400 });
-    if (!scheduleCron) return NextResponse.json({ error: "scheduleCron is required" }, { status: 400 });
 
     const db = await getDb();
     await ensureDefaultReportTypes(db);
@@ -124,7 +113,7 @@ export async function POST(request: NextRequest) {
       validatedConfig = validateJobConfig(
         jobType,
         typeDoc.handlerKey ?? jobType,
-        body.config
+        body.config as JobConfig
       ) as JobConfig | undefined;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Invalid config";
@@ -144,10 +133,10 @@ export async function POST(request: NextRequest) {
       jobType,
       messageTemplate: body.messageTemplate?.trim() || undefined,
       config: validatedConfig,
-      templateId: body.templateId,
+      templateId: body.templateId as ReportTemplateId | undefined,
       customSlackTemplate: body.customSlackTemplate,
       customXTemplate: body.customXTemplate,
-      scannerConfig: body.scannerConfig,
+      scannerConfig: body.scannerConfig as OptionScannerConfig | undefined,
       scheduleCron,
       channels,
       status,

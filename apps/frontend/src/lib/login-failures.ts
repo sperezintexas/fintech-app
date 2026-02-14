@@ -30,6 +30,19 @@ function getWindowStart(): Date {
   return new Date(Date.now() - WINDOW_MS);
 }
 
+/** Returns true if this IP has >= MAX_ATTEMPTS_PER_IP failures in the last WINDOW_MS (temp ban). */
+export async function isTempBanned(ip: string): Promise<boolean> {
+  const db = await getDb();
+  const windowStartStr = getWindowStart().toISOString();
+  const count = await db
+    .collection(COLLECTION)
+    .countDocuments({ ip, createdAt: { $gte: windowStartStr } });
+  return count >= MAX_ATTEMPTS_PER_IP;
+}
+
+/** Seconds until ban window ends (for Retry-After header). */
+export const TEMP_BAN_WINDOW_SECONDS = Math.ceil(WINDOW_MS / 1000);
+
 /** Log a failed login attempt and return whether to block (3+ for this IP) and whether to create alert (10+ distinct IPs). */
 export async function recordLoginFailure(ip: string, userAgent?: string): Promise<{
   blocked: boolean;

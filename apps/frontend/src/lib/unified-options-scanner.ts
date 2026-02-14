@@ -7,11 +7,22 @@
 
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { getOptionChainDetailed, type OptionChainDetailedData } from "@/lib/yahoo";
+import {
+  getOptionChainDetailed,
+  getOptionMetrics,
+  getOptionMarketConditions,
+  type OptionChainDetailedData,
+  type OptionMarketConditions,
+} from "@/lib/yahoo";
 import { parseUnifiedOptionsScannerConfig } from "@/lib/job-config-schemas";
 import { getCoveredCallPositions } from "./covered-call-analyzer";
 import { getProtectivePutPositions } from "./protective-put-analyzer";
-import { scanOptions, storeOptionRecommendations } from "./option-scanner";
+import {
+  scanOptions,
+  storeOptionRecommendations,
+  getOptionPositions,
+  type OptionScannerPreload,
+} from "./option-scanner";
 import { analyzeCoveredCalls, storeCoveredCallRecommendations } from "./covered-call-analyzer";
 import { analyzeProtectivePuts, storeProtectivePutRecommendations } from "./protective-put-analyzer";
 import {
@@ -187,6 +198,49 @@ async function fetchOptionChainCache(
   return map;
 }
 
+/** Build unique metric keys and underlyings from option positions for batch fetch. */
+function getOptionScannerKeys(positions: { ticker: string; expiration: string; strike: number; optionType: string }[]) {
+  const metricKeys = new Set<string>();
+  const underlyings = new Set<string>();
+  for (const pos of positions) {
+    const underlying = (pos.ticker ?? "").replace(/\d.*$/, "").toUpperCase();
+    if (!underlying) continue;
+    underlyings.add(underlying);
+    metricKeys.add(`metrics:${underlying}:${pos.expiration}:${pos.strike}:${pos.optionType}`);
+  }
+  return { metricKeys: [...metricKeys], underlyings: [...underlyings] };
+}
+
+/** Pre-fetch option metrics and market conditions for option scanner (batch all tickers upfront). */
+async function fetchOptionScannerPreload(accountId: string | undefined): Promise<OptionScannerPreload | undefined> {
+  const positions = await getOptionPositions(accountId);
+  if (positions.length === 0) return undefined;
+  const { metricKeys, underlyings } = getOptionScannerKeys(positions);
+  const metricsEntries = await Promise.all(
+    metricKeys.map(async (key) => {
+      const [, underlying, expiration, strikeStr, optionType] = key.split(":");
+      const strike = Number(strikeStr);
+      if (!underlying || !expiration || Number.isNaN(strike) || (optionType !== "call" && optionType !== "put")) {
+        return { key, value: null };
+      }
+      const value = await getOptionMetrics(underlying, expiration, strike, optionType as "call" | "put");
+      return { key, value };
+    })
+  );
+  const marketEntries = await Promise.all(
+    underlyings.map(async (u) => ({ key: u, value: await getOptionMarketConditions(u) }))
+  );
+  const metrics = new Map<string, NonNullable<(typeof metricsEntries)[0]["value"]>>();
+  for (const { key, value } of metricsEntries) {
+    if (value) metrics.set(key, value);
+  }
+  const marketConditions = new Map<string, OptionMarketConditions>();
+  for (const { key, value } of marketEntries) {
+    marketConditions.set(key, value);
+  }
+  return { metrics, marketConditions };
+}
+
 type StoreResult = { stored: number; alertsCreated: number };
 
 /** Dedupe: persist recommendations and create alerts; return counts. */
@@ -219,7 +273,10 @@ export async function runUnifiedOptionsScanner(
   const ssConfig = merged.straddleStrangle;
 
   const symbols = await getSymbolsForOptionChainCache(accountId, merged);
-  const optionChainMap = await fetchOptionChainCache(symbols);
+  const [optionChainMap, optionScannerPreload] = await Promise.all([
+    fetchOptionChainCache(symbols),
+    fetchOptionScannerPreload(accountId),
+  ]);
 
   type ScanResult =
     | { scanner: "optionScanner"; recs: Awaited<ReturnType<typeof scanOptions>>; error?: undefined }
@@ -232,7 +289,7 @@ export async function runUnifiedOptionsScanner(
     const name = "optionScanner";
     console.time(name);
     try {
-      const recs = await scanOptions(accountId, optConfig);
+      const recs = await scanOptions(accountId, optConfig, optionScannerPreload);
       console.timeEnd(name);
       return { scanner: name, recs };
     } catch (e) {

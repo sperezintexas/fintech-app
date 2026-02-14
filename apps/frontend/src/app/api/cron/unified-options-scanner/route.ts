@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { runUnifiedOptionsScanner } from "@/lib/unified-options-scanner";
 import { processAlertDelivery } from "@/lib/alert-delivery";
+import { checkCronRateLimit } from "@/lib/rate-limit";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -28,6 +29,13 @@ function verifyCronRequest(request: NextRequest): boolean {
  */
 export async function GET(request: NextRequest) {
   if (!verifyCronRequest(request)) {
+    const rateLimit = await checkCronRateLimit(request);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Cron rate limit exceeded.", retryAfter: rateLimit.retryAfter },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfter) } }
+      );
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
