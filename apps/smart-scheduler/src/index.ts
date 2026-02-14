@@ -25,11 +25,12 @@ async function main() {
   const dbName = getMongoDbName();
   if (!mongoUri) throw new Error("MONGODB_URI required");
 
+  // Agenda expects mongodb@4 MongoClientOptions; app uses mongodb@7 — options shape is compatible at runtime
   const agenda = new Agenda({
     db: {
       address: `${mongoUri}/${dbName}`,
       collection: COLLECTION,
-      options: getMongoClientOptions(),
+      options: getMongoClientOptions() as never,
     },
     processEvery: "1 minute",
     maxConcurrency: 1,
@@ -52,7 +53,7 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   console.error("[smart-scheduler] Fatal:", err);
   process.exit(1);
 });
