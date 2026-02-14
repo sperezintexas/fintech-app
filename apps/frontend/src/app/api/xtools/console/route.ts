@@ -27,6 +27,7 @@ const ALLOWED_COLLECTIONS = new Set([
   "auth_users",
   "portfolios",
   "userSettings",
+  "symbols",
 ]);
 
 const MAX_FIND_LIMIT = 500;
@@ -40,7 +41,8 @@ type ConsoleOp =
   | { op: "find"; collection: string; filter?: Record<string, unknown>; limit?: number }
   | { op: "count"; collection: string; filter?: Record<string, unknown> }
   | { op: "deleteMany"; collection: string; filter: Record<string, unknown> }
-  | { op: "updateMany"; collection: string; filter: Record<string, unknown>; update: Record<string, unknown> };
+  | { op: "updateMany"; collection: string; filter: Record<string, unknown>; update: Record<string, unknown> }
+  | { op: "insertOne"; collection: string; document: Record<string, unknown> };
 
 function isConsoleOp(body: unknown): body is ConsoleOp {
   if (!body || typeof body !== "object") return false;
@@ -72,6 +74,15 @@ function isConsoleOp(body: unknown): body is ConsoleOp {
       o.update !== undefined &&
       typeof o.update === "object" &&
       o.update !== null
+    );
+  }
+  if (op === "insertOne") {
+    return (
+      typeof o.collection === "string" &&
+      ALLOWED_COLLECTIONS.has(o.collection) &&
+      o.document !== undefined &&
+      typeof o.document === "object" &&
+      o.document !== null
     );
   }
   return false;
@@ -113,7 +124,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Invalid op. Use: listCollections | find | count | deleteMany | updateMany. Collections are whitelisted.",
+          "Invalid op. Use: listCollections | find | count | deleteMany | updateMany | insertOne. Collections are whitelisted.",
       },
       { status: 400 }
     );
@@ -167,6 +178,17 @@ export async function POST(request: NextRequest) {
         ok: true,
         matched: result.matchedCount,
         modified: result.modifiedCount,
+      });
+    }
+
+    if (body.op === "insertOne") {
+      const doc = body.document as Record<string, unknown>;
+      if (doc.createdAt === undefined) (doc as Record<string, unknown>).createdAt = new Date();
+      if (doc.updatedAt === undefined) (doc as Record<string, unknown>).updatedAt = new Date();
+      const result = await coll.insertOne(doc as Record<string, unknown>, { maxTimeMS: MAX_TIME_MS });
+      return NextResponse.json({
+        ok: true,
+        insertedId: result.insertedId.toString(),
       });
     }
 

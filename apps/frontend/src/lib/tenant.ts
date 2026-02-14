@@ -119,6 +119,14 @@ export async function getActivePortfolio(
     .toArray()) as PortfolioRow[];
 
   if (portfolios.length === 0) {
+    const totalInDb = await db.collection<PortfolioRow>("portfolios").countDocuments();
+    console.warn("[tenant] NO_PORTFOLIO: no portfolio matched", {
+      userId,
+      username: username || "(none)",
+      userIds,
+      totalPortfoliosInDb: totalInDb,
+      hint: "Ensure portfolio has ownerId or authorizedUserIds in userIds, or ownerXHandle/authorizedUsers matching username",
+    });
     throw new Error(NO_PORTFOLIO_CODE);
   }
 

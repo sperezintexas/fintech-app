@@ -42,6 +42,7 @@ const REQUIRED_COLLECTIONS = [
   "login_successes",
   "login_failures",
   "security_alerts",
+  "symbols",
 ];
 
 const AUTH_SEED_USERNAME = "atxbogart";
