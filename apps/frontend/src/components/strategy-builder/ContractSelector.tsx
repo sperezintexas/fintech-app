@@ -185,6 +185,21 @@ export function ContractSelector({
     return Math.max(...plData.map((d) => d.pnl));
   }, [plData]);
 
+  /** X-axis ticks in hundreds (e.g. 300, 400, 500) for stock price scale */
+  const xAxisTicks = useMemo(() => {
+    if (plData.length === 0) return [];
+    const prices = plData.map((d) => d.price);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const span = max - min;
+    const step = span <= 150 ? 50 : 100;
+    const low = Math.floor(min / step) * step;
+    const high = Math.ceil(max / step) * step;
+    const ticks: number[] = [];
+    for (let v = low; v <= high; v += step) ticks.push(v);
+    return ticks;
+  }, [plData]);
+
   const filteredChain = useMemo(() => {
     // CSP: wider range (±25%) so put chain aligns with Yahoo options page; others ±15%
     const rangePct = strategyId === 'cash-secured-put' ? 0.25 : 0.15;
@@ -684,6 +699,7 @@ export function ContractSelector({
                     dataKey="price"
                     type="number"
                     domain={['dataMin', 'dataMax']}
+                    ticks={xAxisTicks.length > 0 ? xAxisTicks : undefined}
                     tickFormatter={(v: number) => `$${v}`}
                     label={{ value: 'Stock price', position: 'insideBottom', offset: -4 }}
                   />
@@ -692,8 +708,19 @@ export function ContractSelector({
                     label={{ value: 'Profit / Loss', angle: -90, position: 'insideLeft' }}
                   />
                   <Tooltip
-                    formatter={(value) => [value != null ? `$${Number(value).toFixed(2)}` : '—', 'P/L']}
-                    labelFormatter={(label) => `Stock: $${label}`}
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length || label == null) return null;
+                      const pnlEntry = payload.find((p) => p.dataKey === 'pnl');
+                      const pnl = pnlEntry?.value != null ? Number(pnlEntry.value) : null;
+                      return (
+                        <div className="rounded border border-gray-200 bg-white px-3 py-2 shadow-sm">
+                          <div className="text-xs text-gray-500">Stock: ${label}</div>
+                          <div className="font-medium">
+                            P/L: {pnl != null ? `$${pnl.toFixed(2)}` : '—'}
+                          </div>
+                        </div>
+                      );
+                    }}
                   />
                   <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 4" />
                   {breakeven != null && (
