@@ -170,3 +170,100 @@ ${recSection}${errorsSection}
 
   return { bodyText, errorAttachment, slackBlocks };
 }
+
+/** Minimal position summary for Slack (e.g. covered call pairs). */
+export type PositionSummaryForSlack = {
+  symbol: string;
+  strike?: number;
+  expiration?: string;
+  optionType?: "call" | "put";
+  contracts?: number;
+  premium?: number;
+  accountName?: string;
+};
+
+/**
+ * Build Block Kit blocks for portfolio positions (e.g. "Show my TSLA covered calls").
+ */
+export function buildPortfolioPositionsBlocks(
+  positions: PositionSummaryForSlack[],
+  title: string,
+  appBaseUrl?: string
+): SlackBlock[] {
+  const blocks: SlackBlock[] = [];
+  blocks.push({
+    type: "header",
+    text: { type: "plain_text", text: title, emoji: true },
+  });
+  if (positions.length === 0) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: "No matching positions." },
+    });
+  } else {
+    const lines = positions.map(
+      (p) =>
+        `• *${p.symbol}* ${p.strike != null ? `$${p.strike} ` : ""}${p.optionType ?? "call"} ` +
+        `${p.expiration ?? ""} ${p.contracts != null ? `× ${p.contracts}` : ""} ${p.premium != null ? `| $${p.premium} prem` : ""}`
+    );
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: lines.join("\n") },
+    });
+  }
+  if (appBaseUrl?.trim()) {
+    const url = appBaseUrl.replace(/\/$/, "") + "/holdings";
+    blocks.push({
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "View Holdings", emoji: true },
+          url,
+          action_id: "slack_bot_view_holdings",
+        },
+      ],
+    });
+  }
+  return blocks;
+}
+
+/** Build Block Kit blocks for an order preview (NL parse result). */
+export function buildOrderPreviewBlocks(
+  order: import("@/types/order").ParsedOrder,
+  appBaseUrl?: string
+): SlackBlock[] {
+  const blocks: SlackBlock[] = [];
+  const actionLabel =
+    order.action === "ROLL"
+      ? `Roll ${order.ticker} ${order.strike ?? "?"} ${order.optionType ?? "call"} → ${order.rollToStrike ?? "?"} ${order.rollToExpiration ?? "?"}`
+      : `${order.action} ${order.ticker} ${order.strike ?? "?"} ${order.optionType ?? "call"} ${order.expiration ?? ""} × ${order.contracts ?? 1}`;
+  blocks.push({
+    type: "header",
+    text: { type: "plain_text", text: `Order preview: ${actionLabel}`, emoji: true },
+  });
+  const fields: Array<{ type: "mrkdwn"; text: string }> = [
+    { type: "mrkdwn", text: `*Action*\n${order.action}` },
+    { type: "mrkdwn", text: `*Symbol*\n${order.ticker}` },
+  ];
+  if (order.strike != null) fields.push({ type: "mrkdwn", text: `*Strike*\n$${order.strike}` });
+  if (order.expiration) fields.push({ type: "mrkdwn", text: `*Expiration*\n${order.expiration}` });
+  if (order.contracts != null) fields.push({ type: "mrkdwn", text: `*Contracts*\n${order.contracts}` });
+  if (order.reason) fields.push({ type: "mrkdwn", text: `*Reason*\n${order.reason}` });
+  blocks.push({ type: "section", fields });
+  if (appBaseUrl?.trim()) {
+    const builderUrl = appBaseUrl.replace(/\/$/, "") + "/xstrategybuilder?symbol=" + encodeURIComponent(order.ticker);
+    blocks.push({
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Open in Builder", emoji: true },
+          url: builderUrl,
+          action_id: "slack_bot_open_builder",
+        },
+      ],
+    });
+  }
+  return blocks;
+}

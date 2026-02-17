@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import type {
   Watchlist,
@@ -9,8 +10,6 @@ import type {
   WatchlistItemType,
   SymbolDetails,
 } from "@/types/portfolio";
-import { getThemeDescription } from "@/lib/watchlist-theme-descriptions";
-
 const STRATEGIES: { value: WatchlistStrategy; label: string }[] = [
   { value: "covered-call", label: "Covered Call" },
   { value: "cash-secured-put", label: "Cash-Secured Put" },
@@ -79,6 +78,12 @@ function getStrategyLabel(strategy: WatchlistStrategy): string {
   return STRATEGIES.find((s) => s.value === strategy)?.label ?? strategy;
 }
 
+/** Symbol to open in xStrategyBuilder (underlying for options, symbol for stock). */
+function getSymbolForBuilder(item: WatchlistItem): string {
+  const raw = (item.type !== "stock" ? item.underlyingSymbol : item.symbol) ?? item.symbol ?? "";
+  return raw.toString().trim().toUpperCase();
+}
+
 function duplicateKey(item: WatchlistItem): string {
   const s = item.symbol?.toUpperCase() ?? "";
   const u = (item.underlyingSymbol ?? "").toUpperCase();
@@ -142,10 +147,6 @@ export default function WatchlistPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [removingDuplicates, setRemovingDuplicates] = useState(false);
   const [removingAllDuplicates, setRemovingAllDuplicates] = useState(false);
-  const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
-  const [editingNotesValue, setEditingNotesValue] = useState("");
-  const [savingNotesId, setSavingNotesId] = useState<string | null>(null);
-
   const [watchlistForm, setWatchlistForm] = useState({ name: "", purpose: "" });
   const [itemForm, setItemForm] = useState({
     symbol: "",
@@ -157,7 +158,6 @@ export default function WatchlistPage() {
     strikePrice: undefined as number | undefined,
     expirationDate: "",
     entryPremium: undefined as number | undefined,
-    notes: "",
   });
 
   const fetchWatchlists = useCallback(async () => {
@@ -303,7 +303,6 @@ export default function WatchlistPage() {
           strikePrice: itemForm.strikePrice,
           expirationDate: itemForm.expirationDate || undefined,
           entryPremium: itemForm.entryPremium,
-          notes: itemForm.notes,
         }),
       });
       if (!res.ok) {
@@ -321,7 +320,6 @@ export default function WatchlistPage() {
         strikePrice: undefined,
         expirationDate: "",
         entryPremium: undefined,
-        notes: "",
       });
       await fetchItems();
     } catch (err) {
@@ -365,26 +363,6 @@ export default function WatchlistPage() {
       setError(err instanceof Error ? err.message : "Failed to remove");
     } finally {
       setIsDeleting(undefined);
-    }
-  };
-
-  const saveNotes = async (itemId: string, notes: string) => {
-    setSavingNotesId(itemId);
-    setError(null);
-    try {
-      const res = await fetch(`/api/watchlist/${itemId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: notes.trim() || undefined }),
-      });
-      if (!res.ok) throw new Error("Failed to update notes");
-      setEditingNotesId(null);
-      setEditingNotesValue("");
-      await fetchItems();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update notes");
-    } finally {
-      setSavingNotesId(null);
     }
   };
 
@@ -503,7 +481,6 @@ export default function WatchlistPage() {
       "P/L %",
       "Strike",
       "Entry Premium",
-      "Notes",
     ];
     const rows = items.map((item) => [
       item.symbol,
@@ -515,7 +492,6 @@ export default function WatchlistPage() {
       item.profitLossPercent != null ? `${item.profitLossPercent.toFixed(2)}%` : "",
       item.strikePrice ?? "",
       item.entryPremium ?? "",
-      (item.notes ?? "").replace(/"/g, '""'),
     ]);
     const csvContent = [
       headers.join(","),
@@ -535,19 +511,24 @@ export default function WatchlistPage() {
       <AppHeader />
 
       <main className="flex min-h-[calc(100vh-4rem)]">
-        {/* Collapsible nav sidebar */}
-        <nav
-          className={`flex flex-col bg-white border-r border-gray-200 shadow-sm transition-all duration-200 ${
+        {/* Sidebar: watchlists + settings */}
+        <aside
+          aria-label="Watchlist sidebar"
+          className={`flex flex-col shrink-0 h-[calc(100vh-4rem)] bg-white border-r border-gray-200 transition-[width] duration-200 ease-out ${
             sidebarCollapsed ? "w-14" : "w-64"
           }`}
         >
-          <div className="flex items-center justify-between p-3 border-b border-gray-100 min-h-[52px]">
-            {!sidebarCollapsed && <span className="font-semibold text-gray-900 text-sm">Watchlists</span>}
+          {/* Header with title + collapse */}
+          <div className="flex items-center justify-between gap-2 px-3 py-3 border-b border-gray-100 min-h-[56px]">
+            {!sidebarCollapsed && (
+              <span className="font-semibold text-gray-900 text-sm truncate">Watchlists</span>
+            )}
             <button
               type="button"
               onClick={() => setSidebarCollapsed((c) => !c)}
-              className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
-              title={sidebarCollapsed ? "Expand" : "Collapse"}
+              className="shrink-0 p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               <svg
                 className={`w-5 h-5 transition-transform ${sidebarCollapsed ? "rotate-180" : ""}`}
@@ -559,9 +540,11 @@ export default function WatchlistPage() {
               </svg>
             </button>
           </div>
+
+          {/* New watchlist + form (when expanded) */}
           {!sidebarCollapsed && (
             <>
-              <div className="p-2 border-b border-gray-100">
+              <div className="px-2 pt-2 pb-1 border-b border-gray-100">
                 <button
                   type="button"
                   onClick={() => {
@@ -569,30 +552,30 @@ export default function WatchlistPage() {
                     setWatchlistForm({ name: "", purpose: "" });
                     setShowWatchlistForm(true);
                   }}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-dashed border-gray-200 hover:border-blue-200"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  New
+                  New watchlist
                 </button>
               </div>
               {showWatchlistForm && (
-                <div className="p-3 border-b border-gray-100 bg-gray-50">
+                <div className="p-3 border-b border-gray-100 bg-gray-50/80">
                   <form onSubmit={handleWatchlistSubmit} className="space-y-2">
                     <input
                       type="text"
                       required
                       value={watchlistForm.name}
                       onChange={(e) => setWatchlistForm((f) => ({ ...f, name: e.target.value }))}
-                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       placeholder="Name"
                     />
                     <input
                       type="text"
                       value={watchlistForm.purpose}
                       onChange={(e) => setWatchlistForm((f) => ({ ...f, purpose: e.target.value }))}
-                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       placeholder="Purpose (optional)"
                     />
                     <div className="flex gap-1">
@@ -602,14 +585,14 @@ export default function WatchlistPage() {
                           setShowWatchlistForm(false);
                           setEditingWatchlist(undefined);
                         }}
-                        className="flex-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded"
+                        className="flex-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded-lg"
                       >
                         Cancel
                       </button>
                       <button
                         type="submit"
                         disabled={isSaving}
-                        className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                        className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                       >
                         {isSaving ? "..." : editingWatchlist ? "Update" : "Add"}
                       </button>
@@ -619,77 +602,96 @@ export default function WatchlistPage() {
               )}
             </>
           )}
+
+          {/* Watchlist list (scrollable) */}
           {isLoading ? (
-            <div className="flex-1 flex items-center justify-center p-4">
+            <div className="flex-1 flex items-center justify-center p-4 min-h-[120px]">
               <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
-            <ul className="flex-1 overflow-y-auto py-2">
-              {watchlists.map((w) => (
-                <li key={w._id}>
-                  <div
-                    className={`group flex items-center gap-2 px-3 py-2 mx-2 rounded-lg cursor-pointer hover:bg-gray-50 ${
-                      selectedWatchlistId === w._id ? "bg-blue-50 text-blue-700" : ""
-                    } ${sidebarCollapsed ? "justify-center" : ""}`}
-                  >
-                    <button
-                      type="button"
-                      data-testid="watchlist-item"
-                      onClick={() => setSelectedWatchlistId(w._id)}
-                      className={`flex-1 text-left min-w-0 ${sidebarCollapsed ? "flex-none" : ""}`}
+            <nav className="flex-1 overflow-y-auto py-2" aria-label="Watchlists">
+              <ul className="space-y-0.5 px-2">
+                {watchlists.map((w) => (
+                  <li key={w._id}>
+                    <div
+                      className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                        selectedWatchlistId === w._id ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"
+                      } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
                     >
-                      {sidebarCollapsed ? (
-                        <span className="text-lg font-bold text-gray-700" title={w.name}>
-                          {w.name.charAt(0)}
-                        </span>
-                      ) : (
-                        <>
-                          <div className="font-medium text-sm truncate">{w.name}</div>
-                          {w.purpose && (
-                            <div className="text-xs text-gray-500 truncate">{w.purpose}</div>
-                          )}
-                        </>
+                      <button
+                        type="button"
+                        data-testid="watchlist-item"
+                        onClick={() => setSelectedWatchlistId(w._id)}
+                        className={`flex-1 text-left min-w-0 ${sidebarCollapsed ? "flex-none" : ""}`}
+                      >
+                        {sidebarCollapsed ? (
+                          <span className="text-base font-semibold text-gray-700" title={w.name}>
+                            {w.name.charAt(0).toUpperCase()}
+                          </span>
+                        ) : (
+                          <>
+                            <div className="font-medium text-sm truncate">{w.name}</div>
+                            {w.purpose && (
+                              <div className="text-xs text-gray-500 truncate">{w.purpose}</div>
+                            )}
+                          </>
+                        )}
+                      </button>
+                      {!sidebarCollapsed && (
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingWatchlist(w);
+                              setWatchlistForm({ name: w.name, purpose: w.purpose });
+                              setShowWatchlistForm(true);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded"
+                            title="Edit"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleWatchlistDelete(w._id);
+                            }}
+                            disabled={isDeleting === w._id || watchlists.length <= 1}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 disabled:opacity-50 rounded"
+                            title="Delete"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
                       )}
-                    </button>
-                    {!sidebarCollapsed && (
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingWatchlist(w);
-                            setWatchlistForm({ name: w.name, purpose: w.purpose });
-                            setShowWatchlistForm(true);
-                          }}
-                          className="p-1 text-gray-400 hover:text-blue-600 rounded"
-                          title="Edit"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleWatchlistDelete(w._id);
-                          }}
-                          disabled={isDeleting === w._id || watchlists.length <= 1}
-                          className="p-1 text-gray-400 hover:text-red-600 disabled:opacity-50 rounded"
-                          title="Delete"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </nav>
           )}
-        </nav>
+
+          {/* Footer: config / settings */}
+          <div className="border-t border-gray-100 p-2 mt-auto shrink-0">
+            <Link
+              href="/automation/scheduler"
+              className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors ${sidebarCollapsed ? "justify-center px-2" : ""}`}
+              title="Setup & settings"
+            >
+              <svg className="w-5 h-5 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              {!sidebarCollapsed && <span>Setup & settings</span>}
+            </Link>
+          </div>
+        </aside>
 
         {/* Content area */}
         <div className="flex-1 overflow-auto p-4 sm:p-6">
@@ -713,6 +715,21 @@ export default function WatchlistPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingWatchlist(selectedWatchlist);
+                            setWatchlistForm({ name: selectedWatchlist.name, purpose: selectedWatchlist.purpose });
+                            setShowWatchlistForm(true);
+                          }}
+                          className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5"
+                          title="Edit watchlist name and purpose"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                          Edit
+                        </button>
                         <button
                           data-testid="watchlist-remove-held-btn"
                           onClick={handleRemoveHeld}
@@ -913,15 +930,6 @@ export default function WatchlistPage() {
                                 </div>
                               </>
                             )}
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                              <textarea
-                                value={itemForm.notes}
-                                onChange={(e) => setItemForm((f) => ({ ...f, notes: e.target.value }))}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                rows={2}
-                              />
-                            </div>
                             {formError && <p className="text-red-600 text-sm">{formError}</p>}
                             <div className="flex justify-end gap-3">
                               <button type="button" onClick={() => setShowItemForm(false)} className="px-4 py-2 text-gray-600">
@@ -974,10 +982,7 @@ export default function WatchlistPage() {
                           </div>
                           <div className="space-y-3">
                           {sortedItems.map((item) => {
-                            const themeSymbol = item.type !== "stock" ? item.underlyingSymbol : item.symbol;
-                            const theme = getThemeDescription(themeSymbol);
                             const rationale = item.rationale?.trim() || "";
-                            const notes = item.notes?.trim() || "";
                             const entryVal = item.type === "stock" ? item.quantity * item.entryPrice : item.quantity * 100 * item.entryPrice;
                             return (
                               <div
@@ -998,17 +1003,30 @@ export default function WatchlistPage() {
                                       )}
                                     </div>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleItemDelete(item._id)}
-                                    disabled={isDeleting === item._id}
-                                    className="shrink-0 p-1.5 text-red-500 hover:bg-red-50 rounded-lg disabled:opacity-50"
-                                    title="Remove"
-                                  >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                  </button>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {getSymbolForBuilder(item) ? (
+                                      <Link
+                                        href={`/xstrategybuilder?symbol=${encodeURIComponent(getSymbolForBuilder(item))}`}
+                                        className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg"
+                                        title="Open in Strategy Builder"
+                                      >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                        </svg>
+                                      </Link>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleItemDelete(item._id)}
+                                      disabled={isDeleting === item._id}
+                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                                      title="Remove"
+                                    >
+                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
+                                  </div>
                                 </div>
                                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
                                   <span>{getTypeLabel(item.type)} · {getStrategyLabel(item.strategy)}</span>
@@ -1019,21 +1037,11 @@ export default function WatchlistPage() {
                                     <SymbolDetailsLine d={item.symbolDetails} />
                                   </div>
                                 )}
-                                {theme && (
-                                  <p className="text-xs text-blue-600 truncate mt-0.5" title={theme}>{theme}</p>
-                                )}
                                 {rationale ? (
                                   <p className="text-xs text-gray-600 line-clamp-2 mt-1.5" title={rationale}>
                                     <span className="font-medium text-gray-500">Rationale: </span>{rationale}
                                   </p>
                                 ) : null}
-                                {notes ? (
-                                  <p className="text-xs text-gray-500 line-clamp-2 mt-0.5" title={notes}>
-                                    <span className="font-medium text-gray-500">Notes: </span>{notes}
-                                  </p>
-                                ) : rationale ? null : (
-                                  <p className="text-xs text-gray-400 mt-1.5">No rationale or notes yet. Run Watchlist Report for rationale; add notes when adding the item or edit on desktop.</p>
-                                )}
                               </div>
                             );
                           })}
@@ -1057,9 +1065,6 @@ export default function WatchlistPage() {
                                 <th className="text-left py-2.5 px-2 font-medium text-gray-600 whitespace-nowrap">
                                   Quote
                                 </th>
-                                <th className="text-left py-2.5 px-2 font-medium text-gray-600 min-w-[100px]">
-                                  Theme
-                                </th>
                                 <th
                                   className="text-left py-2.5 px-2 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100"
                                   onClick={() => handleSort("typeStrategy")}
@@ -1077,19 +1082,12 @@ export default function WatchlistPage() {
                                 <th className="text-left py-2.5 px-2 font-medium text-gray-600 min-w-[120px]" title="From Watchlist Report / daily analysis">
                                   Rationale
                                 </th>
-                                <th className="text-left py-2.5 px-2 font-medium text-gray-600 min-w-[140px]">
-                                  Notes
-                                </th>
-                                <th className="text-center py-2.5 px-2 font-medium text-gray-600 w-10"></th>
+                                <th className="text-center py-2.5 px-2 font-medium text-gray-600 w-20" title="Actions">Actions</th>
                               </tr>
                             </thead>
                             <tbody>
                               {sortedItems.map((item) => {
-                                const themeSymbol = item.type !== "stock" ? item.underlyingSymbol : item.symbol;
-                                const theme = getThemeDescription(themeSymbol);
                                 const rationale = item.rationale?.trim() || "—";
-                                const notes = item.notes?.trim() || "";
-                                const isEditingNotes = editingNotesId === item._id;
                                 return (
                                   <tr
                                     key={item._id}
@@ -1122,13 +1120,6 @@ export default function WatchlistPage() {
                                         <span className="text-xs text-gray-400">—</span>
                                       )}
                                     </td>
-                                    <td className="py-2 px-2 align-top min-w-0 max-w-[140px]">
-                                      {theme ? (
-                                        <span className="text-xs text-blue-600 truncate block" title={theme}>{theme}</span>
-                                      ) : (
-                                        <span className="text-xs text-gray-400">—</span>
-                                      )}
-                                    </td>
                                     <td className="py-2 px-2 text-gray-600 whitespace-nowrap">
                                       {getTypeLabel(item.type)} · {getStrategyLabel(item.strategy)}
                                     </td>
@@ -1138,65 +1129,31 @@ export default function WatchlistPage() {
                                     <td className="py-2 px-2 text-gray-600 max-w-[180px] lg:max-w-[240px]" title={rationale}>
                                       <span className="line-clamp-2 text-xs">{rationale}</span>
                                     </td>
-                                    <td className="py-2 px-2 align-top max-w-[180px] lg:max-w-[240px]">
-                                      {isEditingNotes ? (
-                                        <div className="flex flex-col gap-1">
-                                          <textarea
-                                            value={editingNotesValue}
-                                            onChange={(e) => setEditingNotesValue(e.target.value)}
-                                            className="w-full px-2 py-1 text-xs border border-gray-200 rounded resize-none"
-                                            rows={2}
-                                            placeholder="Add notes…"
-                                            autoFocus
-                                          />
-                                          <div className="flex gap-1">
-                                            <button
-                                              type="button"
-                                              onClick={() => saveNotes(item._id, editingNotesValue)}
-                                              disabled={savingNotesId === item._id}
-                                              className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                                            >
-                                              {savingNotesId === item._id ? "…" : "Save"}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => { setEditingNotesId(null); setEditingNotesValue(""); }}
-                                              className="text-xs px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
-                                            >
-                                              Cancel
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="flex items-start gap-1 min-w-0">
-                                          <span className="line-clamp-2 text-xs text-gray-600 flex-1 min-w-0" title={notes || undefined}>
-                                            {notes || <span className="text-gray-400">—</span>}
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => { setEditingNotesId(item._id); setEditingNotesValue(notes); }}
-                                            className="shrink-0 p-0.5 text-gray-400 hover:text-blue-600 rounded"
-                                            title="Edit notes"
-                                          >
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                            </svg>
-                                          </button>
-                                        </div>
-                                      )}
-                                    </td>
                                     <td className="py-2 px-2 text-center">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleItemDelete(item._id)}
-                                        disabled={isDeleting === item._id}
-                                        className="text-red-500 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title="Remove"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
-                                      </button>
+                                      <div className="flex items-center justify-center gap-1">
+                                        {getSymbolForBuilder(item) ? (
+                                          <Link
+                                            href={`/xstrategybuilder?symbol=${encodeURIComponent(getSymbolForBuilder(item))}`}
+                                            className="p-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded"
+                                            title="Open in Strategy Builder"
+                                          >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                            </svg>
+                                          </Link>
+                                        ) : null}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleItemDelete(item._id)}
+                                          disabled={isDeleting === item._id}
+                                          className="p-1 text-red-500 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                          title="Remove"
+                                        >
+                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                          </svg>
+                                        </button>
+                                      </div>
                                     </td>
                                   </tr>
                                 );

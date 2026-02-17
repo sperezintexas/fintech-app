@@ -135,6 +135,8 @@ export function ReviewOrderStep({
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [holdingsLoading, setHoldingsLoading] = useState(false);
   const [holdingsMessage, setHoldingsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmMessage, setConfirmMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const showAddToHoldings =
     strategyId === 'cash-secured-put' || strategyId === 'covered-call';
@@ -276,6 +278,47 @@ export function ReviewOrderStep({
       setScannerLoading(false);
     }
   }, []);
+
+  const handleConfirmOrder = useCallback(async () => {
+    setConfirmLoading(true);
+    setConfirmMessage(null);
+    try {
+      const orderAction =
+        action === 'sell' && strategyId === 'covered-call'
+          ? 'SELL_NEW_CALL'
+          : action === 'sell' && strategyId === 'cash-secured-put'
+            ? 'BUY_NEW_PUT'
+            : action === 'buy'
+              ? 'BUY_TO_CLOSE'
+              : 'SELL_NEW_CALL';
+      const res = await fetch('/api/nl-order-confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order: {
+            action: orderAction,
+            ticker: symbol,
+            optionType: contractType,
+            strike,
+            expiration,
+            contracts: quantity,
+          },
+          source: 'ui',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? 'Confirm failed');
+      setConfirmMessage({ type: 'success', text: 'Order confirmed and notification sent.' });
+      setTimeout(() => setConfirmMessage(null), 4000);
+    } catch (err) {
+      setConfirmMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Confirm failed',
+      });
+    } finally {
+      setConfirmLoading(false);
+    }
+  }, [action, strategyId, symbol, contractType, strike, expiration, quantity]);
 
   return (
     <div className="space-y-6">
@@ -445,6 +488,23 @@ export function ReviewOrderStep({
           read the options disclosure document before trading.
         </p>
       </details>
+
+      {/* Confirm & notify (mock exec: store + Slack alert) */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleConfirmOrder}
+          disabled={confirmLoading}
+          className="px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {confirmLoading ? 'Confirming…' : 'Confirm & notify'}
+        </button>
+        {confirmMessage && (
+          <span className={`text-sm ${confirmMessage.type === 'success' ? 'text-green-700' : 'text-red-600'}`}>
+            {confirmMessage.text}
+          </span>
+        )}
+      </div>
 
       {/* Add to holdings (CSP / CC only) – collapsible */}
       {showAddToHoldings && (

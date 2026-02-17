@@ -1,4 +1,69 @@
 import type { Outlook } from '@/types/strategy';
+import type { ParsedOrder } from '@/types/order';
+
+/** Prefill for StrategyWizard from a parsed NL order (symbol, contract, quantity, optional strategy). */
+export type OrderPrefill = {
+  symbol: string;
+  strike: number | null;
+  expiration: string | null;
+  contractType: 'call' | 'put';
+  quantity: number;
+  /** Strategy id from STRATEGIES (e.g. covered-call, buy-call). */
+  strategyId: string | null;
+  /** buy = open long, sell = open short (e.g. covered call). */
+  action: 'buy' | 'sell';
+  /** For ROLL: target strike/expiration. */
+  rollToStrike: number | null;
+  rollToExpiration: string | null;
+};
+
+/**
+ * Build wizard prefill from a ParsedOrder. Maps action to strategyId and action (buy/sell).
+ * Used after NL parse to jump to contract step or review.
+ */
+export function buildOrderFromParsed(order: ParsedOrder): OrderPrefill {
+  const optionType = order.optionType ?? 'call';
+  const contracts = order.contracts ?? 1;
+  let strategyId: string | null = null;
+  let action: 'buy' | 'sell' = 'buy';
+
+  switch (order.action) {
+    case 'SELL_NEW_CALL':
+      strategyId = 'covered-call';
+      action = 'sell';
+      break;
+    case 'BUY_TO_CLOSE':
+    case 'SELL_TO_CLOSE':
+      action = 'buy';
+      break;
+    case 'ROLL':
+      strategyId = 'covered-call';
+      action = 'sell';
+      break;
+    case 'BUY_NEW_PUT':
+      strategyId = 'buy-put';
+      action = 'buy';
+      break;
+    case 'HOLD':
+    case 'NONE':
+      break;
+    default:
+      if (optionType === 'call') strategyId = 'buy-call';
+      else strategyId = 'buy-put';
+  }
+
+  return {
+    symbol: order.ticker,
+    strike: order.strike ?? null,
+    expiration: order.expiration ?? null,
+    contractType: optionType,
+    quantity: contracts,
+    strategyId,
+    action,
+    rollToStrike: order.rollToStrike ?? null,
+    rollToExpiration: order.rollToExpiration ?? null,
+  };
+}
 
 export const OUTLOOKS: { id: Outlook; label: string; icon: string }[] = [
   { id: 'bullish', label: 'Bullish / Up', icon: 'trending-up' },

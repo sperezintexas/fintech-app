@@ -17,6 +17,11 @@ vi.mock("../yahoo", () => ({
   probAssignmentCall: vi.fn().mockReturnValue(25),
 }));
 
+vi.mock("../xai-grok", () => ({
+  getXaiClient: vi.fn().mockReturnValue(null),
+  callOptionDecision: vi.fn().mockResolvedValue(null),
+}));
+
 const { getDb } = await import("../mongodb");
 const { getOptionMetrics, getOptionMarketConditions } = await import("../yahoo");
 

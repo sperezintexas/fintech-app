@@ -668,3 +668,76 @@ Output JSON only, no markdown: {"riskLevel":"low"|"medium"|"high","recommendatio
 
   return result;
 }
+
+/** Prompt for NL → structured order (Grok extracts JSON). */
+const NL_ORDER_PARSE_PROMPT = `You are an order parser for options trading. Extract the user's intent into a single JSON object. Use only these actions: BUY_TO_CLOSE, SELL_TO_CLOSE, SELL_NEW_CALL, BUY_NEW_PUT, ROLL, HOLD, NONE.
+For ROLL include rollToStrike and rollToExpiration (YYYY-MM-DD) when the user specifies a new strike or date (e.g. "roll to Feb" → infer next February expiration).
+Output dates as YYYY-MM-DD when possible. Infer optionType (call/put) from context (e.g. "covered call" → call, "450C" → call).
+Output JSON only, no markdown. Keys: action (required), ticker (required, uppercase), optionType (call|put), strike, expiration, contracts (default 1), rollToStrike, rollToExpiration, reason.`;
+
+/**
+ * Parse natural language into a structured order using Grok.
+ * Returns ParseOrderResult (ok + order or error).
+ */
+export async function parseNaturalLanguageOrder(
+  nl: string
+): Promise<import("@/types/order").ParseOrderResult> {
+  const client = getXaiClient();
+  if (!client) {
+    return {
+      ok: false,
+      error: {
+        code: "GROK_ERROR" as const,
+        message: "Grok API is not configured. Add XAI_API_KEY to .env.",
+      },
+    };
+  }
+
+  const { parsedOrderSchema } = await import("@/types/order");
+
+  const result = await withRetry(async () => {
+    const completion = await client.chat.completions.create({
+      model: XAI_MODEL,
+      messages: [
+        { role: "system", content: NL_ORDER_PARSE_PROMPT },
+        { role: "user", content: nl.trim() || "Show my TSLA covered calls" },
+      ],
+      max_tokens: 512,
+    });
+
+    const text = completion.choices[0]?.message?.content?.trim();
+    if (!text) return null;
+
+    const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+    let raw: unknown;
+    try {
+      raw = JSON.parse(cleaned);
+    } catch {
+      return {
+        ok: false as const,
+        error: { code: "PARSE_FAILED" as const, message: "Grok did not return valid JSON", raw: text },
+      };
+    }
+
+    const parsed = parsedOrderSchema.safeParse(raw);
+    if (parsed.success) {
+      return { ok: true as const, order: parsed.data };
+    }
+    return {
+      ok: false as const,
+      error: {
+        code: "VALIDATION_FAILED" as const,
+        message: parsed.error.message ?? "Validation failed",
+        raw,
+      },
+    };
+  }, "parseNaturalLanguageOrder");
+
+  if (result === null) {
+    return {
+      ok: false,
+      error: { code: "GROK_ERROR" as const, message: "Grok request failed or timed out." },
+    };
+  }
+  return result;
+}

@@ -201,8 +201,14 @@ export function ContractSelector({
   }, [plData]);
 
   const filteredChain = useMemo(() => {
-    // CSP: wider range (±25%) so put chain aligns with Yahoo options page; others ±15%
-    const rangePct = strategyId === 'cash-secured-put' ? 0.25 : 0.15;
+    if (strategyId === 'cash-secured-put') {
+      // CSP: show only OTM (and ATM) puts — strikes at or below stock price. Floor 50% below so far OTM still visible.
+      const min = stockPrice * 0.5;
+      const max = stockPrice;
+      return optionChain.filter((c) => c.strike >= min && c.strike <= max);
+    }
+    // Covered call / others: symmetric range ±15% around stock
+    const rangePct = 0.15;
     const range = stockPrice * rangePct;
     const min = stockPrice - range;
     const max = stockPrice + range;

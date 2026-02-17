@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { STRATEGIES, OUTLOOKS } from '@/lib/strategy-builder';
+import { STRATEGIES, OUTLOOKS, type OrderPrefill } from '@/lib/strategy-builder';
 import { ContractSelector, type OptionChainRow } from './ContractSelector';
 import { ReviewOrderStep } from './ReviewOrderStep';
 import type { Outlook } from '@/types/strategy';
@@ -74,6 +74,32 @@ export function StrategyWizard({ initialSymbol, onSymbolSelected, onOutlookChang
   const [quantity, setQuantity] = useState(1);
   const [limitPrice, setLimitPrice] = useState('');
   const [chainLoading, setChainLoading] = useState(false);
+
+  // Natural language order input (hidden by default; user can show via toggle)
+  const NL_VISIBLE_KEY = 'strategyBuilderNlVisible';
+  const [nlSectionVisible, setNlSectionVisible] = useState(false);
+  const [nlInput, setNlInput] = useState('');
+  const [nlLoading, setNlLoading] = useState(false);
+  const [nlError, setNlError] = useState<string | null>(null);
+  const [pendingNlPrefill, setPendingNlPrefill] = useState<OrderPrefill | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(NL_VISIBLE_KEY);
+      if (stored === 'true') setNlSectionVisible(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const setNlSectionVisibleAndPersist = useCallback((visible: boolean) => {
+    setNlSectionVisible(visible);
+    try {
+      localStorage.setItem(NL_VISIBLE_KEY, String(visible));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const selectedStrategy = STRATEGIES.find((s) => s.id === strategyId);
   const filteredStrategies = outlook ? STRATEGIES.filter((s) => s.outlooks.includes(outlook)) : [];
@@ -271,6 +297,65 @@ export function StrategyWizard({ initialSymbol, onSymbolSelected, onOutlookChang
     onSymbolSelected?.(selectedSymbol ?? null);
   }, [selectedSymbol, onSymbolSelected]);
 
+  // Apply NL prefill once we have expirations (step 4)
+  useEffect(() => {
+    if (!pendingNlPrefill || step !== 4 || !selectedSymbol || expirations.length === 0) return;
+    const pre = pendingNlPrefill;
+    const exp = pre.expiration && expirations.includes(pre.expiration) ? pre.expiration : expirations[0];
+    setExpiration(exp);
+    setStrike(pre.strike ?? Math.round(selectedSymbol.price * 2) / 2);
+    setPendingNlPrefill(null);
+  }, [pendingNlPrefill, step, selectedSymbol, expirations]);
+
+  const handleNlSubmit = useCallback(async () => {
+    const text = nlInput.trim();
+    if (!text) return;
+    setNlError(null);
+    setNlLoading(true);
+    try {
+      const res = await fetch('/api/nl-order-parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nl: text }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setNlError(data.error?.message ?? 'Parse failed');
+        return;
+      }
+      const prefill = data.prefill as OrderPrefill;
+      const quoteRes = await fetch(`/api/ticker/${encodeURIComponent(prefill.symbol.toUpperCase())}`);
+      if (!quoteRes.ok) {
+        setNlError('Symbol not found');
+        return;
+      }
+      const quoteData = await quoteRes.json();
+      const quote: TickerQuote = {
+        symbol: quoteData.symbol,
+        name: quoteData.name ?? quoteData.symbol,
+        price: quoteData.price,
+        change: quoteData.change ?? 0,
+        changePercent: quoteData.changePercent ?? 0,
+      };
+      setSelectedSymbol(quote);
+      setSymbolQuery('');
+      setSymbolResults([]);
+      const strat = STRATEGIES.find((s) => s.id === prefill.strategyId);
+      setOutlook(strat?.outlooks?.[0] ?? 'neutral');
+      setStrategyId(prefill.strategyId ?? null);
+      setContractType(prefill.contractType);
+      setQuantity(prefill.quantity);
+      setLimitPrice('');
+      setPendingNlPrefill(prefill);
+      setStep(4);
+      setNlInput('');
+    } catch (e) {
+      setNlError(e instanceof Error ? e.message : 'Request failed');
+    } finally {
+      setNlLoading(false);
+    }
+  }, [nlInput]);
+
   const canProceedStep1 = !!selectedSymbol;
   const canProceedStep2 = !!outlook;
   const canProceedStep3 = !!strategyId;
@@ -278,6 +363,54 @@ export function StrategyWizard({ initialSymbol, onSymbolSelected, onOutlookChang
 
   return (
     <div className="space-y-8">
+      {/* Natural language order input (hidden by default; toggle to show) */}
+      {nlSectionVisible ? (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              Describe your order in plain language
+            </label>
+            <button
+              type="button"
+              onClick={() => setNlSectionVisibleAndPersist(false)}
+              className="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded px-2 py-1"
+            >
+              Hide
+            </button>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <input
+              type="text"
+              placeholder="e.g. Roll TSLA 450 call to Feb · Sell covered call TSLA 440 next week"
+              value={nlInput}
+              onChange={(e) => { setNlInput(e.target.value); setNlError(null); }}
+              onKeyDown={(e) => e.key === 'Enter' && handleNlSubmit()}
+              className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              disabled={nlLoading}
+            />
+            <button
+              type="button"
+              onClick={handleNlSubmit}
+              disabled={nlLoading || !nlInput.trim()}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {nlLoading ? 'Parsing…' : 'Parse & preview'}
+            </button>
+          </div>
+          {nlError && <p className="mt-2 text-sm text-red-600">{nlError}</p>}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <button
+            type="button"
+            onClick={() => setNlSectionVisibleAndPersist(true)}
+            className="text-sm font-medium text-indigo-600 hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded px-2 py-1"
+          >
+            Describe your order in plain language
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center gap-2 border-b border-gray-200 pb-4 flex-wrap">
         {STEPS.map((label, i) => (
           <button

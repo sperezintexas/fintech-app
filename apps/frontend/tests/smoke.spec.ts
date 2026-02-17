@@ -57,6 +57,9 @@ test.describe("Smoke tests", () => {
     await page.getByRole("link", { name: /xStrategyBuilder/i }).click();
     await expect(page).toHaveURL(/\/xstrategybuilder/);
     await expect(page.getByRole("heading", { name: /xStrategyBuilder/i })).toBeVisible();
+    await expect(page.getByText(/Describe your order in plain language/i)).toBeVisible();
+    await page.getByRole("button", { name: /Describe your order in plain language/i }).click();
+    await expect(page.getByRole("button", { name: /Parse & preview/i })).toBeVisible();
 
     await page.getByRole("link", { name: /Setup/i }).click();
     await expect(page).toHaveURL(/\/automation/);

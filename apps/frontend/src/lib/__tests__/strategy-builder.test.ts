@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { STRATEGIES, OUTLOOKS, calculatePL, generatePLData } from "../strategy-builder";
+import { STRATEGIES, OUTLOOKS, calculatePL, generatePLData, buildOrderFromParsed } from "../strategy-builder";
+import type { ParsedOrder } from "@/types/order";
 
 describe("strategy-builder", () => {
   describe("OUTLOOKS", () => {
@@ -45,6 +46,60 @@ describe("strategy-builder", () => {
       expect(data.length).toBeGreaterThan(0);
       expect(data[0]).toHaveProperty("price");
       expect(data[0]).toHaveProperty("pnl");
+    });
+  });
+
+  describe("buildOrderFromParsed", () => {
+    it("maps SELL_NEW_CALL to covered-call and sell", () => {
+      const order: ParsedOrder = {
+        action: "SELL_NEW_CALL",
+        ticker: "TSLA",
+        optionType: "call",
+        strike: 450,
+        expiration: "2026-02-21",
+        contracts: 1,
+      };
+      const prefill = buildOrderFromParsed(order);
+      expect(prefill.symbol).toBe("TSLA");
+      expect(prefill.strategyId).toBe("covered-call");
+      expect(prefill.action).toBe("sell");
+      expect(prefill.contractType).toBe("call");
+      expect(prefill.strike).toBe(450);
+      expect(prefill.expiration).toBe("2026-02-21");
+      expect(prefill.quantity).toBe(1);
+    });
+
+    it("maps ROLL to covered-call with roll targets", () => {
+      const order: ParsedOrder = {
+        action: "ROLL",
+        ticker: "TSLA",
+        optionType: "call",
+        strike: 450,
+        expiration: "2026-01-17",
+        rollToStrike: 460,
+        rollToExpiration: "2026-02-21",
+        contracts: 1,
+      };
+      const prefill = buildOrderFromParsed(order);
+      expect(prefill.strategyId).toBe("covered-call");
+      expect(prefill.action).toBe("sell");
+      expect(prefill.rollToStrike).toBe(460);
+      expect(prefill.rollToExpiration).toBe("2026-02-21");
+    });
+
+    it("maps BUY_NEW_PUT to buy-put", () => {
+      const order: ParsedOrder = {
+        action: "BUY_NEW_PUT",
+        ticker: "AAPL",
+        optionType: "put",
+        strike: 180,
+        contracts: 2,
+      };
+      const prefill = buildOrderFromParsed(order);
+      expect(prefill.strategyId).toBe("buy-put");
+      expect(prefill.action).toBe("buy");
+      expect(prefill.contractType).toBe("put");
+      expect(prefill.quantity).toBe(2);
     });
   });
 });
