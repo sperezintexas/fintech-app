@@ -185,14 +185,16 @@ export function ContractSelector({
     return Math.max(...plData.map((d) => d.pnl));
   }, [plData]);
 
-  /** X-axis ticks in hundreds (e.g. 300, 400, 500) for stock price scale */
+  /** X-axis ticks in hundreds of dollars (e.g. 200, 250, 300) for stock price scale */
   const xAxisTicks = useMemo(() => {
     if (plData.length === 0) return [];
     const prices = plData.map((d) => d.price);
     const min = Math.min(...prices);
     const max = Math.max(...prices);
     const span = max - min;
-    const step = span <= 150 ? 50 : 100;
+    // Step in hundreds: 25 for narrow range, 50 for mid, 100 for wide (avoid thousands-scale steps)
+    const step =
+      span <= 75 ? 25 : span <= 150 ? 50 : span <= 500 ? 100 : Math.max(100, Math.round(span / 15));
     const low = Math.floor(min / step) * step;
     const high = Math.ceil(max / step) * step;
     const ticks: number[] = [];
@@ -706,8 +708,10 @@ export function ContractSelector({
                     type="number"
                     domain={['dataMin', 'dataMax']}
                     ticks={xAxisTicks.length > 0 ? xAxisTicks : undefined}
-                    tickFormatter={(v: number) => `$${v}`}
-                    label={{ value: 'Stock price', position: 'insideBottom', offset: -4 }}
+                    tickFormatter={(v: number) =>
+                      `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+                    }
+                    label={{ value: 'Stock price ($)', position: 'insideBottom', offset: -4 }}
                   />
                   <YAxis
                     tickFormatter={(v: number) => `$${v}`}

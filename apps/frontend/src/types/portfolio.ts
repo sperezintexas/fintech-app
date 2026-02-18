@@ -208,6 +208,35 @@ export type WatchlistStrategy =
 // Per-account strategy configuration (Setup → Strategy tab)
 export type StrategyTag = "covered-call" | "cash-secured-put";
 
+/** Per-scanner default configs (Setup → Strategy). Validated with Zod in API; merged with job config when unified scanner runs. */
+export type ScannerStrategyConfigs = {
+  optionScanner?: OptionScannerConfig;
+  coveredCall?: Partial<{
+    minPremium: number;
+    maxDelta: number;
+    symbols: string[];
+    expirationRange: { minDays?: number; maxDays?: number };
+    minStockShares: number;
+    grokEnabled: boolean;
+    grokConfidenceMin: number;
+    grokDteMax: number;
+    grokIvRankMin: number;
+    grokMaxParallel: number;
+    symbol: string;
+    includeWatchlist: boolean;
+    earlyProfitBtcThresholdPercent: number;
+  }>;
+  protectivePut?: Partial<{
+    minYield: number;
+    riskTolerance: "low" | "medium" | "high";
+    watchlistId: string;
+    minStockShares: number;
+    symbol: string;
+    includeWatchlist: boolean;
+  }>;
+  straddleStrangle?: Partial<{ riskLevel: "low" | "medium" | "high" }>;
+};
+
 export type StrategySettings = {
   _id: string;
   accountId: string;
@@ -217,6 +246,8 @@ export type StrategySettings = {
     StrategyTag,
     { minOpenInterest: number; minVolume: number; maxAssignmentProbability: number }
   >;
+  /** Default configs per scanner type (Option, Covered Call, Protective Put, Straddle/Strangle). Used when running unified options scanner. */
+  scannerConfigs?: ScannerStrategyConfigs;
   createdAt: string;
   updatedAt: string;
 };
@@ -359,6 +390,13 @@ export type AlertDeliveryConfig = {
   estimatedCost?: number; // in cents
 };
 
+/** One Slack channel/webhook configured in Alert Settings. */
+export type SlackChannelConfig = {
+  id: string;
+  name: string;
+  webhookUrl: string;
+};
+
 export type AlertTemplateId =
   | "concise"      // Short action-focused: "BTC TSLA 380P - 85% profit captured"
   | "detailed"     // Full context with reasoning
@@ -385,6 +423,8 @@ export type AlertPreferences = {
   accountId: string;
   // Delivery channels
   channels: AlertDeliveryConfig[];
+  /** Multiple Slack webhooks; first is default. Legacy: channels still has one slack entry for backward compat. */
+  slackChannels?: SlackChannelConfig[];
   // Template preference
   templateId: AlertTemplateId;
   // Frequency

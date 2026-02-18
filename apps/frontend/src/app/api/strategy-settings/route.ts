@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import type { StrategySettings } from "@/types/portfolio";
+import {
+  optionScannerConfigSchema,
+  coveredCallScannerConfigSchema,
+  cspAnalysisConfigSchema,
+  straddleStrangleScannerConfigSchema,
+  DEFAULT_OPTION_SCANNER_CONFIG,
+  DEFAULT_COVERED_CALL_CONFIG,
+  DEFAULT_PROTECTIVE_PUT_CONFIG,
+  DEFAULT_STRADDLE_STRANGLE_CONFIG,
+} from "@/lib/job-config-schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +22,43 @@ function defaultThresholds(): StrategySettings["thresholds"] {
     "covered-call": { minOpenInterest: 500, minVolume: 0, maxAssignmentProbability: 100 },
     "cash-secured-put": { minOpenInterest: 500, minVolume: 0, maxAssignmentProbability: 100 },
   };
+}
+
+function mergeScannerConfigs(
+  saved: StrategySettings["scannerConfigs"]
+): NonNullable<StrategySettings["scannerConfigs"]> {
+  return {
+    optionScanner: { ...DEFAULT_OPTION_SCANNER_CONFIG, ...saved?.optionScanner },
+    coveredCall: {
+      ...DEFAULT_COVERED_CALL_CONFIG,
+      ...saved?.coveredCall,
+      expirationRange:
+        saved?.coveredCall?.expirationRange != null
+          ? { ...(DEFAULT_COVERED_CALL_CONFIG?.expirationRange ?? {}), ...saved.coveredCall.expirationRange }
+          : (DEFAULT_COVERED_CALL_CONFIG?.expirationRange ?? { minDays: 3, maxDays: 14 }),
+    },
+    protectivePut: { ...DEFAULT_PROTECTIVE_PUT_CONFIG, ...saved?.protectivePut },
+    straddleStrangle: { ...DEFAULT_STRADDLE_STRANGLE_CONFIG, ...saved?.straddleStrangle },
+  };
+}
+
+function parseAndValidateScannerConfigs(body: unknown): StrategySettings["scannerConfigs"] | undefined {
+  if (body == null || (typeof body === "object" && Object.keys(body as object).length === 0)) return undefined;
+  const raw = body as Record<string, unknown>;
+  const result: NonNullable<StrategySettings["scannerConfigs"]> = {};
+  if (raw.optionScanner != null && typeof raw.optionScanner === "object") {
+    result.optionScanner = optionScannerConfigSchema.parse(raw.optionScanner);
+  }
+  if (raw.coveredCall != null && typeof raw.coveredCall === "object") {
+    result.coveredCall = coveredCallScannerConfigSchema.parse(raw.coveredCall);
+  }
+  if (raw.protectivePut != null && typeof raw.protectivePut === "object") {
+    result.protectivePut = cspAnalysisConfigSchema.parse(raw.protectivePut);
+  }
+  if (raw.straddleStrangle != null && typeof raw.straddleStrangle === "object") {
+    result.straddleStrangle = straddleStrangleScannerConfigSchema.parse(raw.straddleStrangle);
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 // GET /api/strategy-settings?accountId=...
@@ -43,10 +90,12 @@ export async function GET(request: NextRequest) {
         },
       };
       const excludeWatchlist = existing.excludeWatchlist !== false;
+      const scannerConfigs = mergeScannerConfigs((existing as StrategySettingsDoc & { scannerConfigs?: StrategySettings["scannerConfigs"] }).scannerConfigs);
       return NextResponse.json({
         ...existing,
         excludeWatchlist,
         thresholds,
+        scannerConfigs,
         _id: existing._id.toString(),
       });
     }
@@ -57,6 +106,7 @@ export async function GET(request: NextRequest) {
       accountId,
       excludeWatchlist: true,
       thresholds: defaultThresholds(),
+      scannerConfigs: mergeScannerConfigs(undefined),
       createdAt: now,
       updatedAt: now,
     } satisfies StrategySettings);
@@ -73,6 +123,7 @@ export async function PUT(request: NextRequest) {
       accountId?: string;
       excludeWatchlist?: boolean;
       thresholds?: Partial<StrategySettings["thresholds"]>;
+      scannerConfigs?: unknown;
     };
 
     const accountId = body.accountId?.trim();
@@ -81,6 +132,15 @@ export async function PUT(request: NextRequest) {
     }
 
     const excludeWatchlist = typeof body.excludeWatchlist === "boolean" ? body.excludeWatchlist : true;
+    let scannerConfigs: StrategySettings["scannerConfigs"] | undefined;
+    if (body.scannerConfigs !== undefined) {
+      try {
+        scannerConfigs = parseAndValidateScannerConfigs(body.scannerConfigs);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return NextResponse.json({ error: `Invalid scanner config: ${msg}` }, { status: 400 });
+      }
+    }
     const defaults = defaultThresholds();
     const thresholds = {
       "covered-call": {
@@ -131,6 +191,7 @@ export async function PUT(request: NextRequest) {
       accountId,
       excludeWatchlist,
       thresholds: thresholds as StrategySettings["thresholds"],
+      ...(scannerConfigs !== undefined && { scannerConfigs }),
       createdAt: now, // will be overridden if exists
       updatedAt: now,
     };
@@ -140,15 +201,22 @@ export async function PUT(request: NextRequest) {
       .findOne({ accountId });
 
     if (existing) {
+      const setPayload: Record<string, unknown> = {
+        excludeWatchlist: update.excludeWatchlist,
+        thresholds: update.thresholds,
+        updatedAt: now,
+      };
+      if (scannerConfigs !== undefined) setPayload.scannerConfigs = scannerConfigs;
       await db.collection<StrategySettingsDoc>("strategySettings").updateOne(
         { _id: existing._id },
-        { $set: { excludeWatchlist: update.excludeWatchlist, thresholds: update.thresholds, updatedAt: now } }
+        { $set: setPayload }
       );
 
       return NextResponse.json({
         ...existing,
         excludeWatchlist: update.excludeWatchlist,
         thresholds: update.thresholds,
+        ...(scannerConfigs !== undefined && { scannerConfigs: mergeScannerConfigs(scannerConfigs) }),
         updatedAt: now,
         _id: existing._id.toString(),
       });
@@ -158,6 +226,7 @@ export async function PUT(request: NextRequest) {
       accountId,
       excludeWatchlist: update.excludeWatchlist,
       thresholds: update.thresholds,
+      ...(scannerConfigs !== undefined && { scannerConfigs }),
       createdAt: now,
       updatedAt: now,
     };

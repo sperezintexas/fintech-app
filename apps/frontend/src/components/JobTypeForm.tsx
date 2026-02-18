@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { REPORT_HANDLER_KEYS } from "@/lib/report-type-constants";
-import type { AlertDeliveryChannel } from "@/types/portfolio";
+import type { AlertDeliveryChannel, SlackChannelConfig } from "@/types/portfolio";
 import {
   REPORT_TEMPLATES,
   getReportTemplate,
@@ -21,6 +21,8 @@ export type JobTypeFormData = {
   defaultConfig?: Record<string, unknown>;
   defaultDeliveryChannels?: AlertDeliveryChannel[];
   defaultTemplateId?: ReportTemplateId;
+  /** Slack channel id from Setup → Alert Settings; empty = use default (first) channel */
+  defaultSlackChannelId?: string;
 };
 
 type JobType = {
@@ -36,10 +38,13 @@ type JobType = {
   defaultConfig?: Record<string, unknown>;
   defaultDeliveryChannels?: AlertDeliveryChannel[];
   defaultTemplateId?: ReportTemplateId;
+  defaultSlackChannelId?: string;
 };
 
 type JobTypeFormProps = {
   jobType?: JobType;
+  /** Slack channels from Setup → Alert Settings (for dropdown) */
+  slackChannels?: SlackChannelConfig[];
   onSubmit: (data: JobTypeFormData) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
@@ -51,7 +56,7 @@ const CHANNEL_OPTIONS: { value: AlertDeliveryChannel; label: string }[] = [
   { value: "twitter", label: "X" },
 ];
 
-export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeFormProps) {
+export function JobTypeForm({ jobType, slackChannels = [], onSubmit, onCancel, isLoading }: JobTypeFormProps) {
   const [formData, setFormData] = useState<JobTypeFormData>({
     id: jobType?.id ?? "",
     handlerKey: jobType?.handlerKey ?? REPORT_HANDLER_KEYS[0],
@@ -64,6 +69,7 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
     defaultConfig: jobType?.defaultConfig ?? undefined,
     defaultDeliveryChannels: jobType?.defaultDeliveryChannels ?? ["slack"],
     defaultTemplateId: jobType?.defaultTemplateId ?? "concise",
+    defaultSlackChannelId: jobType?.defaultSlackChannelId ?? "",
   });
 
   const _setConfig = (updates: Record<string, unknown>) => {
@@ -281,6 +287,31 @@ export function JobTypeForm({ jobType, onSubmit, onCancel, isLoading }: JobTypeF
           ))}
         </div>
       </div>
+
+      {/* Slack channel (when Slack is selected) */}
+      {channels.includes("slack") && (
+        <div>
+          <label htmlFor="slack-channel" className="block text-sm font-medium text-gray-700 mb-2">
+            Slack channel
+          </label>
+          <p className="text-xs text-gray-500 mb-2">
+            Which webhook to use. Default uses the first channel from Setup → Alert Settings.
+          </p>
+          <select
+            id="slack-channel"
+            value={formData.defaultSlackChannelId ?? ""}
+            onChange={(e) => setFormData((prev) => ({ ...prev, defaultSlackChannelId: e.target.value }))}
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+          >
+            <option value="">Default (first channel)</option>
+            {slackChannels.map((sc) => (
+              <option key={sc.id} value={sc.id}>
+                {sc.name || (sc.webhookUrl ? `${sc.webhookUrl.slice(0, 40)}…` : sc.id)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Delivery channel preview */}
       {channels.length > 0 && (

@@ -1,0 +1,32 @@
+# Cursor Rules for leap-options-scanner.mdc
+# TSLA-centric LEAP scanner for cash portfolio → $10M TSLA shares by 2030
+# Use only sound options on Tesla, SpaceX proxies (KTOS/LMT/RTX via defense), xAI/Grok ecosystem exposure
+
+## Core Parameters (from provided indicators - apply to daily/weekly charts)
+- Bollinger Bands (20-period, 2 SD): Entry if underlying ≤ lower band (oversold). High-beta TSLA exception: allow mid-band.
+- RSI (14-period): Strong entry <40; ideal <30. Never >70.
+- MACD (12,26,9): Bullish signal = MACD line crosses above signal line near support level.
+- VIX: Must >15 AND confirm no bad earnings/news pullback (scan Benzinga/Massive news).
+
+## Cash Portfolio Fit Rules (moderate/aggressive paths)
+- Expiry: 2027-2029 only (LEAPs >12 months).
+- Underlying priority: TSLA (primary), KTOS/LMT/RTX for SpaceX/defense proxy leverage.
+- Strike: OTM 5-20% (moderate: 15-20%; aggressive: 5-10%).
+- Delta: 0.45-0.65 for balanced leverage without excessive decay.
+- Premium cap: ≤12% of available cash per position (moderate) or ≤18% (aggressive).
+- Position size: Moderate 20-30% total cash; aggressive 40-50% cash + low margin (≤8%, monitor liquidation).
+- Integration with wheel: Fund LEAP buys from 80% profit rule on covered calls/CSPs; reinvest all to additional TSLA shares.
+
+## Scanner Logic & Output
+- Fetch via Massive API / polygon: daily OHLC → compute BB/RSI/MACD; current VIX; option chain for LEAPs.
+- Filter: Matches all 4 indicators + cash fit + no negative sentiment.
+- Output per candidate:
+  - Ticker/expiry/strike/premium/delta
+  - Projected earnings: mid-term (TSLA $650-800 by 2027 = 3-6x); long-term ($1000-1500 by 2030 = 8-15x)
+  - Strategy: Moderate (hold to expiry + roll profits); Aggressive (add margin if TSLA surges)
+- Reinvest rule: 100% of LEAP gains or wheel premiums → buy TSLA shares quarterly to balance $10M target.
+
+## Constraints
+- Never recommend naked shorts or high-risk undefined risk.
+- Always flag OCC risks: time decay, volatility crush, assignment.
+- Goal alignment: Every scan must accelerate TSLA share count toward $10M portfolio value by 2030 via compounding.

@@ -37,6 +37,8 @@ export type ReportType = {
   defaultDeliveryChannels?: AlertDeliveryChannel[];
   /** Message template for report output. Default: concise */
   defaultTemplateId?: ReportTemplateId;
+  /** Slack channel id from Setup → Alert Settings; empty = use default (first) channel */
+  defaultSlackChannelId?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -117,6 +119,7 @@ export async function POST(request: NextRequest) {
       defaultConfig?: Record<string, unknown>;
       defaultDeliveryChannels?: AlertDeliveryChannel[];
       defaultTemplateId?: ReportTemplateId;
+      defaultSlackChannelId?: string;
     };
 
     const id = (body.id ?? "").trim().toLowerCase().replace(/\s+/g, "-");
@@ -158,6 +161,10 @@ export async function POST(request: NextRequest) {
     }
     const defaultDeliveryChannels = validateChannels(body.defaultDeliveryChannels);
     const defaultTemplateId = validateTemplateId(body.defaultTemplateId);
+    const defaultSlackChannelId =
+      body.defaultSlackChannelId == null || body.defaultSlackChannelId === ""
+        ? undefined
+        : String(body.defaultSlackChannelId).trim();
 
     const db = await getDb();
     await ensureDefaultReportTypes(db);
@@ -182,6 +189,7 @@ export async function POST(request: NextRequest) {
       defaultConfig,
       defaultDeliveryChannels,
       ...(defaultTemplateId != null && { defaultTemplateId }),
+      ...(defaultSlackChannelId != null && { defaultSlackChannelId }),
       createdAt: now,
       updatedAt: now,
     };

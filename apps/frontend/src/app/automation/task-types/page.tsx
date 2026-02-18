@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { JobTypeList } from "@/components/JobTypeList";
 import { JobTypeForm } from "@/components/JobTypeForm";
 import type { JobTypeFormData } from "@/components/JobTypeForm";
-import type { AlertDeliveryChannel } from "@/types/portfolio";
+import type { AlertDeliveryChannel, SlackChannelConfig } from "@/types/portfolio";
 
 type TaskTypeItem = {
   _id: string;
@@ -18,10 +18,12 @@ type TaskTypeItem = {
   enabled: boolean;
   defaultConfig?: Record<string, unknown>;
   defaultDeliveryChannels?: AlertDeliveryChannel[];
+  defaultSlackChannelId?: string;
 };
 
 export default function AutomationTaskTypesPage() {
   const [taskTypes, setTaskTypes] = useState<TaskTypeItem[]>([]);
+  const [slackChannels, setSlackChannels] = useState<SlackChannelConfig[]>([]);
   const [showTaskTypeForm, setShowTaskTypeForm] = useState(false);
   const [editingTaskType, setEditingTaskType] = useState<TaskTypeItem | undefined>();
   const [taskTypeSaving, setTaskTypeSaving] = useState(false);
@@ -41,9 +43,29 @@ export default function AutomationTaskTypesPage() {
     }
   }, []);
 
+  const fetchSlackChannels = useCallback(async () => {
+    try {
+      const accountsRes = await fetch("/api/accounts", { cache: "no-store" });
+      if (!accountsRes.ok) return;
+      const accounts = (await accountsRes.json()) as { _id: string }[];
+      const accountId = accounts?.[0]?._id;
+      if (!accountId) return;
+      const prefsRes = await fetch(`/api/alert-preferences?accountId=${accountId}`, { cache: "no-store" });
+      if (!prefsRes.ok) return;
+      const prefs = (await prefsRes.json()) as { slackChannels?: SlackChannelConfig[] };
+      setSlackChannels(prefs.slackChannels ?? []);
+    } catch {
+      setSlackChannels([]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTaskTypes();
   }, [fetchTaskTypes]);
+
+  useEffect(() => {
+    fetchSlackChannels();
+  }, [fetchSlackChannels]);
 
   const handleTaskTypeSubmit = async (data: JobTypeFormData) => {
     setTaskTypeSaving(true);
@@ -64,6 +86,7 @@ export default function AutomationTaskTypesPage() {
             defaultConfig: data.defaultConfig,
             defaultDeliveryChannels: data.defaultDeliveryChannels,
             defaultTemplateId: data.defaultTemplateId ?? "concise",
+            defaultSlackChannelId: data.defaultSlackChannelId ?? "",
           }
         : {
             id: data.id,
@@ -76,6 +99,7 @@ export default function AutomationTaskTypesPage() {
             defaultConfig: data.defaultConfig,
             defaultDeliveryChannels: data.defaultDeliveryChannels,
             defaultTemplateId: data.defaultTemplateId ?? "concise",
+            defaultSlackChannelId: data.defaultSlackChannelId ?? "",
           };
       const res = await fetch(url, {
         method,
@@ -166,6 +190,7 @@ export default function AutomationTaskTypesPage() {
           </h3>
           <JobTypeForm
             jobType={editingTaskType}
+            slackChannels={slackChannels}
             onSubmit={handleTaskTypeSubmit}
             onCancel={() => {
               setShowTaskTypeForm(false);

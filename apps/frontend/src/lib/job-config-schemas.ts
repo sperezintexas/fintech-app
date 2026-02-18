@@ -100,6 +100,43 @@ export function parseUnifiedOptionsScannerConfig(
   return unifiedOptionsScannerConfigSchema.parse(config);
 }
 
+/** Reasonable defaults for Option Scanner (from options-trading-agent-guidelines). */
+export const DEFAULT_OPTION_SCANNER_CONFIG: z.infer<typeof optionScannerConfigSchema> = {
+  holdDteMin: 1,
+  btcDteMax: 14,
+  btcStopLossPercent: -50,
+  holdTimeValuePercentMin: 20,
+  highVolatilityPercent: 50,
+  riskProfile: "medium",
+  grokEnabled: false,
+  grokCandidatesPlPercent: 12,
+  grokCandidatesDteMax: 14,
+  grokCandidatesIvMin: 55,
+  grokMaxParallel: 6,
+};
+
+/** Reasonable defaults for Covered Call Scanner (from covered-calls-scanner.mdc: weekly/bi-weekly, 5–10% OTM, 80% rule). */
+export const DEFAULT_COVERED_CALL_CONFIG: z.infer<typeof coveredCallScannerConfigSchema> = {
+  minPremium: 0.5,
+  maxDelta: 0.4,
+  expirationRange: { minDays: 3, maxDays: 14 },
+  minStockShares: 100,
+  includeWatchlist: true,
+  earlyProfitBtcThresholdPercent: 80,
+};
+
+/** Reasonable defaults for Protective Put Scanner (from protective-put-analyzer docs). */
+export const DEFAULT_PROTECTIVE_PUT_CONFIG: z.infer<typeof cspAnalysisConfigSchema> = {
+  minStockShares: 100,
+  riskTolerance: "medium",
+  includeWatchlist: true,
+};
+
+/** Reasonable defaults for Straddle/Strangle Scanner (from straddle-options-scanner). */
+export const DEFAULT_STRADDLE_STRANGLE_CONFIG: z.infer<typeof straddleStrangleScannerConfigSchema> = {
+  riskLevel: "medium",
+};
+
 /** Grok custom prompt (task type defaultConfig or task config override). Prompt required for report type defaultConfig; optional for task config (empty = use type default). */
 export const grokConfigSchema = z
   .object({

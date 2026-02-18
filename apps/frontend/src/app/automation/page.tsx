@@ -10,6 +10,7 @@ import type {
   AlertSeverity,
   Broker,
   StrategySettings,
+  SlackChannelConfig,
 } from "@/types/portfolio";
 import { ALERT_TEMPLATES, ALERT_CHANNEL_COSTS } from "@/types/portfolio";
 import {
@@ -64,6 +65,8 @@ function AutomationContent() {
     twitter: { status: "idle" },
     push: { status: "idle" },
   });
+  /** Per-index test status for Slack channels (when testing one of multiple) */
+  const [slackChannelTestKey, setSlackChannelTestKey] = useState<string | null>(null);
   // Strategy settings (min OI filters for xStrategyBuilder option chains)
   const [strategySettingsLoading, setStrategySettingsLoading] = useState(false);
   const [strategySettingsSaving, setStrategySettingsSaving] = useState(false);
@@ -79,6 +82,9 @@ function AutomationContent() {
     coveredCallMaxAssignProb: 100,
     cashSecuredPutMaxAssignProb: 100,
   });
+  /** Scanner strategy defaults (Option, Covered Call, Protective Put, Straddle/Strangle). Filled from API on fetch. */
+  const [scannerConfigsForm, setScannerConfigsForm] = useState<NonNullable<StrategySettings["scannerConfigs"]> | null>(null);
+  const [scannerConfigsOpen, setScannerConfigsOpen] = useState<"option" | "coveredCall" | "protectivePut" | "straddle" | null>(null);
   // Message template JSON editor
   const [templateEditorTab, setTemplateEditorTab] = useState<"alert" | "report">("alert");
   const [alertTemplatesJson, setAlertTemplatesJson] = useState("");
@@ -216,9 +222,10 @@ function AutomationContent() {
     }
   };
 
-  const runChannelTest = async (channel: TestChannel) => {
+  const runChannelTest = async (channel: TestChannel, webhookUrl?: string) => {
     if (!selectedAccountId) return;
 
+    if (channel === "slack" && webhookUrl) setSlackChannelTestKey(webhookUrl);
     setChannelTest((prev) => ({
       ...prev,
       [channel]: { status: "sending", message: "Sending test..." },
@@ -243,6 +250,7 @@ function AutomationContent() {
           accountId: selectedAccountId,
           channel,
           message: "Hello world from myInvestments",
+          ...(channel === "slack" && webhookUrl && { webhookUrl }),
         }),
       });
 
@@ -259,27 +267,40 @@ function AutomationContent() {
         ...prev,
         [channel]: { status: "success", message: data.message || "Test sent" },
       }));
+      if (channel === "slack") setSlackChannelTestKey(null);
     } catch (err) {
       console.error(err);
       setChannelTest((prev) => ({
         ...prev,
         [channel]: { status: "error", message: "Test failed" },
       }));
+      if (channel === "slack") setSlackChannelTestKey(null);
     }
   };
 
   // Alert preferences form
-  const [prefsForm, setPrefsForm] = useState({
-    templateId: "concise" as AlertTemplateId,
-    frequency: "daily" as AlertFrequency,
-    severityFilter: ["warning", "urgent", "critical"] as AlertSeverity[],
+  const [prefsForm, setPrefsForm] = useState<{
+    templateId: AlertTemplateId;
+    frequency: AlertFrequency;
+    severityFilter: AlertSeverity[];
+    profitThreshold: number;
+    lossThreshold: number;
+    dteWarning: number;
+    quietHoursStart: string;
+    quietHoursEnd: string;
+    slackChannels: SlackChannelConfig[];
+    channels: { push: { enabled: boolean; target: string }; twitter: { enabled: boolean; target: string } };
+  }>({
+    templateId: "concise",
+    frequency: "daily",
+    severityFilter: ["warning", "urgent", "critical"],
     profitThreshold: 50,
     lossThreshold: 20,
     dteWarning: 7,
     quietHoursStart: "",
     quietHoursEnd: "",
+    slackChannels: [],
     channels: {
-      slack: { enabled: false, target: "" },
       push: { enabled: false, target: "" },
       twitter: { enabled: false, target: "" },
     },
@@ -315,7 +336,19 @@ function AutomationContent() {
       if (res.ok) {
         const data = await res.json();
 
-        // Update form with fetched data
+        // Build slackChannels from API (or legacy single slack)
+        const slackChannels: SlackChannelConfig[] =
+          data.slackChannels?.length > 0
+            ? data.slackChannels
+            : (() => {
+                const slackEntry = data.channels?.find(
+                  (c: { channel: string; target?: string }) => c.channel === "slack" && c.target
+                );
+                return slackEntry
+                  ? [{ id: "default", name: "Default", webhookUrl: slackEntry.target }]
+                  : [];
+              })();
+
         setPrefsForm({
           templateId: data.templateId || "concise",
           frequency: data.frequency || "daily",
@@ -325,8 +358,8 @@ function AutomationContent() {
           dteWarning: data.thresholds?.dteWarning || 7,
           quietHoursStart: data.quietHoursStart || "",
           quietHoursEnd: data.quietHoursEnd || "",
+          slackChannels,
           channels: {
-            slack: data.channels?.find((c: { channel: string }) => c.channel === "slack") || { enabled: false, target: "" },
             push: data.channels?.find((c: { channel: string }) => c.channel === "push") || { enabled: false, target: "" },
             twitter: data.channels?.find((c: { channel: string }) => c.channel === "twitter") || { enabled: false, target: "" },
           },
@@ -401,6 +434,7 @@ function AutomationContent() {
         coveredCallMaxAssignProb: settings.thresholds?.["covered-call"]?.maxAssignmentProbability ?? 100,
         cashSecuredPutMaxAssignProb: settings.thresholds?.["cash-secured-put"]?.maxAssignmentProbability ?? 100,
       }));
+      if (settings.scannerConfigs) setScannerConfigsForm(settings.scannerConfigs as NonNullable<StrategySettings["scannerConfigs"]>);
     } catch (e) {
       console.error("Failed to fetch strategy settings:", e);
       setStrategySettingsError("Failed to load strategy settings");
@@ -599,6 +633,7 @@ function AutomationContent() {
               maxAssignmentProbability: Number(strategyThresholdsForm.cashSecuredPutMaxAssignProb),
             },
           },
+          ...(scannerConfigsForm && { scannerConfigs: scannerConfigsForm }),
         }),
       });
       const data = (await res.json()) as StrategySettings | { error?: string };
@@ -615,7 +650,7 @@ function AutomationContent() {
     } finally {
       setStrategySettingsSaving(false);
     }
-  }, [selectedAccountId, strategyThresholdsForm]);
+  }, [selectedAccountId, strategyThresholdsForm, scannerConfigsForm]);
 
   // Save alert preferences
   const handleSavePrefs = async () => {
@@ -639,6 +674,7 @@ function AutomationContent() {
         body: JSON.stringify({
           accountId: selectedAccountId,
           channels,
+          slackChannels: prefsForm.slackChannels.filter((c) => c.webhookUrl.trim()),
           templateId: prefsForm.templateId,
           frequency: prefsForm.frequency,
           severityFilter: prefsForm.severityFilter,
@@ -1192,69 +1228,84 @@ function AutomationContent() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-                {/* Slack */}
-                <div className={`p-4 rounded-xl border-2 ${prefsForm.channels.slack.enabled ? "border-purple-500 bg-purple-50" : "border-gray-200"}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">💬</span>
-                      <div>
-                        <p className="font-medium">Slack</p>
-                        <p className="text-xs text-gray-500">{ALERT_CHANNEL_COSTS.slack.description}</p>
-                      </div>
+                {/* Slack channels */}
+                <div className="md:col-span-2 p-4 rounded-xl border-2 border-gray-200">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-2xl">💬</span>
+                    <div>
+                      <p className="font-medium">Slack</p>
+                      <p className="text-xs text-gray-500">{ALERT_CHANNEL_COSTS.slack.description} Add one or more webhooks; first is default for task types.</p>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={prefsForm.channels.slack.enabled}
-                        onChange={(e) => setPrefsForm({
-                          ...prefsForm,
-                          channels: { ...prefsForm.channels, slack: { ...prefsForm.channels.slack, enabled: e.target.checked } }
-                        })}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-                    </label>
                   </div>
-                  {prefsForm.channels.slack.enabled && (
-                    <div className="space-y-2">
-                      <input
-                        type="url"
-                        placeholder="https://hooks.slack.com/services/..."
-                        value={prefsForm.channels.slack.target}
-                        onChange={(e) =>
-                          setPrefsForm({
-                            ...prefsForm,
-                            channels: {
-                              ...prefsForm.channels,
-                              slack: { ...prefsForm.channels.slack, target: e.target.value },
-                            },
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => runChannelTest("slack")}
-                        disabled={!selectedAccountId || channelTest.slack.status === "sending"}
-                        className="w-full px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs text-gray-700 disabled:opacity-50"
-                      >
-                        {channelTest.slack.status === "sending" ? "Sending..." : "Preview / Hello world"}
-                      </button>
-                      {channelTest.slack.status !== "idle" && channelTest.slack.message && (
-                        <div
-                          className={`p-2 rounded text-xs ${
-                            channelTest.slack.status === "success"
-                              ? "bg-green-50 border border-green-200 text-green-800"
-                              : channelTest.slack.status === "error"
-                                ? "bg-red-50 border border-red-200 text-red-800"
-                                : "bg-gray-50 border border-gray-200 text-gray-700"
-                          }`}
-                        >
-                          {channelTest.slack.message}
+                  <div className="space-y-3">
+                    {prefsForm.slackChannels.map((sc, idx) => (
+                      <div key={sc.id || idx} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                        <div className="flex gap-2 items-start">
+                          <input
+                            type="text"
+                            placeholder="Channel name (e.g. #alerts)"
+                            value={sc.name}
+                            onChange={(e) => {
+                              const next = [...prefsForm.slackChannels];
+                              next[idx] = { ...next[idx], name: e.target.value };
+                              setPrefsForm({ ...prefsForm, slackChannels: next });
+                            }}
+                            className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPrefsForm({
+                                ...prefsForm,
+                                slackChannels: prefsForm.slackChannels.filter((_, i) => i !== idx),
+                              });
+                            }}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                            title="Remove"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  )}
+                        <input
+                          type="url"
+                          placeholder="https://hooks.slack.com/services/..."
+                          value={sc.webhookUrl}
+                          onChange={(e) => {
+                            const next = [...prefsForm.slackChannels];
+                            next[idx] = { ...next[idx], webhookUrl: e.target.value };
+                            setPrefsForm({ ...prefsForm, slackChannels: next });
+                          }}
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => runChannelTest("slack", sc.webhookUrl)}
+                          disabled={!selectedAccountId || !sc.webhookUrl.trim() || channelTest.slack.status === "sending"}
+                          className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs text-gray-700 disabled:opacity-50"
+                        >
+                          {channelTest.slack.status === "sending" && slackChannelTestKey === sc.webhookUrl ? "Sending..." : "Test"}
+                        </button>
+                        {channelTest.slack.status !== "idle" && slackChannelTestKey === sc.webhookUrl && channelTest.slack.message && (
+                          <div className={`p-2 rounded text-xs ${channelTest.slack.status === "success" ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-800"}`}>
+                            {channelTest.slack.message}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const id = prefsForm.slackChannels.length === 0 ? "default" : `slack-${prefsForm.slackChannels.length}`;
+                        setPrefsForm({
+                          ...prefsForm,
+                          slackChannels: [...prefsForm.slackChannels, { id, name: "", webhookUrl: "" }],
+                        });
+                      }}
+                      className="px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                    >
+                      + Add Slack channel
+                    </button>
+                  </div>
                 </div>
 
                 {/* X */}
@@ -1865,6 +1916,80 @@ function AutomationContent() {
                       </p>
                     </div>
                   </div>
+
+                  {/* Scanner strategy defaults (Option, Covered Call, Protective Put, Straddle/Strangle) */}
+                  {scannerConfigsForm && (
+                    <div className="p-4 rounded-xl border border-gray-200 bg-slate-50/50 space-y-3">
+                      <h4 className="font-medium text-gray-900">Scanner strategy defaults</h4>
+                      <p className="text-xs text-gray-600">
+                        Defaults for Unified Options Scanner. Used when scheduled tasks run; job-specific config overrides these.
+                      </p>
+                      {(["option", "coveredCall", "protectivePut", "straddle"] as const).map((key) => {
+                        const isOpen = scannerConfigsOpen === key;
+                        const labels = { option: "Option Scanner", coveredCall: "Covered Call", protectivePut: "Protective Put", straddle: "Straddle/Strangle" };
+                        return (
+                          <div key={key} className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => setScannerConfigsOpen(isOpen ? null : key)}
+                              className="w-full px-4 py-3 flex items-center justify-between text-left font-medium text-gray-900 hover:bg-gray-50"
+                            >
+                              {labels[key]}
+                              <svg className={`w-5 h-5 text-gray-500 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            </button>
+                            {isOpen && (
+                              <div className="px-4 pb-4 pt-0 border-t border-gray-100 space-y-3">
+                                {key === "option" && (
+                                  <>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Hold DTE min</span><input type="number" min={0} max={365} value={scannerConfigsForm.optionScanner?.holdDteMin ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, holdDteMin: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">BTC DTE max</span><input type="number" min={0} max={365} value={scannerConfigsForm.optionScanner?.btcDteMax ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, btcDteMax: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">BTC stop loss %</span><input type="number" min={-100} max={0} value={scannerConfigsForm.optionScanner?.btcStopLossPercent ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, btcStopLossPercent: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Hold time value % min</span><input type="number" min={0} max={100} value={scannerConfigsForm.optionScanner?.holdTimeValuePercentMin ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, holdTimeValuePercentMin: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">High volatility %</span><input type="number" min={0} max={200} value={scannerConfigsForm.optionScanner?.highVolatilityPercent ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, highVolatilityPercent: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Risk profile</span><select value={scannerConfigsForm.optionScanner?.riskProfile ?? "medium"} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, riskProfile: e.target.value as "low" | "medium" | "high" } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+                                    </div>
+                                    <label className="flex items-center gap-2"><input type="checkbox" checked={scannerConfigsForm.optionScanner?.grokEnabled ?? false} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, grokEnabled: e.target.checked } }))} className="rounded border-gray-300 text-blue-600" /><span className="text-sm text-gray-700">Grok enabled</span></label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Grok P/L % min</span><input type="number" min={0} max={100} value={scannerConfigsForm.optionScanner?.grokCandidatesPlPercent ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, grokCandidatesPlPercent: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Grok DTE max</span><input type="number" min={0} value={scannerConfigsForm.optionScanner?.grokCandidatesDteMax ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, grokCandidatesDteMax: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Grok IV min</span><input type="number" min={0} max={200} value={scannerConfigsForm.optionScanner?.grokCandidatesIvMin ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, grokCandidatesIvMin: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Grok max parallel</span><input type="number" min={1} max={20} value={scannerConfigsForm.optionScanner?.grokMaxParallel ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, optionScanner: { ...p?.optionScanner, grokMaxParallel: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                    </div>
+                                  </>
+                                )}
+                                {key === "coveredCall" && (
+                                  <>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Min premium (% of stock)</span><input type="number" min={0} step={0.1} value={scannerConfigsForm.coveredCall?.minPremium ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, coveredCall: { ...p?.coveredCall, minPremium: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Max delta (OTM calls)</span><input type="number" min={0} max={1} step={0.05} value={scannerConfigsForm.coveredCall?.maxDelta ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, coveredCall: { ...p?.coveredCall, maxDelta: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Expiry min days</span><input type="number" min={0} value={scannerConfigsForm.coveredCall?.expirationRange?.minDays ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, coveredCall: { ...p?.coveredCall, expirationRange: { ...p?.coveredCall?.expirationRange, minDays: e.target.value === "" ? undefined : Number(e.target.value) } } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Expiry max days</span><input type="number" min={0} value={scannerConfigsForm.coveredCall?.expirationRange?.maxDays ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, coveredCall: { ...p?.coveredCall, expirationRange: { ...p?.coveredCall?.expirationRange, maxDays: e.target.value === "" ? undefined : Number(e.target.value) } } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Min stock shares</span><input type="number" min={1} value={scannerConfigsForm.coveredCall?.minStockShares ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, coveredCall: { ...p?.coveredCall, minStockShares: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">80% rule close (%)</span><input type="number" min={0} max={100} value={scannerConfigsForm.coveredCall?.earlyProfitBtcThresholdPercent ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, coveredCall: { ...p?.coveredCall, earlyProfitBtcThresholdPercent: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                    </div>
+                                    <label className="flex items-center gap-2"><input type="checkbox" checked={scannerConfigsForm.coveredCall?.includeWatchlist ?? true} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, coveredCall: { ...p?.coveredCall, includeWatchlist: e.target.checked } }))} className="rounded border-gray-300 text-blue-600" /><span className="text-sm text-gray-700">Include watchlist</span></label>
+                                  </>
+                                )}
+                                {key === "protectivePut" && (
+                                  <>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Min stock shares</span><input type="number" min={1} value={scannerConfigsForm.protectivePut?.minStockShares ?? ""} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, protectivePut: { ...p?.protectivePut, minStockShares: e.target.value === "" ? undefined : Number(e.target.value) } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm" /></label>
+                                      <label className="block"><span className="text-xs font-medium text-gray-700">Risk tolerance</span><select value={scannerConfigsForm.protectivePut?.riskTolerance ?? "medium"} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, protectivePut: { ...p?.protectivePut, riskTolerance: e.target.value as "low" | "medium" | "high" } }))} className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded text-sm"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+                                    </div>
+                                    <label className="flex items-center gap-2"><input type="checkbox" checked={scannerConfigsForm.protectivePut?.includeWatchlist ?? true} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, protectivePut: { ...p?.protectivePut, includeWatchlist: e.target.checked } }))} className="rounded border-gray-300 text-blue-600" /><span className="text-sm text-gray-700">Include watchlist</span></label>
+                                  </>
+                                )}
+                                {key === "straddle" && (
+                                  <label className="block"><span className="text-xs font-medium text-gray-700">Risk level</span><select value={scannerConfigsForm.straddleStrangle?.riskLevel ?? "medium"} onChange={(e) => setScannerConfigsForm((p) => ({ ...p!, straddleStrangle: { ...p?.straddleStrangle, riskLevel: e.target.value as "low" | "medium" | "high" } }))} className="mt-1 w-full max-w-xs px-2 py-1.5 border border-gray-200 rounded text-sm"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {strategySettingsError && (
                     <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{strategySettingsError}</div>

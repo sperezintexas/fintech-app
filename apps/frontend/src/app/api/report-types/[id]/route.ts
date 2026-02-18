@@ -64,6 +64,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       defaultConfig?: Record<string, unknown>;
       defaultDeliveryChannels?: AlertDeliveryChannel[];
       defaultTemplateId?: ReportTemplateId;
+      defaultSlackChannelId?: string;
     };
 
     const db = await getDb();
@@ -125,6 +126,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
     if (body.defaultTemplateId !== undefined) {
       update.defaultTemplateId = validateTemplateId(body.defaultTemplateId);
+    }
+    if (body.defaultSlackChannelId !== undefined) {
+      update.defaultSlackChannelId =
+        body.defaultSlackChannelId == null || body.defaultSlackChannelId === ""
+          ? undefined
+          : String(body.defaultSlackChannelId).trim();
     }
 
     await db.collection("reportTypes").updateOne(query, { $set: update });

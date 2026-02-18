@@ -1,0 +1,37 @@
+---
+alwaysApply: false
+---
+
+# Cursor Rules for covered-calls-scanner.mdc
+# TSLA-covered calls income generator preserving shares → $10M TSLA portfolio by 2030 via premium compounding + wheel
+# Use only sound options on Tesla, SpaceX proxies (KTOS/LMT/RTX via defense), xAI/Grok ecosystem exposure
+
+## Core Parameters (from provided indicators + 80% Rule - apply to daily/weekly charts on held shares)
+- Bollinger Bands (20-period, 2 SD): Sell calls when stock at/above mid-band or near upper band (elevated premium). High-beta TSLA exception: still sell mid-band if RSI/MACD aligned.
+- RSI (14-period): Sell when 50-70 (momentum supports premium collection). Avoid >70 (overbought risk of early assignment).
+- MACD (12,26,9): Sell after MACD line stays above signal line (confirmed uptrend). Roll if bearish cross near resistance.
+- VIX: Must >15 for richer premiums; confirm no bad earnings/news (scan Benzinga/Massive).
+- 80% Rule: Buy back any sold call at 80% profit decay (e.g. original $6.00 premium → close at $1.20).
+
+## Cash Portfolio Fit Rules (moderate/aggressive paths)
+- Expiry: Weekly (3-7 days) or bi-weekly (10-14 days).
+- Underlying priority: TSLA (primary on existing shares), KTOS/LMT/RTX for SpaceX/defense proxy holdings.
+- Strike: Moderate 5-10% OTM; Aggressive 3-5% OTM.
+- Delta: -0.25 to -0.40 (OTM calls).
+- Premium target: 0.5-2% yield per cycle (premium ÷ stock price); target 5-15% annualized.
+- Position size: Moderate 20-30% of TSLA shares; Aggressive 40-50%+ (roll if called).
+- Integration with wheel: Assigned shares → immediately sell OTM CSPs at desired re-entry; all premiums reinvest to additional TSLA shares.
+
+## Scanner Logic & Output
+- Fetch via Massive API / polygon: held TSLA shares + full weekly/bi-weekly option chain, compute BB/RSI/MACD/VIX + current price.
+- Filter: Matches all parameters + elevated IV, positive/no negative sentiment.
+- Output per candidate:
+  - Expiry/strike/premium/yield (weekly vs bi-weekly) + 80% close target
+  - Projected earnings: 5-15% annual premium income + TSLA appreciation compounds share count to $10M by 2030
+  - Strategy: Moderate (bi-weekly 5-10% OTM, 80% rule); Aggressive (weekly 3-5% OTM + wheel acceleration)
+- Reinvest rule: 100% of premiums/wheel profits → buy TSLA shares same-day or quarterly rebalance.
+
+## Constraints
+- Never recommend naked calls, uncovered positions or high-risk undefined strategies.
+- Always flag OCC risks: assignment on surges, time decay benefit only if held to target, opportunity cost.
+- Goal alignment: Every scan maximizes income while preserving core TSLA shares, accelerating balanced $10M portfolio by 2030 via full reinvestment.

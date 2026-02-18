@@ -13,6 +13,8 @@ export async function POST(request: NextRequest) {
       accountId?: string;
       channel?: TestChannel;
       message?: string;
+      /** For Slack: optional specific webhook URL to test (e.g. when multiple channels) */
+      webhookUrl?: string;
     };
 
     const accountId = body.accountId?.trim();
@@ -31,13 +33,18 @@ export async function POST(request: NextRequest) {
 
     const db = await getDb();
     const prefs = await db.collection("alertPreferences").findOne({ accountId });
-
     const entry = (prefs?.channels || []).find(
       (c: { channel: AlertDeliveryChannel; target: string }) => c.channel === channel
-    );
+    ) as { target: string } | undefined;
 
     if (channel === "slack") {
-      const webhook = entry?.target?.trim();
+      // Prefer explicit webhookUrl (e.g. when testing one of multiple channels)
+      const webhook =
+        body.webhookUrl?.trim() ||
+        (prefs as { slackChannels?: { webhookUrl: string }[] })?.slackChannels?.[0]?.webhookUrl?.trim() ||
+        (prefs?.channels || []).find(
+          (c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "slack"
+        )?.target?.trim();
       if (!webhook) {
         return NextResponse.json(
           { error: "Slack webhook not configured" },

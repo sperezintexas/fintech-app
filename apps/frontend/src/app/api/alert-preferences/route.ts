@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
-import type { AlertPreferences } from "@/types/portfolio";
+import type { AlertPreferences, AlertDeliveryConfig, SlackChannelConfig } from "@/types/portfolio";
 
 export const dynamic = "force-dynamic";
 
@@ -42,9 +42,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(defaultPrefs);
     }
 
+    // Derive slackChannels from legacy channels if not present
+    let slackChannels = (prefs as { slackChannels?: SlackChannelConfig[] }).slackChannels;
+    if (!slackChannels?.length) {
+      const slackEntry = (prefs.channels || []).find(
+        (c: { channel: string; target?: string }) => c.channel === "slack" && c.target?.trim()
+      );
+      if (slackEntry) {
+        slackChannels = [
+          { id: "default", name: "Default", webhookUrl: (slackEntry as { target: string }).target.trim() },
+        ];
+      }
+    }
+
     return NextResponse.json({
       ...prefs,
       _id: prefs._id.toString(),
+      ...(slackChannels && { slackChannels }),
     });
   } catch (error) {
     console.error("Failed to fetch alert preferences:", error);
@@ -62,6 +76,7 @@ export async function POST(request: NextRequest) {
     const {
       accountId,
       channels,
+      slackChannels: bodySlackChannels,
       templateId,
       frequency,
       severityFilter,
@@ -96,9 +111,40 @@ export async function POST(request: NextRequest) {
       accountId: accountId,
     });
 
+    // Normalize slackChannels: array of { id, name, webhookUrl }; first is default
+    const slackChannelsList: SlackChannelConfig[] = Array.isArray(bodySlackChannels)
+      ? bodySlackChannels
+          .filter(
+            (c: { id?: string; name?: string; webhookUrl?: string }) =>
+              c && typeof c.webhookUrl === "string" && c.webhookUrl.trim()
+          )
+          .map((c: { id?: string; name?: string; webhookUrl: string }, i: number) => ({
+            id: (c.id && String(c.id).trim()) || (i === 0 ? "default" : `slack-${i}`),
+            name: (c.name && String(c.name).trim()) || (i === 0 ? "Default" : `Slack ${i + 1}`),
+            webhookUrl: c.webhookUrl.trim(),
+          }))
+      : [];
+
+    // Build channels: keep non-slack; for slack use first webhook as legacy default
+    const otherChannels = Array.isArray(channels)
+      ? (channels as { channel: string; enabled: boolean; target: string }[]).filter((c) => c.channel !== "slack")
+      : [];
+    const legacyChannels: AlertDeliveryConfig[] =
+      slackChannelsList.length > 0
+        ? [
+            ...(otherChannels as AlertDeliveryConfig[]),
+            {
+              channel: "slack" as const,
+              enabled: true,
+              target: slackChannelsList[0].webhookUrl,
+            },
+          ]
+        : (otherChannels as AlertDeliveryConfig[]);
+
     const prefsData: Omit<AlertPreferences, "_id"> = {
       accountId,
-      channels: channels || [],
+      channels: legacyChannels,
+      ...(slackChannelsList.length > 0 && { slackChannels: slackChannelsList }),
       templateId: templateId || "concise",
       frequency: frequency || "daily",
       severityFilter: severityFilter || ["warning", "urgent", "critical"],

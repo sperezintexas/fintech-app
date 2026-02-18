@@ -168,16 +168,19 @@ export function defineJobs(agenda: Agenda) {
     const accountId = data?.accountId;
     let config = data?.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
 
-    // Merge Strategy Settings: excludeWatchlist (default true) -> coveredCall.includeWatchlist = false
+    // Merge Strategy Settings: scannerConfigs (Setup → Strategy) + excludeWatchlist
     if (accountId) {
       const db = await getDb();
       const strategySettings = await db
-        .collection<{ accountId: string; excludeWatchlist?: boolean }>("strategySettings")
+        .collection<{ accountId: string; excludeWatchlist?: boolean; scannerConfigs?: import("./unified-options-scanner").UnifiedOptionsScannerConfig }>("strategySettings")
         .findOne({ accountId });
       const excludeWatchlist = strategySettings?.excludeWatchlist !== false;
+      const base = strategySettings?.scannerConfigs;
       config = {
-        ...config,
-        coveredCall: { ...config?.coveredCall, includeWatchlist: !excludeWatchlist },
+        optionScanner: { ...base?.optionScanner, ...config?.optionScanner },
+        coveredCall: { ...base?.coveredCall, ...config?.coveredCall, includeWatchlist: !excludeWatchlist },
+        protectivePut: { ...base?.protectivePut, ...config?.protectivePut },
+        straddleStrangle: { ...base?.straddleStrangle, ...config?.straddleStrangle },
       };
     } else {
       config = { ...config, coveredCall: { ...config?.coveredCall, includeWatchlist: false } };
@@ -816,12 +819,15 @@ export async function executeTask(taskId: string): Promise<{
         let config = task.config as import("./unified-options-scanner").UnifiedOptionsScannerConfig | undefined;
         if (accountId) {
           const strategySettings = await db
-            .collection<{ accountId: string; excludeWatchlist?: boolean }>("strategySettings")
+            .collection<{ accountId: string; excludeWatchlist?: boolean; scannerConfigs?: import("./unified-options-scanner").UnifiedOptionsScannerConfig }>("strategySettings")
             .findOne({ accountId });
           const excludeWatchlist = strategySettings?.excludeWatchlist !== false;
+          const base = strategySettings?.scannerConfigs;
           config = {
-            ...config,
-            coveredCall: { ...config?.coveredCall, includeWatchlist: !excludeWatchlist },
+            optionScanner: { ...base?.optionScanner, ...config?.optionScanner },
+            coveredCall: { ...base?.coveredCall, ...config?.coveredCall, includeWatchlist: !excludeWatchlist },
+            protectivePut: { ...base?.protectivePut, ...config?.protectivePut },
+            straddleStrangle: { ...base?.straddleStrangle, ...config?.straddleStrangle },
           };
         } else {
           config = { ...config, coveredCall: { ...config?.coveredCall, includeWatchlist: false } };
@@ -928,7 +934,14 @@ export async function executeTask(taskId: string): Promise<{
         prefs = await db.collection("alertPreferences").findOne({ accountId: (firstAcc as { _id: ObjectId })._id.toString() });
       }
     }
-    const slackConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "slack");
+    const slackChannelsList = (prefs as { slackChannels?: { id: string; webhookUrl: string }[] })?.slackChannels ?? [];
+    const defaultSlackChannelId = (typeDoc as { defaultSlackChannelId?: string })?.defaultSlackChannelId;
+    const slackWebhookUrl =
+      slackChannelsList.length > 0
+        ? (defaultSlackChannelId
+            ? slackChannelsList.find((c) => c.id === defaultSlackChannelId)?.webhookUrl
+            : undefined) ?? slackChannelsList[0].webhookUrl
+        : (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "slack")?.target;
     const twitterConfig = (prefs?.channels || []).find((c: { channel: AlertDeliveryChannel; target: string }) => c.channel === "twitter");
 
     type PostItem = {
@@ -952,7 +965,7 @@ export async function executeTask(taskId: string): Promise<{
           ];
 
     if (task.channels.includes("slack")) {
-      if (!slackConfig?.target) {
+      if (!slackWebhookUrl?.trim()) {
         const err = "Slack not configured. Go to Automation → Settings → Alert Settings and add a Slack webhook URL.";
         failedChannels.push({ channel: "Slack", error: err });
       } else {
@@ -974,7 +987,7 @@ export async function executeTask(taskId: string): Promise<{
                   })),
                 }
               : { text: slackText };
-          const slackRes = await fetch(slackConfig.target, {
+          const slackRes = await fetch(slackWebhookUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(slackPayload),
@@ -1308,10 +1321,16 @@ export async function runBuiltInJob(
       if (accountId) {
         const db = await getDb();
         const strategySettings = await db
-          .collection<{ accountId: string; excludeWatchlist?: boolean }>("strategySettings")
+          .collection<{ accountId: string; excludeWatchlist?: boolean; scannerConfigs?: import("./unified-options-scanner").UnifiedOptionsScannerConfig }>("strategySettings")
           .findOne({ accountId });
         const excludeWatchlist = strategySettings?.excludeWatchlist !== false;
-        config = { ...config, coveredCall: { ...config?.coveredCall, includeWatchlist: !excludeWatchlist } };
+        const base = strategySettings?.scannerConfigs;
+        config = {
+          optionScanner: { ...base?.optionScanner, ...config?.optionScanner },
+          coveredCall: { ...base?.coveredCall, ...config?.coveredCall, includeWatchlist: !excludeWatchlist },
+          protectivePut: { ...base?.protectivePut, ...config?.protectivePut },
+          straddleStrangle: { ...base?.straddleStrangle, ...config?.straddleStrangle },
+        };
       } else {
         config = { ...config, coveredCall: { ...config?.coveredCall, includeWatchlist: false } };
       }
